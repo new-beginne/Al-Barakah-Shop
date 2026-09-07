@@ -1,0 +1,555 @@
+import React, { useState } from 'react';
+import { db, ServiceRate, ExpenseService } from '../db/db';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { exportDB, importDB } from 'dexie-export-import';
+import { Download, Upload, Trash2, CheckCircle2, Save, Edit2, X, Wrench, ShieldCheck, AlertTriangle } from 'lucide-react';
+
+export function Settings() {
+  const [successMsg, setSuccessMsg] = useState('');
+  
+  // Sub-tab for "Service Name" section: 'sell' | 'expense'
+  const [serviceSubTab, setServiceSubTab] = useState<'sell' | 'expense'>('sell');
+
+  // Sales Services (pure service name, just like expense)
+  const services = useLiveQuery(() => db.services.toArray()) || [];
+  const [sName, setSName] = useState('');
+  const [editSalesServiceId, setEditSalesServiceId] = useState<number | null>(null);
+
+  // Expense Services
+  const expenseServices = useLiveQuery(() => db.expenseServices.toArray()) || [];
+  const [expName, setExpName] = useState('');
+  const [editExpServiceId, setEditExpServiceId] = useState<number | null>(null);
+
+  // Deletion Confirmation Modal State
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: number;
+    type: 'sell' | 'expense';
+    name: string;
+  } | null>(null);
+
+  // Backup restore confirmation state
+  const [pendingRestoreFile, setPendingRestoreFile] = useState<File | null>(null);
+
+  const handleExport = async () => {
+    try {
+      const blob = await exportDB(db);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `AlBarakah_Backup_${new Date().toISOString().split('T')[0]}.json`;
+      link.click();
+      setSuccessMsg('Backup downloaded successfully.');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Backup failed.');
+    }
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPendingRestoreFile(file);
+      e.target.value = '';
+    }
+  };
+
+  const confirmRestore = async () => {
+    if (!pendingRestoreFile) return;
+    try {
+      await db.delete();
+      await db.open();
+      await importDB(pendingRestoreFile);
+      setSuccessMsg('Data restored successfully. Please reload.');
+      setTimeout(() => {
+        setSuccessMsg('');
+        window.location.reload();
+      }, 2000);
+    } catch (error) {
+      console.error('Import error:', error);
+      alert('Restore failed.');
+    } finally {
+      setPendingRestoreFile(null);
+    }
+  };
+
+  // Sales Service Operations (pure Service Name add/edit/delete)
+  const handleSaveSalesService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sName.trim()) return;
+
+    if (editSalesServiceId) {
+      await db.services.update(editSalesServiceId, {
+        name: sName.trim(),
+        updatedAt: new Date().toISOString(),
+      });
+      setSuccessMsg('Sell service updated.');
+      setEditSalesServiceId(null);
+    } else {
+      const now = new Date().toISOString();
+      const newService: ServiceRate = {
+        name: sName.trim(),
+        defaultCost: 0,
+        defaultPrice: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await db.services.add(newService);
+      setSuccessMsg('Sell service added.');
+    }
+
+    setSName('');
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const handleEditSalesService = (s: ServiceRate) => {
+    setEditSalesServiceId(s.id!);
+    setSName(s.name);
+  };
+
+  const handleCancelEditSalesService = () => {
+    setEditSalesServiceId(null);
+    setSName('');
+  };
+
+  // Expense Service Operations (pure Service Name add/edit/delete)
+  const handleSaveExpService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expName.trim()) return;
+
+    if (editExpServiceId) {
+      await db.expenseServices.update(editExpServiceId, { 
+        name: expName.trim(),
+        updatedAt: new Date().toISOString()
+      });
+      setSuccessMsg('Expense service updated.');
+      setEditExpServiceId(null);
+    } else {
+      const now = new Date().toISOString();
+      await db.expenseServices.add({ 
+        name: expName.trim(),
+        createdAt: now,
+        updatedAt: now
+      });
+      setSuccessMsg('Expense service added.');
+    }
+
+    setExpName('');
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const handleEditExpService = (exp: ExpenseService) => {
+    setEditExpServiceId(exp.id!);
+    setExpName(exp.name);
+  };
+
+  const handleCancelEditExpService = () => {
+    setEditExpServiceId(null);
+    setExpName('');
+  };
+
+  // Execute confirmed deletion
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    try {
+      if (deleteTarget.type === 'sell') {
+        await db.services.delete(deleteTarget.id);
+        if (editSalesServiceId === deleteTarget.id) {
+          handleCancelEditSalesService();
+        }
+        setSuccessMsg(`"${deleteTarget.name}" deleted.`);
+      } else {
+        await db.expenseServices.delete(deleteTarget.id);
+        if (editExpServiceId === deleteTarget.id) {
+          handleCancelEditExpService();
+        }
+        setSuccessMsg(`"${deleteTarget.name}" deleted.`);
+      }
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (error) {
+      console.error('Delete error:', error);
+    } finally {
+      setDeleteTarget(null);
+    }
+  };
+
+  return (
+    <div className="p-3 sm:p-4 md:p-6 max-w-6xl mx-auto mb-16 md:mb-0 space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+      </div>
+
+      {successMsg && (
+        <div className="p-3.5 bg-gray-100 border border-[#084b3e] rounded-xl flex items-center text-gray-900 font-bold text-xs sm:text-sm tracking-wider uppercase">
+          <CheckCircle2 className="mr-2 shrink-0" size={18} />
+          {successMsg}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Unified "Service Name" Section with Sell & Expense Sub-tabs (7 columns on lg) */}
+        <div className="lg:col-span-7 bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+          
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4">
+            <div className="flex items-center gap-2">
+              <Wrench size={20} className="text-gray-900" />
+              <h2 className="text-lg font-black text-gray-900 uppercase tracking-wider">Services</h2>
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-500 mb-4 font-medium">
+            Manage preset service names for sales and expenses.
+          </p>
+
+          {/* Sub-tabs: Sell & Expense */}
+          <div className="flex bg-gray-100 p-1 rounded-xl mb-5">
+            <button
+              onClick={() => {
+                setServiceSubTab('sell');
+                handleCancelEditExpService();
+              }}
+              className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-black uppercase tracking-wider transition-all ${
+                serviceSubTab === 'sell'
+                  ? 'bg-[#084b3e] text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Sell
+            </button>
+            <button
+              onClick={() => {
+                setServiceSubTab('expense');
+                handleCancelEditSalesService();
+              }}
+              className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-black uppercase tracking-wider transition-all ${
+                serviceSubTab === 'expense'
+                  ? 'bg-[#084b3e] text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Expense
+            </button>
+          </div>
+
+          {/* Sell Sub-tab Content (Pure Service Name, identical to Expense) */}
+          {serviceSubTab === 'sell' && (
+            <div>
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 mb-5">
+                <h3 className="text-xs font-black uppercase tracking-wider text-gray-700 mb-3 flex items-center justify-between">
+                  <span>{editSalesServiceId ? 'Edit Sell Service' : 'Add New Sell Service'}</span>
+                  {editSalesServiceId && (
+                    <span className="text-[10px] bg-emerald-100 text-[#126b55] px-2 py-0.5 rounded font-bold">Editing</span>
+                  )}
+                </h3>
+
+                <form onSubmit={handleSaveSalesService} className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Service Name</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={sName}
+                      onChange={e => setSName(e.target.value)}
+                      placeholder="e.g. Passport Photo, NID Service, Photocopy"
+                      className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium bg-white"
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2 pt-1">
+                    <button 
+                      type="submit" 
+                      className="flex-1 bg-[#084b3e] text-white text-xs sm:text-sm font-bold py-2.5 rounded-xl hover:bg-[#126b55] transition-colors flex items-center justify-center uppercase tracking-wider shadow-sm"
+                    >
+                      <Save size={16} className="mr-1.5"/> {editSalesServiceId ? 'Update Service' : 'Add Service'}
+                    </button>
+                    {editSalesServiceId && (
+                      <button 
+                        type="button" 
+                        onClick={handleCancelEditSalesService} 
+                        className="px-4 bg-gray-200 text-gray-800 text-xs sm:text-sm font-bold rounded-xl hover:bg-gray-300 transition-colors flex items-center justify-center"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* Sell Services List */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center px-1 mb-1">
+                  <span className="text-xs font-black uppercase tracking-wider text-gray-500">Sell Services ({services.length})</span>
+                </div>
+                <div className="max-h-80 overflow-y-auto pr-1 space-y-2">
+                  {services.map(s => (
+                    <div key={s.id} className="flex justify-between items-center bg-gray-50 border border-gray-100 p-3 rounded-xl hover:border-gray-300 transition-colors">
+                      <span className="font-bold text-gray-900 text-xs sm:text-sm truncate mr-2">{s.name}</span>
+                      <div className="flex items-center space-x-1 shrink-0">
+                        <button 
+                          onClick={() => handleEditSalesService(s)}
+                          title="Edit"
+                          className="text-[#084b3e] hover:text-[#126b55] bg-white border border-gray-100 hover:bg-emerald-50 p-2 rounded-xl transition-colors"
+                        >
+                          <Edit2 size={15} />
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => setDeleteTarget({ id: s.id!, type: 'sell', name: s.name })}
+                          title="Delete"
+                          className="text-red-600 hover:text-red-800 bg-white border border-gray-100 hover:bg-red-50 p-2 rounded-xl transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {services.length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-6 border border-dashed border-gray-100 rounded-xl">
+                      No sell services added yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Expense Sub-tab Content */}
+          {serviceSubTab === 'expense' && (
+            <div>
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 mb-5">
+                <h3 className="text-xs font-black uppercase tracking-wider text-gray-700 mb-3 flex items-center justify-between">
+                  <span>{editExpServiceId ? 'Edit Expense Service' : 'Add New Expense Service'}</span>
+                  {editExpServiceId && (
+                    <span className="text-[10px] bg-emerald-100 text-[#126b55] px-2 py-0.5 rounded font-bold">Editing</span>
+                  )}
+                </h3>
+
+                <form onSubmit={handleSaveExpService} className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Expense Service Name</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={expName}
+                      onChange={e => setExpName(e.target.value)}
+                      placeholder="e.g. Shop Rent, Electricity Bill, Paper"
+                      className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium bg-white"
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2 pt-1">
+                    <button 
+                      type="submit" 
+                      className="flex-1 bg-[#084b3e] text-white text-xs sm:text-sm font-bold py-2.5 rounded-xl hover:bg-[#126b55] transition-colors flex items-center justify-center uppercase tracking-wider shadow-sm"
+                    >
+                      <Save size={16} className="mr-1.5"/> {editExpServiceId ? 'Update Expense' : 'Add Expense'}
+                    </button>
+                    {editExpServiceId && (
+                      <button 
+                        type="button" 
+                        onClick={handleCancelEditExpService} 
+                        className="px-4 bg-gray-200 text-gray-800 text-xs sm:text-sm font-bold rounded-xl hover:bg-gray-300 transition-colors flex items-center justify-center"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* Expense Services List */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center px-1 mb-1">
+                  <span className="text-xs font-black uppercase tracking-wider text-gray-500">Expense Services ({expenseServices.length})</span>
+                </div>
+                <div className="max-h-80 overflow-y-auto pr-1 space-y-2">
+                  {expenseServices.map(exp => (
+                    <div key={exp.id} className="flex justify-between items-center bg-gray-50 border border-gray-100 p-3 rounded-xl hover:border-gray-300 transition-colors">
+                      <span className="font-bold text-gray-900 text-xs sm:text-sm truncate mr-2">{exp.name}</span>
+                      <div className="flex items-center space-x-1 shrink-0">
+                        <button 
+                          onClick={() => handleEditExpService(exp)}
+                          title="Edit"
+                          className="text-[#084b3e] hover:text-[#126b55] bg-white border border-gray-100 hover:bg-emerald-50 p-2 rounded-xl transition-colors"
+                        >
+                          <Edit2 size={15} />
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => setDeleteTarget({ id: exp.id!, type: 'expense', name: exp.name })}
+                          title="Delete"
+                          className="text-red-600 hover:text-red-800 bg-white border border-gray-100 hover:bg-red-50 p-2 rounded-xl transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {expenseServices.length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-6 border border-dashed border-gray-100 rounded-xl">
+                      No expense services added yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Right Column: Backup & Restore Section (5 columns on lg) */}
+        <div className="lg:col-span-5 space-y-6">
+          
+          <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+            <h2 className="text-lg font-black text-gray-900 mb-2 border-b border-gray-100 pb-3 uppercase tracking-wider">Backup & Restore</h2>
+            <p className="text-xs text-gray-500 mb-5 font-medium leading-relaxed">
+              All data is stored safely in IndexedDB on this device. Download regular backup files to keep your records protected.
+            </p>
+            <div className="space-y-3">
+              <button 
+                onClick={handleExport}
+                className="w-full flex items-center justify-center space-x-2 bg-[#084b3e] hover:bg-[#126b55] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm text-xs sm:text-sm uppercase tracking-wider cursor-pointer"
+              >
+                <Download size={18} />
+                <span>Download Backup</span>
+              </button>
+              
+              <div className="relative">
+                <input 
+                  type="file" 
+                  accept=".json"
+                  onChange={handleImport}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <button 
+                  type="button"
+                  className="w-full flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-3 px-4 rounded-xl transition-colors border border-gray-300 text-xs sm:text-sm uppercase tracking-wider"
+                >
+                  <Upload size={18} />
+                  <span>Restore from File</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-2xl p-4 sm:p-5 border border-gray-100">
+            <div className="flex items-center gap-2 mb-2 text-gray-900 font-bold text-xs uppercase tracking-wider">
+              <ShieldCheck size={18} />
+              <span>Offline & Local Storage</span>
+            </div>
+            <p className="text-[11px] text-gray-500 font-medium leading-relaxed">
+              Al-Barakah Digital Manager operates 100% offline. All transactions and customer data remain safely on your device.
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div 
+          className="fixed inset-0 bg-[#084b3e]/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4"
+          onClick={() => setDeleteTarget(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 transform transition-all animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 sm:p-6 text-center">
+              <div className="w-14 h-14 rounded-full bg-red-100 border border-red-200 text-red-600 flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle size={28} />
+              </div>
+              
+              <h3 className="text-lg font-black text-gray-900 mb-1">
+                Delete Service
+              </h3>
+              
+              <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                Are you sure you want to remove this service from the presets? Existing records will remain intact.
+              </p>
+
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5 mb-6 text-left">
+                <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-1">
+                  {deleteTarget.type === 'sell' ? 'Sell Service' : 'Expense Service'}
+                </div>
+                <div className="text-sm font-black text-gray-900 break-words">
+                  {deleteTarget.name}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(null)}
+                  className="flex-1 px-4 py-3 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs sm:text-sm hover:bg-gray-50 transition-colors uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDelete}
+                  className="flex-1 px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs sm:text-sm transition-colors flex items-center justify-center gap-1.5 shadow-sm uppercase tracking-wider cursor-pointer"
+                >
+                  <Trash2 size={16} />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Confirmation Modal */}
+      {pendingRestoreFile && (
+        <div 
+          className="fixed inset-0 bg-[#084b3e]/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4"
+          onClick={() => setPendingRestoreFile(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 transform transition-all animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 sm:p-6 text-center">
+              <div className="w-14 h-14 rounded-full bg-amber-100 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle size={28} />
+              </div>
+              
+              <h3 className="text-lg font-black text-gray-900 mb-1">
+                Confirm Restore
+              </h3>
+              
+              <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                Warning: Restoring will overwrite existing records in the database with the backup data. Continue?
+              </p>
+
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 mb-6 text-left text-xs font-bold text-gray-800 truncate">
+                File: {pendingRestoreFile.name}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPendingRestoreFile(null)}
+                  className="flex-1 px-4 py-3 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs sm:text-sm hover:bg-gray-50 uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmRestore}
+                  className="flex-1 px-4 py-3 rounded-xl bg-[#084b3e] hover:bg-[#126b55] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-sm uppercase tracking-wider cursor-pointer"
+                >
+                  <Upload size={16} />
+                  <span>Restore</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
