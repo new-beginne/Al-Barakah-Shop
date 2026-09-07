@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, ShoppingCart, Users, Package, Wallet, FileBarChart, Settings as SettingsIcon, Store, Leaf, Menu } from 'lucide-react';
 import clsx from 'clsx';
+import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -14,6 +15,7 @@ const navItems = [
 
 export function Sidebar() {
   const location = useLocation();
+  const { profile } = useAuth();
 
   return (
     <div className="hidden md:flex flex-col w-64 bg-[#084b3e] text-white min-h-screen print:hidden relative overflow-hidden">
@@ -23,12 +25,16 @@ export function Sidebar() {
       </div>
 
       <div className="p-5 flex items-center gap-3">
-        <div className="bg-emerald-50 text-[#084b3e] p-2 rounded-xl">
+        <div className="bg-emerald-50 text-[#084b3e] p-2 rounded-xl shrink-0">
           <Store size={28} strokeWidth={2.5} />
         </div>
-        <div className="flex flex-col">
-          <span className="text-xl font-bold tracking-wide leading-tight">AL-BARAKAH</span>
-          <span className="text-[11px] font-medium text-emerald-100/70 uppercase tracking-wider">Business Accounts</span>
+        <div className="flex flex-col min-w-0">
+          <span className="text-base font-extrabold tracking-wide leading-tight truncate">
+            {profile?.storeName || 'AL-BARAKAH'}
+          </span>
+          <span className="text-[10px] font-medium text-emerald-100/70 uppercase tracking-wider truncate">
+            {profile?.phone ? `+88 ${profile.phone}` : 'Business Accounts'}
+          </span>
         </div>
       </div>
 

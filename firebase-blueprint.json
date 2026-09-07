@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile for shop owner",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "storeName": { "type": "string" },
+        "phone": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "storeName", "phone"]
+    },
+    "SaleRecord": {
+      "title": "SaleRecord",
+      "description": "Daily sale transaction item",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "number" },
+        "date": { "type": "string" },
+        "category": { "type": "string" },
+        "serviceName": { "type": "string" },
+        "amount": { "type": "number" },
+        "cost": { "type": "number" },
+        "profit": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["date", "amount", "profit"]
+    },
+    "ExpenseRecord": {
+      "title": "ExpenseRecord",
+      "description": "Shop expense transaction",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "number" },
+        "date": { "type": "string" },
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["date", "title", "amount"]
+    },
+    "MfsRecord": {
+      "title": "MfsRecord",
+      "description": "Mobile financial service transaction",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "number" },
+        "date": { "type": "string" },
+        "operator": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "profit": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["date", "operator", "type", "amount"]
+    },
+    "DueRecord": {
+      "title": "DueRecord",
+      "description": "Customer due record",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "number" },
+        "customerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "status": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["customerName", "totalAmount", "paidAmount"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Shop owner profile"
+    },
+    "/users/{userId}/sales/{saleId}": {
+      "schema": "SaleRecord",
+      "description": "Shop sales records"
+    },
+    "/users/{userId}/expenses/{expenseId}": {
+      "schema": "ExpenseRecord",
+      "description": "Shop expenses records"
+    },
+    "/users/{userId}/mfs/{mfsId}": {
+      "schema": "MfsRecord",
+      "description": "Shop MFS transactions"
+    },
+    "/users/{userId}/dues/{dueId}": {
+      "schema": "DueRecord",
+      "description": "Shop customer dues"
+    }
+  }
+}

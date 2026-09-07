@@ -2,10 +2,16 @@ import React, { useState } from 'react';
 import { db, ServiceRate, ExpenseService } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { exportDB, importDB } from 'dexie-export-import';
-import { Download, Upload, Trash2, CheckCircle2, Save, Edit2, X, Wrench, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Download, Upload, Trash2, CheckCircle2, Save, Edit2, X, Wrench, ShieldCheck, AlertTriangle, Cloud, RefreshCw, User, Store, LogIn, Shield, Lock, Check } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { AuthModal } from './AuthModal';
+import { format } from 'date-fns';
 
 export function Settings() {
   const [successMsg, setSuccessMsg] = useState('');
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const { user, profile, isOnline, syncStatus, lastSynced, triggerSync } = useAuth();
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Sub-tab for "Service Name" section: 'sell' | 'expense'
   const [serviceSubTab, setServiceSubTab] = useState<'sell' | 'expense'>('sell');
@@ -399,9 +405,157 @@ export function Settings() {
 
         </div>
 
-        {/* Right Column: Backup & Restore Section (5 columns on lg) */}
+        {/* Right Column: Profile & Backup Section (5 columns on lg) */}
         <div className="lg:col-span-5 space-y-6">
           
+          {/* Cloud Account & User Profile Card */}
+          <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-3">
+              <div className="flex items-center gap-2">
+                <Cloud className="text-[#084b3e]" size={20} />
+                <h2 className="text-base sm:text-lg font-black text-gray-900 uppercase tracking-wider">
+                  Cloud Profile & Sync
+                </h2>
+              </div>
+              <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                isOnline ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {isOnline ? 'Online' : 'Offline'}
+              </span>
+            </div>
+
+            {user ? (
+              <div className="space-y-4">
+                <div className="p-3 bg-emerald-50/70 border border-emerald-100 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-emerald-800">Store Name</span>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200">
+                      Active
+                    </span>
+                  </div>
+                  <h3 className="text-base font-extrabold text-gray-900 truncate">
+                    {profile?.storeName || 'Al-Barakah Store'}
+                  </h3>
+                  <p className="text-xs text-gray-600 font-medium">
+                    Phone: {profile?.phone || '017xxxxxxxx'}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
+                  <span>Last Cloud Backup:</span>
+                  <span className="font-semibold text-gray-700">
+                    {lastSynced ? format(new Date(lastSynced), 'dd/MM/yyyy hh:mm a') : 'Not synced yet'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsSyncing(true);
+                      const res = await triggerSync();
+                      setIsSyncing(false);
+                      if (res.success) {
+                        setSuccessMsg('Cloud backup synced successfully!');
+                        setTimeout(() => setSuccessMsg(''), 3000);
+                      }
+                    }}
+                    disabled={isSyncing || !isOnline}
+                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-[#084b3e] text-white rounded-xl text-xs font-bold shadow-sm hover:bg-[#0c5e4e] transition-all disabled:opacity-50"
+                  >
+                    <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
+                    <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsAuthModalOpen(true)}
+                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 border border-gray-300 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors"
+                  >
+                    <User size={14} />
+                    <span>View Profile</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Create an account with your store name, phone number, and password. Logging in from any device will instantly restore all your sales, expenses, and records from the cloud.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 bg-[#084b3e] hover:bg-[#126b55] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm text-xs sm:text-sm uppercase tracking-wider cursor-pointer"
+                >
+                  <LogIn size={16} />
+                  <span>Login / Create Store Account</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Cyber Security & Data Encryption Shield Card */}
+          <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="text-emerald-600" size={20} />
+                <h2 className="text-base sm:text-lg font-black text-gray-900 uppercase tracking-wider">
+                  Cyber Security Shield
+                </h2>
+              </div>
+              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                ACTIVE
+              </span>
+            </div>
+
+            <p className="text-xs text-gray-500 mb-4 font-medium leading-relaxed">
+              Multi-layer enterprise security and cryptographic tamper-proofing protect all your sales, expenses, and transaction records against unauthorized access and cyber attacks:
+            </p>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="flex items-start gap-2.5 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg shrink-0 mt-0.5">
+                  <Lock size={13} />
+                </div>
+                <div>
+                  <div className="font-bold text-gray-900">SHA-256 Cryptographic Hash</div>
+                  <div className="text-[11px] text-gray-500">Every record is fingerprinted with a unique SHA-256 hash to prevent client-side or transit data tampering.</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg shrink-0 mt-0.5">
+                  <Shield size={13} />
+                </div>
+                <div>
+                  <div className="font-bold text-gray-900">Anti-XSS & Injection Protection</div>
+                  <div className="text-[11px] text-gray-500">All input fields and payload records are automatically sanitized to neutralize malicious scripts and injection vectors.</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="p-1.5 bg-purple-100 text-purple-700 rounded-lg shrink-0 mt-0.5">
+                  <Check size={13} />
+                </div>
+                <div>
+                  <div className="font-bold text-gray-900">Brute-Force & Rate Limiting</div>
+                  <div className="text-[11px] text-gray-500">Repeated failed password attempts trigger automatic temporary account lockouts to prevent automated credential attacks.</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="p-1.5 bg-amber-100 text-amber-700 rounded-lg shrink-0 mt-0.5">
+                  <ShieldCheck size={13} />
+                </div>
+                <div>
+                  <div className="font-bold text-gray-900">Owner-Isolated Cloud Rules</div>
+                  <div className="text-[11px] text-gray-500">Enforced Firestore security rules guarantee that records can only ever be accessed or modified by their verified store owner.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
             <h2 className="text-lg font-black text-gray-900 mb-2 border-b border-gray-100 pb-3 uppercase tracking-wider">Backup & Restore</h2>
             <p className="text-xs text-gray-500 mb-5 font-medium leading-relaxed">
@@ -550,6 +704,9 @@ export function Settings() {
           </div>
         </div>
       )}
+
+      {/* Auth & Sync Modal */}
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </div>
   );
 }

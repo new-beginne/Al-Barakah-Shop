@@ -6,8 +6,8 @@ import {
   format, subDays, subMonths, startOfMonth, endOfMonth, 
   parseISO, eachDayOfInterval 
 } from 'date-fns';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Plus, Minus, ArrowUpRight, ArrowDownRight, Wallet, Activity, ArrowRight, CircleDollarSign, AlertCircle, ShoppingCart, Smartphone, FileText } from 'lucide-react';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { Plus, Minus, ArrowUpRight, ArrowDownRight, Wallet, Activity, ArrowRight, CircleDollarSign, AlertCircle, ShoppingCart, Smartphone, FileText, TrendingUp, BarChart2 } from 'lucide-react';
 import { SalesEntry } from './SalesEntry';
 import { Expenses } from './Expenses';
 import { MfsLedger } from './MfsLedger';
@@ -18,6 +18,7 @@ export function Dashboard() {
   const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [activeTab, setActiveTab] = useState('overview');
+  const [chartType, setChartType] = useState<'line' | 'bar'>('line');
 
   const today = format(new Date(), 'yyyy-MM-dd');
   
@@ -96,7 +97,8 @@ export function Dashboard() {
     return {
       name: format(day, 'dd MMM'), 
       Sales: daySales,
-      Expenses: dayExpenses
+      Expenses: dayExpenses,
+      NetCashflow: daySales - dayExpenses,
     };
   });
 
@@ -281,22 +283,121 @@ export function Dashboard() {
 
         {/* Dynamic Content Area */}
         {activeTab === 'overview' && (
-          <div className="border border-gray-100 rounded-md p-6 bg-white shadow-sm">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-900 mb-6">Cashflow Overview</h2>
+          <div className="border border-gray-100 rounded-md p-5 sm:p-6 bg-white shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-widest text-gray-900 flex items-center gap-2">
+                  <TrendingUp size={18} className="text-[#084b3e]" />
+                  Cashflow Overview
+                </h2>
+                <p className="text-xs text-gray-500 mt-1 font-medium">Daily sales, expenses, and net profit trends</p>
+              </div>
+
+              {/* Chart Toggle */}
+              <div className="flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setChartType('line')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                    chartType === 'line'
+                      ? 'bg-white text-[#084b3e] shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  <TrendingUp size={14} />
+                  Line Chart
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartType('bar')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                    chartType === 'bar'
+                      ? 'bg-white text-[#084b3e] shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  <BarChart2 size={14} />
+                  Bar Chart
+                </button>
+              </div>
+            </div>
+
             <div className="h-80 sm:h-96 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#71717a', fontWeight: 600}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#71717a', fontWeight: 600}} />
-                  <Tooltip 
-                    cursor={{fill: '#f4f4f5'}} 
-                    contentStyle={{borderRadius: '4px', border: '1px solid #000', backgroundColor: '#fff', color: '#000', fontWeight: 'bold'}} 
-                  />
-                  <Legend iconType="square" wrapperStyle={{ fontSize: '12px', fontWeight: 600, paddingTop: '10px' }} />
-                  <Bar dataKey="Sales" fill="#000000" radius={[2, 2, 0, 0]} barSize={28} />
-                  <Bar dataKey="Expenses" fill="#a1a1aa" radius={[2, 2, 0, 0]} barSize={28} />
-                </BarChart>
+                {chartType === 'line' ? (
+                  <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{fontSize: 11, fill: '#64748b', fontWeight: 600}} 
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{fontSize: 11, fill: '#64748b', fontWeight: 600}} 
+                    />
+                    <Tooltip 
+                      cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' }} 
+                      contentStyle={{
+                        borderRadius: '8px', 
+                        border: '1px solid #e2e8f0', 
+                        backgroundColor: '#ffffff', 
+                        boxShadow: '0 4px 12px -2px rgba(0, 0, 0, 0.08)', 
+                        fontWeight: 'bold',
+                        fontSize: '12px'
+                      }} 
+                      formatter={(value: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, '']}
+                    />
+                    <Legend 
+                      iconType="circle" 
+                      wrapperStyle={{ fontSize: '12px', fontWeight: 600, paddingTop: '16px' }} 
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="Sales" 
+                      name="Sales" 
+                      stroke="#084b3e" 
+                      strokeWidth={3} 
+                      dot={{ r: 4, fill: '#084b3e', strokeWidth: 2, stroke: '#ffffff' }} 
+                      activeDot={{ r: 6, stroke: '#084b3e', strokeWidth: 2, fill: '#ffffff' }} 
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="Expenses" 
+                      name="Expenses" 
+                      stroke="#ef4444" 
+                      strokeWidth={2.5} 
+                      strokeDasharray="4 4" 
+                      dot={{ r: 3, fill: '#ef4444', strokeWidth: 1, stroke: '#ffffff' }} 
+                      activeDot={{ r: 5, stroke: '#ef4444', strokeWidth: 2, fill: '#ffffff' }} 
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="NetCashflow" 
+                      name="Net Profit" 
+                      stroke="#2563eb" 
+                      strokeWidth={2} 
+                      dot={{ r: 3, fill: '#2563eb', strokeWidth: 1, stroke: '#ffffff' }} 
+                      activeDot={{ r: 5, stroke: '#2563eb', strokeWidth: 2, fill: '#ffffff' }} 
+                    />
+                  </LineChart>
+                ) : (
+                  <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#64748b', fontWeight: 600}} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#64748b', fontWeight: 600}} />
+                    <Tooltip 
+                      cursor={{fill: '#f8fafc'}} 
+                      contentStyle={{borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', boxShadow: '0 4px 12px -2px rgba(0, 0, 0, 0.08)', fontWeight: 'bold'}} 
+                      formatter={(value: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, '']}
+                    />
+                    <Legend iconType="square" wrapperStyle={{ fontSize: '12px', fontWeight: 600, paddingTop: '16px' }} />
+                    <Bar dataKey="Sales" name="Sales" fill="#084b3e" radius={[4, 4, 0, 0]} barSize={26} />
+                    <Bar dataKey="Expenses" name="Expenses" fill="#f87171" radius={[4, 4, 0, 0]} barSize={26} />
+                  </BarChart>
+                )}
               </ResponsiveContainer>
             </div>
           </div>

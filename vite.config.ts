@@ -39,6 +39,7 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         },
         devOptions: {
           enabled: true,
@@ -46,6 +47,9 @@ export default defineConfig(() => {
         },
       })
     ],
+    build: {
+      chunkSizeWarningLimit: 2500,
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

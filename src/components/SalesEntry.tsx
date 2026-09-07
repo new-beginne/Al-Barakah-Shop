@@ -568,8 +568,8 @@ export function SalesEntry() {
                 )}
               </div>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500 font-bold border-r border-gray-100 pr-2 my-2">
-                  ৳
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500 font-bold text-xs border-r border-gray-100 pr-2 my-2">
+                  Tk
                 </div>
                 <input 
                   type="number" 
@@ -595,8 +595,8 @@ export function SalesEntry() {
                 )}
               </div>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500 font-bold border-r border-gray-100 pr-2 my-2">
-                  ৳
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500 font-bold text-xs border-r border-gray-100 pr-2 my-2">
+                  Tk
                 </div>
                 <input 
                   type="number" 
