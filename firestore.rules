@@ -76,6 +76,15 @@ service cloud.firestore {
           && request.resource.data.name.size() <= 200;
         allow delete: if isOwner(userId);
       }
+
+      // Accounts Subcollection
+      match /accounts/{accountId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.balance is number;
+        allow delete: if isOwner(userId);
+      }
     }
 
   }

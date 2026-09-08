@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { db, Expense, getRecordMetadata } from '../db/db';
+import { adjustAccountBalance, mapPaymentMethodToAccountId } from '../services/accountService';
 import { format } from 'date-fns';
 import { CheckCircle2, Circle } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -78,6 +79,14 @@ export function Expenses() {
     };
 
     await db.expenses.add(newExpense);
+    
+    // Deduct expense from corresponding account
+    try {
+      const targetAccountId = mapPaymentMethodToAccountId(paymentMethod) || 'cash';
+      await adjustAccountBalance(targetAccountId, -price);
+    } catch (err) {
+      console.error('Failed to update account balance on expense:', err);
+    }
     
     setSuccess(true);
     setSelectedService('');

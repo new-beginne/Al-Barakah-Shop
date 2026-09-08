@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { Link } from 'react-router-dom';
@@ -27,6 +27,7 @@ export function Dashboard() {
   const allMfs = useLiveQuery(() => db.mfs.orderBy('id').reverse().toArray()) || [];
   const allExpenses = useLiveQuery(() => db.expenses.orderBy('id').reverse().toArray()) || [];
   const allDues = useLiveQuery(() => db.dues.toArray()) || [];
+  const allAccounts = useLiveQuery(() => db.accounts.toArray()) || [];
 
   // Calculate Date Range
   let startDate = new Date();
@@ -74,11 +75,38 @@ export function Dashboard() {
   }, 0);
   const expensesToday = allExpenses.filter(e => e.date === today).reduce((acc, e) => acc + e.amount, 0);
   const mfsCashImpact = todayMfs.reduce((acc, m) => {
-    if (m.type === 'Cash-In') return acc + m.amount;
-    if (m.type === 'Cash-Out') return acc - m.amount;
+    // Send Money (Out) & Cash-Out & Recharge: Cash in hand increases
+    // Send Money (In) & Cash-In: Cash in hand decreases
+    if (
+      m.type === 'Cash-Out' || 
+      m.type === 'Send Money (Out)' || 
+      m.type === 'Send-Money-Out' || 
+      m.type === 'Recharge'
+    ) {
+      return acc + m.amount;
+    }
+    if (
+      m.type === 'Cash-In' || 
+      m.type === 'Send Money (In)' || 
+      m.type === 'Send-Money-In'
+    ) {
+      return acc - m.amount;
+    }
     return acc;
   }, 0);
-  const cashOnHand = cashReceivedToday + mfsCashImpact - expensesToday; 
+  const cashOnHandTodayFlow = cashReceivedToday + mfsCashImpact - expensesToday; 
+  const cashAccount = allAccounts.find(a => a.id === 'cash');
+  const cashOnHand = cashAccount ? cashAccount.balance : cashOnHandTodayFlow;
+  // Exactly 4 accounts: Cash, bKash, Nagad, Rocket
+  const targetAccountsList = useMemo(() => {
+    const order = ['cash', 'bkash', 'nagad', 'rocket'];
+    return order.map(id => {
+      const found = allAccounts.find(a => a.id === id);
+      const defaultName = id === 'cash' ? 'Cash' : id === 'bkash' ? 'bKash' : id === 'nagad' ? 'Nagad' : 'Rocket';
+      return found || { id, name: defaultName, balance: 0 };
+    });
+  }, [allAccounts]);
+  const totalCapitalFunds = targetAccountsList.reduce((sum, a) => sum + (a.balance || 0), 0);
 
   const totalDues = allDues.reduce((acc, due) => acc + (due.totalAmount - due.paidAmount), 0);
 
@@ -247,6 +275,56 @@ export function Dashboard() {
             <p className="text-[10px] mt-1 text-gray-400 font-medium">Pending Balance</p>
           </div>
         </Link>
+      </div>
+
+      {/* Account Balances Quick Strip (4 Accounts: Cash, bKash, Nagad, Rocket) */}
+      <div className="bg-white p-3 sm:p-4 rounded-2xl border border-gray-100 shadow-xs mb-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Wallet size={16} className="text-[#084b3e]" />
+            <span className="text-xs font-black uppercase tracking-wider text-gray-800">
+              Accounts & Wallets Balance (বর্তমান ব্যালেন্স)
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-gray-500">
+              Total Funds: <strong className="text-gray-900 font-black">Tk {totalCapitalFunds.toLocaleString()}</strong>
+            </span>
+            <Link
+              to="/settings"
+              className="text-[11px] font-bold text-[#084b3e] hover:underline flex items-center gap-1"
+            >
+              <span>Edit in Settings</span>
+              <ArrowRight size={12} />
+            </Link>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2.5">
+          {targetAccountsList.map(acc => {
+            const isCash = acc.id === 'cash';
+            const isBkash = acc.id === 'bkash';
+            const isNagad = acc.id === 'nagad';
+            const isRocket = acc.id === 'rocket';
+
+            let badgeColor = 'text-gray-700 bg-gray-50';
+            if (isCash) badgeColor = 'text-[#084b3e] bg-emerald-50 border-emerald-100';
+            else if (isBkash) badgeColor = 'text-[#e2136e] bg-pink-50 border-pink-100';
+            else if (isNagad) badgeColor = 'text-[#d97706] bg-orange-50 border-orange-100';
+            else if (isRocket) badgeColor = 'text-purple-700 bg-purple-50 border-purple-100';
+
+            return (
+              <div key={acc.id} className={`p-2.5 rounded-xl border ${badgeColor} flex flex-col justify-between`}>
+                <span className="text-[10px] font-bold uppercase truncate">
+                  {acc.id === 'cash' ? 'Cash (হাতে নগদ)' : acc.name}
+                </span>
+                <span className="text-xs sm:text-sm font-black mt-1 truncate">
+                  Tk {(acc.balance || 0).toLocaleString()}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Main Content: Chart & Quick Actions (Full Width) */}

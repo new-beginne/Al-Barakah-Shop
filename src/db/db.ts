@@ -44,6 +44,8 @@ export interface MfsTransaction {
   charge: number;
   profit: number;
   balanceAfter: number;
+  recipientNumber?: string;
+  note?: string;
 }
 
 export interface Due {
@@ -105,6 +107,17 @@ export interface Customer {
   updatedAt?: string;
 }
 
+export interface Account {
+  id: string; // e.g. 'cash', 'bkash', 'nagad', 'rocket', 'upay', 'bank'
+  name: string;
+  type: 'cash' | 'mfs' | 'bank';
+  balance: number;
+  accountNumber?: string;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export class AlBarakahDB extends Dexie {
   sales!: Table<Sale>;
   mfs!: Table<MfsTransaction>;
@@ -114,6 +127,7 @@ export class AlBarakahDB extends Dexie {
   salesCategories!: Table<SalesCategory>;
   expenseServices!: Table<ExpenseService>;
   customers!: Table<Customer>;
+  accounts!: Table<Account, string>;
 
   constructor() {
     super('AlBarakahDB');
@@ -132,6 +146,9 @@ export class AlBarakahDB extends Dexie {
     });
     this.version(5).stores({
       customers: '++id, name, phone'
+    });
+    this.version(6).stores({
+      accounts: 'id, name, type'
     });
   }
 }

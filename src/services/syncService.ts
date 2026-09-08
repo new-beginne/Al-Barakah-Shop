@@ -2,7 +2,7 @@ import {
   collection, doc, getDocs, setDoc 
 } from 'firebase/firestore';
 import { firestore } from '../lib/firebase';
-import { db, Sale, Expense, MfsTransaction, Due, Customer } from '../db/db';
+import { db, Sale, Expense, MfsTransaction, Due, Customer, Account } from '../db/db';
 import { sanitizePayload, generateRecordHash } from '../lib/security';
 
 export interface SyncResult {
@@ -96,6 +96,22 @@ export async function pushLocalToCloud(uid: string): Promise<number> {
         count++;
       }
     }
+
+    // 6. Accounts
+    const localAccounts = await db.accounts.toArray();
+    for (const rawItem of localAccounts) {
+      if (rawItem.id) {
+        const cleanItem = sanitizePayload(rawItem);
+        const recordHash = await generateRecordHash(cleanItem);
+        await setDoc(doc(firestore, 'users', uid, 'accounts', String(cleanItem.id)), {
+          ...cleanItem,
+          recordHash,
+          ownerUid: uid,
+          updatedAt: cleanItem.updatedAt || new Date().toISOString()
+        }, { merge: true });
+        count++;
+      }
+    }
   } catch (err) {
     console.error('Push to cloud error:', err);
     throw err;
@@ -162,6 +178,17 @@ export async function pullCloudToLocal(uid: string): Promise<number> {
       });
       await db.customers.bulkPut(customers);
       count += customers.length;
+    }
+
+    // 6. Accounts
+    const accSnap = await getDocs(collection(firestore, 'users', uid, 'accounts'));
+    if (!accSnap.empty) {
+      const accounts: Account[] = accSnap.docs.map(d => {
+        const data = sanitizePayload(d.data()) as Account;
+        return { ...data, id: d.id };
+      });
+      await db.accounts.bulkPut(accounts);
+      count += accounts.length;
     }
   } catch (err) {
     console.error('Pull from cloud error:', err);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { db, Sale, getRecordMetadata } from '../db/db';
+import { adjustAccountBalance, mapPaymentMethodToAccountId } from '../services/accountService';
 import { format } from 'date-fns';
 import { CheckCircle2, Circle, Users, UserPlus, Check, FileText, Package, DollarSign, Coins, PenLine, CreditCard, Save, ArrowRight, User, Phone } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -238,6 +239,20 @@ export function SalesEntry() {
 
     const id = await db.sales.add(newSale);
     setLastSaleId(id as number);
+
+    // Automatically update account balance
+    try {
+      if (paymentMethod === 'Due') {
+        if (paidAmt > 0) {
+          await adjustAccountBalance('cash', paidAmt);
+        }
+      } else {
+        const targetAccountId = mapPaymentMethodToAccountId(paymentMethod) || 'cash';
+        await adjustAccountBalance(targetAccountId, amt);
+      }
+    } catch (err) {
+      console.error('Failed to update account balance on sale:', err);
+    }
     
     if (paymentMethod === 'Due') {
       const trimmedName = customerName.trim();

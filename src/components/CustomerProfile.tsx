@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, Customer, Sale, Due } from '../db/db';
+import { adjustAccountBalance, mapPaymentMethodToAccountId } from '../services/accountService';
 import { 
   ArrowLeft, 
   Phone, 
@@ -287,6 +288,15 @@ export function CustomerProfile() {
       }
 
       setSuccessMsg(`Successfully collected Tk ${amt.toLocaleString()} (${collectMethod}) from ${customer.name}.`);
+      
+      // Update account balance
+      try {
+        const targetAccountId = mapPaymentMethodToAccountId(collectMethod) || 'cash';
+        await adjustAccountBalance(targetAccountId, amt);
+      } catch (err) {
+        console.error('Failed to update account balance in CustomerProfile:', err);
+      }
+
       setIsCollectModalOpen(false);
       setCollectAmount('');
       setCollectNote('');
@@ -833,116 +843,160 @@ export function CustomerProfile() {
       {/* COLLECT DUE MODAL */}
       {isCollectModalOpen && (
         <div 
-          className="fixed inset-0 bg-[#084b3e]/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4"
+          className="fixed inset-0 bg-[#084b3e]/20 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
           onClick={() => setIsCollectModalOpen(false)}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100"
+            className="bg-white rounded-[24px] shadow-[0_8px_32px_-8px_rgba(0,0,0,0.12)] w-full max-w-lg overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gray-50">
-              <div>
-                <h3 className="text-sm sm:text-base font-black uppercase tracking-wider text-gray-900">
-                  Collect Due Payment
-                </h3>
-                <p className="text-[11px] text-gray-500 font-medium">
-                  {customer.name} (Balance: Tk {duesMetrics.pendingDue.toLocaleString()})
-                </p>
+            {/* Header */}
+            <div className="p-5 sm:p-6 border-b border-gray-100 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 border border-red-100 flex items-center justify-center shrink-0">
+                  <DollarSign size={24} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-base">
+                    Collect Due
+                  </h3>
+                  <p className="text-[12px] text-gray-500 font-medium flex items-center gap-2 mt-0.5">
+                    <span>{customer.name}</span>
+                    <span className="flex items-center gap-1.5"><DollarSign size={12} className="text-gray-400" /> Tk {duesMetrics.pendingDue.toLocaleString()}</span>
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCollectModalOpen(false)}
-                className="text-gray-400 hover:text-gray-900 p-1 rounded-xl"
+                className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
               >
-                <X size={18} />
+                <X size={16} strokeWidth={2.5} />
               </button>
             </div>
 
-            <form onSubmit={handleConfirmCollect} className="p-4 sm:p-5 space-y-4">
+            <form onSubmit={handleConfirmCollect} className="p-5 sm:p-6 overflow-y-auto space-y-6">
+              {/* Due Amount Highlight Card */}
+              <div className="bg-red-50 border border-red-100 rounded-[16px] p-5 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-red-600">
+                    Outstanding Due
+                  </span>
+                  <div className="text-2xl font-bold text-red-600 mt-1">
+                    Tk {duesMetrics.pendingDue.toLocaleString()}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCollectAmount(duesMetrics.pendingDue.toString())}
+                  className="bg-white border border-red-200 hover:bg-red-50 text-red-700 font-bold text-[12px] px-4 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-colors cursor-pointer"
+                >
+                  Pay Full
+                </button>
+              </div>
+
+              {/* Amount Input */}
               <div>
-                <label className="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1">
-                  Collection Amount (Tk) *
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  required
-                  value={collectAmount}
-                  onChange={e => setCollectAmount(e.target.value)}
-                  placeholder="Enter amount in Taka"
-                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-sm font-bold bg-white"
-                  autoFocus
-                />
-                <div className="flex gap-1.5 mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setCollectAmount(duesMetrics.pendingDue.toString())}
-                    className="text-[10px] font-bold bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded border border-gray-100"
-                  >
-                    Full Balance (Tk {duesMetrics.pendingDue})
-                  </button>
-                  {duesMetrics.pendingDue > 100 && (
-                    <button
-                      type="button"
-                      onClick={() => setCollectAmount(Math.round(duesMetrics.pendingDue / 2).toString())}
-                      className="text-[10px] font-bold bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded border border-gray-100"
-                    >
-                      50% (Tk {Math.round(duesMetrics.pendingDue / 2)})
-                    </button>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[12px] font-bold text-gray-700">
+                    Amount (Tk) <span className="text-red-500">*</span>
+                  </label>
+                  {(parseFloat(collectAmount) || 0) > 0 && (
+                    <span className="text-[11px] font-medium text-gray-500">
+                      Remaining: <span className="text-gray-900 font-bold">Tk {Math.max(0, duesMetrics.pendingDue - (parseFloat(collectAmount) || 0)).toLocaleString()}</span>
+                    </span>
                   )}
                 </div>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">TK</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    required
+                    value={collectAmount}
+                    onChange={e => setCollectAmount(e.target.value)}
+                    placeholder="Enter amount..."
+                    className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-[14px] bg-gray-50 focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-base font-bold transition-all"
+                    autoFocus
+                  />
+                </div>
+                
+                {/* Preset quick buttons if due is larger */}
+                {duesMetrics.pendingDue > 50 && (
+                  <div className="flex flex-wrap items-center gap-2 mt-3">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Quick:</span>
+                    {[100, 200, 500, 1000, 2000]
+                      .filter(amt => amt < duesMetrics.pendingDue)
+                      .map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setCollectAmount(amt.toString())}
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors cursor-pointer"
+                        >
+                          Tk {amt}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </div>
 
               <div>
-                <label className="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-[12px] font-bold text-gray-700 mb-2">
                   Payment Method
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['Cash', 'bKash', 'Nagad', 'Rocket'] as const).map(m => (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(['Cash', 'bKash', 'Nagad', 'Rocket'] as const).map(method => (
                     <button
-                      key={m}
+                      key={method}
                       type="button"
-                      onClick={() => setCollectMethod(m)}
-                      className={`py-2 rounded-xl text-xs font-bold border transition-colors ${
-                        collectMethod === m
-                          ? 'bg-[#084b3e] text-white border-[#084b3e]'
-                          : 'bg-white text-gray-700 border-gray-100 hover:bg-gray-50'
+                      onClick={() => setCollectMethod(method)}
+                      className={`py-2 px-1 text-center rounded-[10px] text-[12px] font-bold border transition-all cursor-pointer ${
+                        collectMethod === method
+                          ? 'bg-[#084b3e] text-white border-[#084b3e] shadow-[0_1px_3px_rgba(8,75,62,0.3)]'
+                          : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
                       }`}
                     >
-                      {m}
+                      {method}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-[12px] font-bold text-gray-700 mb-2">
                   Note (Optional)
                 </label>
                 <input
                   type="text"
                   value={collectNote}
                   onChange={e => setCollectNote(e.target.value)}
-                  placeholder="e.g. Paid in cash at counter"
-                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs font-medium"
+                  placeholder="e.g. Receipt #123, Paid at counter"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
                 />
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-gray-100">
+              <div className="flex gap-3 pt-4 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => setIsCollectModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs uppercase tracking-wider hover:bg-gray-50"
+                  disabled={isSubmittingCollection}
+                  className="flex-1 py-3 rounded-[14px] border border-gray-200 text-gray-700 font-bold text-[13px] hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingCollection}
-                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                  disabled={isSubmittingCollection || !collectAmount || parseFloat(collectAmount) <= 0}
+                  className="flex-1 py-3 rounded-[14px] bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-[13px] flex items-center justify-center gap-2 shadow-[0_2px_8px_-2px_rgba(220,38,38,0.4)] transition-all cursor-pointer"
                 >
-                  <DollarSign size={15} strokeWidth={2.5} />
-                  <span>{isSubmittingCollection ? 'Saving...' : 'Confirm Payment'}</span>
+                  {isSubmittingCollection ? (
+                    <Loader2 size={16} className="animate-spin" strokeWidth={2.5} />
+                  ) : (
+                    <Check size={16} strokeWidth={2.5} />
+                  )}
+                  <span>{isSubmittingCollection ? 'Processing...' : 'Confirm Payment'}</span>
                 </button>
               </div>
             </form>
@@ -953,29 +1007,29 @@ export function CustomerProfile() {
       {/* EDIT CUSTOMER MODAL */}
       {isEditModalOpen && (
         <div 
-          className="fixed inset-0 bg-[#084b3e]/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4"
+          className="fixed inset-0 bg-[#084b3e]/20 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
           onClick={() => setIsEditModalOpen(false)}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100"
+            className="bg-white rounded-[24px] shadow-[0_8px_32px_-8px_rgba(0,0,0,0.12)] w-full max-w-md overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gray-50">
-              <h3 className="text-sm sm:text-base font-black uppercase tracking-wider text-gray-900">
+            <div className="flex justify-between items-center p-5 sm:p-6 border-b border-gray-100">
+              <h3 className="text-sm sm:text-base font-bold text-gray-900">
                 Edit Customer Profile
               </h3>
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(false)}
-                className="text-gray-400 hover:text-gray-900 p-1 rounded-xl"
+                className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
               >
-                <X size={18} />
+                <X size={16} strokeWidth={2.5} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="p-4 sm:p-5 space-y-3.5">
+            <form onSubmit={handleSaveEdit} className="p-5 sm:p-6 space-y-4">
               <div>
-                <label className="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-[12px] font-bold text-gray-700 mb-1.5">
                   Customer Name *
                 </label>
                 <input
@@ -983,67 +1037,67 @@ export function CustomerProfile() {
                   required
                   value={editName}
                   onChange={e => setEditName(e.target.value)}
-                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
+                  autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-[12px] font-bold text-gray-700 mb-1.5">
                   Phone Number
                 </label>
                 <input
                   type="tel"
                   value={editPhone}
                   onChange={e => setEditPhone(e.target.value)}
-                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-[12px] font-bold text-gray-700 mb-1.5">
                   Address / Location
                 </label>
                 <input
                   type="text"
                   value={editAddress}
                   onChange={e => setEditAddress(e.target.value)}
-                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1">
-                  Notes
+                <label className="block text-[12px] font-bold text-gray-700 mb-1.5">
+                  Notes (Optional)
                 </label>
                 <input
                   type="text"
                   value={editNotes}
                   onChange={e => setEditNotes(e.target.value)}
-                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
                 />
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-gray-100">
+              <div className="flex gap-3 pt-4 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs uppercase tracking-wider hover:bg-gray-50"
+                  className="flex-1 py-3 rounded-[14px] border border-gray-200 text-gray-700 font-bold text-[13px] hover:bg-gray-50 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#084b3e] hover:bg-[#126b55] text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  className="flex-1 py-3 rounded-[14px] bg-[#084b3e] hover:bg-[#126b55] text-white font-bold text-[13px] shadow-[0_2px_8px_-2px_rgba(8,75,62,0.3)] transition-all cursor-pointer"
                 >
-                  <Save size={15} />
-                  <span>Update Profile</span>
+                  Save Changes
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
+

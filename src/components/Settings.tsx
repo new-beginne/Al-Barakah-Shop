@@ -1,11 +1,40 @@
-import React, { useState } from 'react';
-import { db, ServiceRate, ExpenseService } from '../db/db';
+import React, { useState, useEffect, useMemo } from 'react';
+import { db, ServiceRate, ExpenseService, Account } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { exportDB, importDB } from 'dexie-export-import';
-import { Download, Upload, Trash2, CheckCircle2, Save, Edit2, X, Wrench, ShieldCheck, AlertTriangle, Cloud, RefreshCw, User, Store, LogIn, Shield, Lock, Check } from 'lucide-react';
+import { exportDB, importInto } from 'dexie-export-import';
+import { 
+  Download, 
+  Upload, 
+  Trash2, 
+  CheckCircle2, 
+  Save, 
+  Edit2, 
+  X, 
+  Wrench, 
+  ShieldCheck, 
+  AlertTriangle, 
+  Cloud, 
+  RefreshCw, 
+  User, 
+  Store, 
+  LogIn, 
+  Shield, 
+  Lock, 
+  Check,
+  Wallet,
+  Banknote,
+  Smartphone,
+  Coins,
+  Plus
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AuthModal } from './AuthModal';
 import { format } from 'date-fns';
+import { 
+  initDefaultAccounts, 
+  setAccountBalance, 
+  DEFAULT_ACCOUNTS
+} from '../services/accountService';
 
 export function Settings() {
   const [successMsg, setSuccessMsg] = useState('');
@@ -36,6 +65,76 @@ export function Settings() {
   // Backup restore confirmation state
   const [pendingRestoreFile, setPendingRestoreFile] = useState<File | null>(null);
 
+  // Main Settings Navtabs: 'services' | 'balance'
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'services' | 'balance'>('services');
+
+  // Balance Management: Exactly 4 options (Cash, bKash, Nagad, Rocket)
+  const rawAccounts = useLiveQuery(() => db.accounts.toArray()) || [];
+  const [selectedAccountOption, setSelectedAccountOption] = useState<'cash' | 'bkash' | 'nagad' | 'rocket'>('cash');
+  const [balanceAmount, setBalanceAmount] = useState('');
+  const [balanceNote, setBalanceNote] = useState('');
+  const [isSubmittingBalance, setIsSubmittingBalance] = useState(false);
+
+  useEffect(() => {
+    initDefaultAccounts();
+  }, []);
+
+  // Filter accounts strictly to the 4 options
+  const accounts = useMemo(() => {
+    const list = rawAccounts.length > 0 ? rawAccounts : DEFAULT_ACCOUNTS.map(d => ({ ...d, createdAt: '', updatedAt: '' }));
+    const order: Array<'cash' | 'bkash' | 'nagad' | 'rocket'> = ['cash', 'bkash', 'nagad', 'rocket'];
+    return order.map(id => {
+      const found = list.find(a => a.id === id);
+      if (found) return found;
+      const def = DEFAULT_ACCOUNTS.find(d => d.id === id);
+      return { 
+        id, 
+        name: def?.name || id, 
+        type: (id === 'cash' ? 'cash' : 'mfs') as any, 
+        balance: 0, 
+        createdAt: '', 
+        updatedAt: '' 
+      };
+    });
+  }, [rawAccounts]);
+
+  const totalCapital = useMemo(() => {
+    return accounts.reduce((sum, a) => sum + (a.balance || 0), 0);
+  }, [accounts]);
+
+  const handleAddBalanceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = parseFloat(balanceAmount);
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid amount greater than 0.');
+      return;
+    }
+
+    setIsSubmittingBalance(true);
+    try {
+      const targetAcc = accounts.find(a => a.id === selectedAccountOption);
+      const accName = targetAcc ? targetAcc.name : selectedAccountOption;
+      const currentBal = targetAcc?.balance || 0;
+      const newBal = currentBal + amount;
+
+      await setAccountBalance(
+        selectedAccountOption, 
+        newBal, 
+        balanceNote.trim() || `Added Tk ${amount.toLocaleString()}`
+      );
+      setSuccessMsg(`Successfully added Tk ${amount.toLocaleString()} to "${accName}"! New balance: Tk ${newBal.toLocaleString()}`);
+
+      setBalanceAmount('');
+      setBalanceNote('');
+      setTimeout(() => setSuccessMsg(''), 4500);
+    } catch (err) {
+      console.error('Error submitting balance:', err);
+      alert('Failed to add balance. Please try again.');
+    } finally {
+      setIsSubmittingBalance(false);
+    }
+  };
+
   const handleExport = async () => {
     try {
       const blob = await exportDB(db);
@@ -63,10 +162,19 @@ export function Settings() {
   const confirmRestore = async () => {
     if (!pendingRestoreFile) return;
     try {
-      await db.delete();
-      await db.open();
-      await importDB(pendingRestoreFile);
-      setSuccessMsg('Data restored successfully. Please reload.');
+      await importInto(db, pendingRestoreFile, {
+        overwriteValues: true,
+        clearTablesBeforeImport: false
+      });
+      
+      // Auto-sync to cloud after import if online
+      if (isOnline && user) {
+        setIsSyncing(true);
+        await triggerSync();
+        setIsSyncing(false);
+      }
+      
+      setSuccessMsg('Data imported and merged successfully. Reloading...');
       setTimeout(() => {
         setSuccessMsg('');
         window.location.reload();
@@ -182,8 +290,39 @@ export function Settings() {
 
   return (
     <div className="p-3 sm:p-4 md:p-6 max-w-6xl mx-auto mb-16 md:mb-0 space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gray-200 pb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+          <p className="text-xs text-gray-500 font-medium">Manage preset services, account balances and settings.</p>
+        </div>
+
+        {/* Top Navtabs: Services and Add Balance */}
+        <div className="flex items-center bg-gray-100 p-1 rounded-xl border border-gray-200 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setActiveSettingsTab('services')}
+            className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-lg text-xs sm:text-sm font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeSettingsTab === 'services'
+                ? 'bg-[#084b3e] text-white shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Wrench size={16} />
+            <span>Services</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSettingsTab('balance')}
+            className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-lg text-xs sm:text-sm font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeSettingsTab === 'balance'
+                ? 'bg-[#084b3e] text-white shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Wallet size={16} />
+            <span>Add Balance</span>
+          </button>
+        </div>
       </div>
 
       {successMsg && (
@@ -193,16 +332,18 @@ export function Settings() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Unified "Service Name" Section with Sell & Expense Sub-tabs (7 columns on lg) */}
-        <div className="lg:col-span-7 bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+      {/* When Services is selected: Show Services section in full width */}
+      {activeSettingsTab === 'services' && (
+        <div className="w-full bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
           
           <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4">
             <div className="flex items-center gap-2">
               <Wrench size={20} className="text-gray-900" />
               <h2 className="text-lg font-black text-gray-900 uppercase tracking-wider">Services</h2>
             </div>
+            <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-lg">
+              {serviceSubTab === 'sell' ? `${services.length} Sell Services` : `${expenseServices.length} Expense Services`}
+            </span>
           </div>
 
           <p className="text-xs text-gray-500 mb-4 font-medium">
@@ -288,7 +429,7 @@ export function Settings() {
                 <div className="flex justify-between items-center px-1 mb-1">
                   <span className="text-xs font-black uppercase tracking-wider text-gray-500">Sell Services ({services.length})</span>
                 </div>
-                <div className="max-h-80 overflow-y-auto pr-1 space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[460px] overflow-y-auto pr-1">
                   {services.map(s => (
                     <div key={s.id} className="flex justify-between items-center bg-gray-50 border border-gray-100 p-3 rounded-xl hover:border-gray-300 transition-colors">
                       <span className="font-bold text-gray-900 text-xs sm:text-sm truncate mr-2">{s.name}</span>
@@ -296,7 +437,7 @@ export function Settings() {
                         <button 
                           onClick={() => handleEditSalesService(s)}
                           title="Edit"
-                          className="text-[#084b3e] hover:text-[#126b55] bg-white border border-gray-100 hover:bg-emerald-50 p-2 rounded-xl transition-colors"
+                          className="text-[#084b3e] hover:text-[#126b55] bg-white border border-gray-100 hover:bg-emerald-50 p-2 rounded-xl transition-colors cursor-pointer"
                         >
                           <Edit2 size={15} />
                         </button>
@@ -312,9 +453,11 @@ export function Settings() {
                     </div>
                   ))}
                   {services.length === 0 && (
-                    <p className="text-xs text-gray-400 text-center py-6 border border-dashed border-gray-100 rounded-xl">
-                      No sell services added yet.
-                    </p>
+                    <div className="col-span-full">
+                      <p className="text-xs text-gray-400 text-center py-6 border border-dashed border-gray-100 rounded-xl">
+                        No sell services added yet.
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -370,7 +513,7 @@ export function Settings() {
                 <div className="flex justify-between items-center px-1 mb-1">
                   <span className="text-xs font-black uppercase tracking-wider text-gray-500">Expense Services ({expenseServices.length})</span>
                 </div>
-                <div className="max-h-80 overflow-y-auto pr-1 space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[460px] overflow-y-auto pr-1">
                   {expenseServices.map(exp => (
                     <div key={exp.id} className="flex justify-between items-center bg-gray-50 border border-gray-100 p-3 rounded-xl hover:border-gray-300 transition-colors">
                       <span className="font-bold text-gray-900 text-xs sm:text-sm truncate mr-2">{exp.name}</span>
@@ -378,7 +521,7 @@ export function Settings() {
                         <button 
                           onClick={() => handleEditExpService(exp)}
                           title="Edit"
-                          className="text-[#084b3e] hover:text-[#126b55] bg-white border border-gray-100 hover:bg-emerald-50 p-2 rounded-xl transition-colors"
+                          className="text-[#084b3e] hover:text-[#126b55] bg-white border border-gray-100 hover:bg-emerald-50 p-2 rounded-xl transition-colors cursor-pointer"
                         >
                           <Edit2 size={15} />
                         </button>
@@ -394,9 +537,11 @@ export function Settings() {
                     </div>
                   ))}
                   {expenseServices.length === 0 && (
-                    <p className="text-xs text-gray-400 text-center py-6 border border-dashed border-gray-100 rounded-xl">
-                      No expense services added yet.
-                    </p>
+                    <div className="col-span-full">
+                      <p className="text-xs text-gray-400 text-center py-6 border border-dashed border-gray-100 rounded-xl">
+                        No expense services added yet.
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -404,9 +549,177 @@ export function Settings() {
           )}
 
         </div>
+      )}
 
-        {/* Right Column: Profile & Backup Section (5 columns on lg) */}
-        <div className="lg:col-span-5 space-y-6">
+      {/* When Add Balance is selected: Show Add Balance section in full width */}
+      {activeSettingsTab === 'balance' && (
+        <div className="w-full bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+          <div>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-gray-100 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-50 text-[#084b3e]">
+                  <Wallet size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-gray-900 uppercase tracking-wider">
+                    Add Balance
+                  </h2>
+                  <p className="text-xs text-gray-500 font-medium">
+                    Add funds to Cash, bKash, Nagad, or Rocket account.
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-left sm:text-right bg-emerald-50/50 sm:bg-transparent px-3 py-1.5 sm:p-0 rounded-xl border border-emerald-100 sm:border-0 w-full sm:w-auto">
+                <span className="text-[10px] uppercase font-bold text-gray-500 block tracking-wider">
+                  Total Balance
+                </span>
+                <span className="text-base sm:text-lg font-black text-[#084b3e]">
+                  Tk {totalCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {/* All Details in One Card: 4 Accounts Balance Strip */}
+            <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-100 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-black uppercase tracking-wider text-gray-600">
+                  Accounts Balance Overview
+                </span>
+                <span className="text-[10px] font-bold text-gray-400">
+                  (Click to select account)
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {accounts.map(acc => {
+                  const isSelected = selectedAccountOption === acc.id;
+                  let borderBadge = 'border-emerald-200 bg-white text-[#084b3e]';
+                  let icon = <Banknote size={16} className="text-[#084b3e]" />;
+                  let label = 'Cash';
+
+                  if (acc.id === 'bkash') {
+                    borderBadge = 'border-pink-200 bg-white text-[#e2136e]';
+                    icon = <Smartphone size={16} className="text-[#e2136e]" />;
+                    label = 'bKash';
+                  } else if (acc.id === 'nagad') {
+                    borderBadge = 'border-orange-200 bg-white text-[#d97706]';
+                    icon = <Smartphone size={16} className="text-[#d97706]" />;
+                    label = 'Nagad';
+                  } else if (acc.id === 'rocket') {
+                    borderBadge = 'border-purple-200 bg-white text-purple-700';
+                    icon = <Smartphone size={16} className="text-purple-700" />;
+                    label = 'Rocket';
+                  }
+
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => setSelectedAccountOption(acc.id as any)}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        isSelected 
+                          ? 'ring-2 ring-[#084b3e] border-[#084b3e] bg-emerald-50/40 shadow-xs' 
+                          : `${borderBadge} hover:border-gray-300 hover:shadow-xs`
+                      }`}
+                      title={`Select ${label}`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-1">
+                        {icon}
+                        <span className="text-xs font-bold text-gray-800 truncate">
+                          {label}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] uppercase font-bold text-gray-400 block tracking-wider">
+                          Balance
+                        </span>
+                        <span className="text-xs sm:text-sm font-black text-gray-900 truncate block">
+                          Tk {(acc.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Balance Entry Form */}
+            <form onSubmit={handleAddBalanceSubmit} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Account Dropdown (Cash, bKash, Nagad, Rocket) */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Select Account *
+                  </label>
+                  <select 
+                    value={selectedAccountOption}
+                    onChange={e => setSelectedAccountOption(e.target.value as any)}
+                    className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-bold text-gray-900 bg-white cursor-pointer"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="bkash">bKash</option>
+                    <option value="nagad">Nagad</option>
+                    <option value="rocket">Rocket</option>
+                  </select>
+                </div>
+
+                {/* Amount Input */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Amount to Add (Tk) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">Tk</span>
+                    <input 
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      required
+                      value={balanceAmount}
+                      onChange={e => setBalanceAmount(e.target.value)}
+                      placeholder="e.g. 5000"
+                      className="w-full pl-8 pr-3 py-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-black text-gray-900 bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Note / Description */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Note / Description (Optional)
+                </label>
+                <input 
+                  type="text"
+                  value={balanceNote}
+                  onChange={e => setBalanceNote(e.target.value)}
+                  placeholder="e.g. Cash drawer deposit, bank withdrawal"
+                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium bg-white"
+                />
+              </div>
+
+              {/* Submit Button */}
+              <div className="pt-1">
+                <button 
+                  type="submit"
+                  disabled={isSubmittingBalance}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-[#084b3e] text-white text-xs sm:text-sm font-bold rounded-xl hover:bg-[#126b55] transition-colors flex items-center justify-center gap-1.5 uppercase tracking-wider shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  <Plus size={16} />
+                  <span>{isSubmittingBalance ? 'Adding...' : 'Add Balance'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Second Row Grid: Profile, Security & Backup */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        {/* Left Column: Cloud Account & User Profile Card (6 columns on lg) */}
+        <div className="lg:col-span-6 space-y-6">
           
           {/* Cloud Account & User Profile Card */}
           <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
@@ -494,6 +807,10 @@ export function Settings() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Right Column: Cyber Security & Backup (6 columns on lg) */}
+        <div className="lg:col-span-6 space-y-6">
 
           {/* Cyber Security & Data Encryption Shield Card */}
           <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
@@ -676,7 +993,7 @@ export function Settings() {
               </h3>
               
               <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-                Warning: Restoring will overwrite existing records in the database with the backup data. Continue?
+                Warning: Restoring will merge the imported records into your current database. Existing entries with matching IDs will be updated. Continue?
               </p>
 
               <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 mb-6 text-left text-xs font-bold text-gray-800 truncate">
