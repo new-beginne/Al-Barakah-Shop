@@ -1,4 +1,4 @@
-import { db, Account, MfsTransaction, getRecordMetadata } from '../db/db';
+import { db, Account, MfsTransaction, BalanceLog, getRecordMetadata } from '../db/db';
 
 export const DEFAULT_ACCOUNTS: Omit<Account, 'createdAt' | 'updatedAt'>[] = [
   {
@@ -214,4 +214,145 @@ export async function deleteCustomAccount(accountId: string): Promise<boolean> {
   }
   await db.accounts.delete(accountId);
   return true;
+}
+
+/**
+ * Add an amount to an account's balance and record it in balanceLogs
+ */
+export async function addBalanceWithLog(
+  accountId: string, 
+  amount: number, 
+  note?: string
+): Promise<{ newBalance: number; logId: number }> {
+  if (isNaN(amount) || amount <= 0) {
+    throw new Error('Invalid amount to add');
+  }
+  await initDefaultAccounts();
+  const acc = await db.accounts.get(accountId);
+  if (!acc) throw new Error(`Account not found: ${accountId}`);
+
+  const prevBal = acc.balance || 0;
+  const newBal = prevBal + amount;
+  const now = new Date().toISOString();
+
+  await db.accounts.update(accountId, {
+    balance: newBal,
+    updatedAt: now
+  });
+
+  const meta = getRecordMetadata();
+  const logId = await db.balanceLogs.add({
+    date: meta.date,
+    time: meta.time,
+    createdAt: meta.createdAt,
+    updatedAt: meta.updatedAt,
+    accountId,
+    accountName: acc.name,
+    type: 'add',
+    amount,
+    previousBalance: prevBal,
+    newBalance: newBal,
+    note: note?.trim() || `Added Tk ${amount.toLocaleString()}`
+  });
+
+  return { newBalance: newBal, logId: Number(logId) };
+}
+
+/**
+ * Directly calibrate/edit an account's balance and record it in balanceLogs
+ */
+export async function editBalanceWithLog(
+  accountId: string, 
+  newBalance: number, 
+  note?: string
+): Promise<{ newBalance: number; logId: number }> {
+  if (isNaN(newBalance)) {
+    throw new Error('Invalid new balance');
+  }
+  await initDefaultAccounts();
+  const acc = await db.accounts.get(accountId);
+  if (!acc) throw new Error(`Account not found: ${accountId}`);
+
+  const prevBal = acc.balance || 0;
+  const diff = newBalance - prevBal;
+  const now = new Date().toISOString();
+
+  await db.accounts.update(accountId, {
+    balance: newBalance,
+    updatedAt: now
+  });
+
+  const meta = getRecordMetadata();
+  const logId = await db.balanceLogs.add({
+    date: meta.date,
+    time: meta.time,
+    createdAt: meta.createdAt,
+    updatedAt: meta.updatedAt,
+    accountId,
+    accountName: acc.name,
+    type: 'edit',
+    amount: diff,
+    previousBalance: prevBal,
+    newBalance: newBalance,
+    note: note?.trim() || `Balance calibrated from Tk ${prevBal.toLocaleString()} to Tk ${newBalance.toLocaleString()}`
+  });
+
+  return { newBalance, logId: Number(logId) };
+}
+
+/**
+ * Edit an existing balance log (note, date, or amount)
+ */
+export async function updateBalanceLog(
+  logId: number, 
+  updated: { amount: number; note?: string; date?: string; time?: string }
+): Promise<void> {
+  const log = await db.balanceLogs.get(logId);
+  if (!log) throw new Error('Balance log not found');
+
+  const acc = await db.accounts.get(log.accountId);
+  const now = new Date().toISOString();
+
+  if (acc) {
+    const diff = updated.amount - log.amount;
+    if (diff !== 0) {
+      const currentAccBal = acc.balance || 0;
+      await db.accounts.update(log.accountId, {
+        balance: currentAccBal + diff,
+        updatedAt: now
+      });
+    }
+  }
+
+  await db.balanceLogs.update(logId, {
+    amount: updated.amount,
+    note: updated.note !== undefined ? updated.note : log.note,
+    date: updated.date || log.date,
+    time: updated.time || log.time,
+    updatedAt: now
+  });
+}
+
+/**
+ * Delete a balance log entry with option to revert account balance
+ */
+export async function deleteBalanceLog(logId: number, revertAccountBalance: boolean): Promise<void> {
+  const log = await db.balanceLogs.get(logId);
+  if (!log) return;
+
+  if (revertAccountBalance) {
+    const acc = await db.accounts.get(log.accountId);
+    if (acc) {
+      const now = new Date().toISOString();
+      const currentAccBal = acc.balance || 0;
+      // Subtract the amount logged
+      const newBal = currentAccBal - log.amount;
+      await db.accounts.update(log.accountId, {
+        balance: newBal,
+        updatedAt: now
+      });
+    }
+  }
+
+  await db.balanceLogs.delete(logId);
 }

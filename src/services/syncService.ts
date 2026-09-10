@@ -2,7 +2,7 @@ import {
   collection, doc, getDocs, setDoc 
 } from 'firebase/firestore';
 import { firestore } from '../lib/firebase';
-import { db, Sale, Expense, MfsTransaction, Due, Customer, Account } from '../db/db';
+import { db, Sale, Expense, MfsTransaction, Due, Customer, Account, BalanceLog } from '../db/db';
 import { sanitizePayload, generateRecordHash } from '../lib/security';
 
 export interface SyncResult {
@@ -112,6 +112,22 @@ export async function pushLocalToCloud(uid: string): Promise<number> {
         count++;
       }
     }
+
+    // 7. Balance Logs
+    const localBalanceLogs = await db.balanceLogs.toArray();
+    for (const rawItem of localBalanceLogs) {
+      if (rawItem.id) {
+        const cleanItem = sanitizePayload(rawItem);
+        const recordHash = await generateRecordHash(cleanItem);
+        await setDoc(doc(firestore, 'users', uid, 'balanceLogs', String(cleanItem.id)), {
+          ...cleanItem,
+          recordHash,
+          ownerUid: uid,
+          updatedAt: cleanItem.updatedAt || new Date().toISOString()
+        }, { merge: true });
+        count++;
+      }
+    }
   } catch (err) {
     console.error('Push to cloud error:', err);
     throw err;
@@ -189,6 +205,17 @@ export async function pullCloudToLocal(uid: string): Promise<number> {
       });
       await db.accounts.bulkPut(accounts);
       count += accounts.length;
+    }
+
+    // 7. Balance Logs
+    const logSnap = await getDocs(collection(firestore, 'users', uid, 'balanceLogs'));
+    if (!logSnap.empty) {
+      const logs: BalanceLog[] = logSnap.docs.map(d => {
+        const data = sanitizePayload(d.data()) as BalanceLog;
+        return { ...data, id: Number(d.id) || undefined };
+      });
+      await db.balanceLogs.bulkPut(logs);
+      count += logs.length;
     }
   } catch (err) {
     console.error('Pull from cloud error:', err);

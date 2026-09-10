@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, ServiceRate, ExpenseService, Account } from '../db/db';
+import { db, ServiceRate, ExpenseService, Account, BalanceLog } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { exportDB, importInto } from 'dexie-export-import';
 import { 
@@ -25,7 +25,16 @@ import {
   Banknote,
   Smartphone,
   Coins,
-  Plus
+  Plus,
+  History,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
+  SlidersHorizontal,
+  Calendar,
+  Clock,
+  ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AuthModal } from './AuthModal';
@@ -33,6 +42,10 @@ import { format } from 'date-fns';
 import { 
   initDefaultAccounts, 
   setAccountBalance, 
+  addBalanceWithLog,
+  editBalanceWithLog,
+  updateBalanceLog,
+  deleteBalanceLog,
   DEFAULT_ACCOUNTS
 } from '../services/accountService';
 
@@ -102,6 +115,54 @@ export function Settings() {
     return accounts.reduce((sum, a) => sum + (a.balance || 0), 0);
   }, [accounts]);
 
+  // Balance Logs & History States
+  const rawBalanceLogs = useLiveQuery(() => db.balanceLogs.orderBy('id').reverse().toArray()) || [];
+  const [historyAccountFilter, setHistoryAccountFilter] = useState<'all' | 'cash' | 'bkash' | 'nagad' | 'rocket'>('all');
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
+  const historyPerPage = 7;
+
+  // Direct Balance Calibration / Edit Modal State
+  const [isCalibrateModalOpen, setIsCalibrateModalOpen] = useState(false);
+  const [calibrateAccountId, setCalibrateAccountId] = useState<'cash' | 'bkash' | 'nagad' | 'rocket'>('cash');
+  const [calibrateNewBalance, setCalibrateNewBalance] = useState('');
+  const [calibrateNote, setCalibrateNote] = useState('');
+  const [isSubmittingCalibrate, setIsSubmittingCalibrate] = useState(false);
+
+  // Edit Existing History Log Modal State
+  const [editingLog, setEditingLog] = useState<BalanceLog | null>(null);
+  const [editLogAmount, setEditLogAmount] = useState('');
+  const [editLogNote, setEditLogNote] = useState('');
+  const [editLogDate, setEditLogDate] = useState('');
+  const [isSubmittingEditLog, setIsSubmittingEditLog] = useState(false);
+
+  // Delete History Log Modal State
+  const [deletingLog, setDeletingLog] = useState<BalanceLog | null>(null);
+  const [revertBalanceOnDelete, setRevertBalanceOnDelete] = useState(true);
+  const [isDeletingLog, setIsDeletingLog] = useState(false);
+
+  const filteredBalanceLogs = useMemo(() => {
+    return rawBalanceLogs.filter(log => {
+      if (historyAccountFilter !== 'all' && log.accountId !== historyAccountFilter) {
+        return false;
+      }
+      if (historySearchQuery.trim()) {
+        const q = historySearchQuery.toLowerCase();
+        const noteMatch = (log.note || '').toLowerCase().includes(q);
+        const accMatch = (log.accountName || '').toLowerCase().includes(q);
+        const dateMatch = (log.date || '').includes(q);
+        if (!noteMatch && !accMatch && !dateMatch) return false;
+      }
+      return true;
+    });
+  }, [rawBalanceLogs, historyAccountFilter, historySearchQuery]);
+
+  const totalHistoryPages = Math.ceil(filteredBalanceLogs.length / historyPerPage) || 1;
+  const paginatedBalanceLogs = useMemo(() => {
+    const start = (historyPage - 1) * historyPerPage;
+    return filteredBalanceLogs.slice(start, start + historyPerPage);
+  }, [filteredBalanceLogs, historyPage, historyPerPage]);
+
   const handleAddBalanceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(balanceAmount);
@@ -114,24 +175,106 @@ export function Settings() {
     try {
       const targetAcc = accounts.find(a => a.id === selectedAccountOption);
       const accName = targetAcc ? targetAcc.name : selectedAccountOption;
-      const currentBal = targetAcc?.balance || 0;
-      const newBal = currentBal + amount;
 
-      await setAccountBalance(
+      const result = await addBalanceWithLog(
         selectedAccountOption, 
-        newBal, 
+        amount, 
         balanceNote.trim() || `Added Tk ${amount.toLocaleString()}`
       );
-      setSuccessMsg(`Successfully added Tk ${amount.toLocaleString()} to "${accName}"! New balance: Tk ${newBal.toLocaleString()}`);
+      setSuccessMsg(`Successfully added Tk ${amount.toLocaleString()} to "${accName}"! New balance: Tk ${result.newBalance.toLocaleString()}`);
 
       setBalanceAmount('');
       setBalanceNote('');
+      setHistoryPage(1);
       setTimeout(() => setSuccessMsg(''), 4500);
     } catch (err) {
       console.error('Error submitting balance:', err);
       alert('Failed to add balance. Please try again.');
     } finally {
       setIsSubmittingBalance(false);
+    }
+  };
+
+  const handleDirectCalibrateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const newBal = parseFloat(calibrateNewBalance);
+    if (isNaN(newBal) || newBal < 0) {
+      alert('Please enter a valid balance amount (0 or more).');
+      return;
+    }
+
+    setIsSubmittingCalibrate(true);
+    try {
+      const targetAcc = accounts.find(a => a.id === calibrateAccountId);
+      const accName = targetAcc ? targetAcc.name : calibrateAccountId;
+
+      await editBalanceWithLog(
+        calibrateAccountId,
+        newBal,
+        calibrateNote.trim() || `Balance calibrated to Tk ${newBal.toLocaleString()}`
+      );
+
+      setSuccessMsg(`Balance for "${accName}" updated to Tk ${newBal.toLocaleString()}!`);
+      setIsCalibrateModalOpen(false);
+      setCalibrateNewBalance('');
+      setCalibrateNote('');
+      setHistoryPage(1);
+      setTimeout(() => setSuccessMsg(''), 4500);
+    } catch (err) {
+      console.error('Error calibrating balance:', err);
+      alert('Failed to update balance. Please try again.');
+    } finally {
+      setIsSubmittingCalibrate(false);
+    }
+  };
+
+  const handleStartEditLog = (log: BalanceLog) => {
+    setEditingLog(log);
+    setEditLogAmount(String(log.amount));
+    setEditLogNote(log.note || '');
+    setEditLogDate(log.date || format(new Date(), 'yyyy-MM-dd'));
+  };
+
+  const handleUpdateLogSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLog?.id) return;
+    const newAmt = parseFloat(editLogAmount);
+    if (isNaN(newAmt)) {
+      alert('Please enter a valid amount.');
+      return;
+    }
+
+    setIsSubmittingEditLog(true);
+    try {
+      await updateBalanceLog(editingLog.id, {
+        amount: newAmt,
+        note: editLogNote.trim(),
+        date: editLogDate
+      });
+      setSuccessMsg('Balance history entry updated successfully!');
+      setEditingLog(null);
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      console.error('Error updating log:', err);
+      alert('Failed to update history log.');
+    } finally {
+      setIsSubmittingEditLog(false);
+    }
+  };
+
+  const handleDeleteLogConfirm = async () => {
+    if (!deletingLog?.id) return;
+    setIsDeletingLog(true);
+    try {
+      await deleteBalanceLog(deletingLog.id, revertBalanceOnDelete);
+      setSuccessMsg('History entry deleted.');
+      setDeletingLog(null);
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      console.error('Error deleting log:', err);
+      alert('Failed to delete history entry.');
+    } finally {
+      setIsDeletingLog(false);
     }
   };
 
@@ -699,8 +842,8 @@ export function Settings() {
                 />
               </div>
 
-              {/* Submit Button */}
-              <div className="pt-1">
+              {/* Submit & Calibrate Buttons */}
+              <div className="pt-2 flex flex-wrap items-center gap-3">
                 <button 
                   type="submit"
                   disabled={isSubmittingBalance}
@@ -709,8 +852,283 @@ export function Settings() {
                   <Plus size={16} />
                   <span>{isSubmittingBalance ? 'Adding...' : 'Add Balance'}</span>
                 </button>
+
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setCalibrateAccountId(selectedAccountOption);
+                    const acc = accounts.find(a => a.id === selectedAccountOption);
+                    setCalibrateNewBalance(acc ? String(acc.balance) : '');
+                    setCalibrateNote('');
+                    setIsCalibrateModalOpen(true);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs sm:text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 uppercase tracking-wider border border-gray-200 cursor-pointer"
+                >
+                  <SlidersHorizontal size={15} />
+                  <span>Edit / Set Current Balance</span>
+                </button>
               </div>
             </form>
+
+            {/* Balance Add / Edit History Section */}
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-blue-50 text-blue-700">
+                    <History size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-gray-900 uppercase tracking-wider">
+                      Balance Add / Edit History
+                    </h3>
+                    <p className="text-xs text-gray-500 font-medium">
+                      Detailed audit log of balance deposits and calibrations
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-xl border border-gray-200">
+                    {filteredBalanceLogs.length} Total Logs
+                  </span>
+                </div>
+              </div>
+
+              {/* Filter & Search Bar */}
+              <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between mb-4">
+                {/* Account Filter Pills */}
+                <div className="flex flex-wrap items-center gap-1.5 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => { setHistoryAccountFilter('all'); setHistoryPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      historyAccountFilter === 'all'
+                        ? 'bg-[#084b3e] text-white shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    All ({rawBalanceLogs.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setHistoryAccountFilter('cash'); setHistoryPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                      historyAccountFilter === 'cash'
+                        ? 'bg-[#084b3e] text-white shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Banknote size={13} />
+                    Cash ({rawBalanceLogs.filter(l => l.accountId === 'cash').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setHistoryAccountFilter('bkash'); setHistoryPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                      historyAccountFilter === 'bkash'
+                        ? 'bg-[#e2136e] text-white shadow-xs'
+                        : 'text-gray-600 hover:text-[#e2136e]'
+                    }`}
+                  >
+                    <Smartphone size={13} />
+                    bKash ({rawBalanceLogs.filter(l => l.accountId === 'bkash').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setHistoryAccountFilter('nagad'); setHistoryPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                      historyAccountFilter === 'nagad'
+                        ? 'bg-[#d97706] text-white shadow-xs'
+                        : 'text-gray-600 hover:text-[#d97706]'
+                    }`}
+                  >
+                    <Smartphone size={13} />
+                    Nagad ({rawBalanceLogs.filter(l => l.accountId === 'nagad').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setHistoryAccountFilter('rocket'); setHistoryPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                      historyAccountFilter === 'rocket'
+                        ? 'bg-purple-700 text-white shadow-xs'
+                        : 'text-gray-600 hover:text-purple-700'
+                    }`}
+                  >
+                    <Smartphone size={13} />
+                    Rocket ({rawBalanceLogs.filter(l => l.accountId === 'rocket').length})
+                  </button>
+                </div>
+
+                {/* Search Box */}
+                <div className="relative w-full md:w-64">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search note, date..."
+                    value={historySearchQuery}
+                    onChange={e => { setHistorySearchQuery(e.target.value); setHistoryPage(1); }}
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-[#084b3e] outline-none transition-all"
+                  />
+                  {historySearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => { setHistorySearchQuery(''); setHistoryPage(1); }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* History Table */}
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-xs">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-gray-50 text-gray-600 uppercase tracking-wider font-black text-[11px] border-b border-gray-200">
+                    <tr>
+                      <th className="py-3 px-4">Date & Time</th>
+                      <th className="py-3 px-4">Account</th>
+                      <th className="py-3 px-4">Action Type</th>
+                      <th className="py-3 px-4">Amount</th>
+                      <th className="py-3 px-4">Balance Movement</th>
+                      <th className="py-3 px-4">Note / Reason</th>
+                      <th className="py-3 px-4 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {paginatedBalanceLogs.map(log => {
+                      let badgeStyle = 'bg-emerald-50 text-[#084b3e] border-emerald-200';
+                      let accIcon = <Banknote size={14} className="text-[#084b3e]" />;
+
+                      if (log.accountId === 'bkash') {
+                        badgeStyle = 'bg-pink-50 text-[#e2136e] border-pink-200';
+                        accIcon = <Smartphone size={14} className="text-[#e2136e]" />;
+                      } else if (log.accountId === 'nagad') {
+                        badgeStyle = 'bg-amber-50 text-[#d97706] border-amber-200';
+                        accIcon = <Smartphone size={14} className="text-[#d97706]" />;
+                      } else if (log.accountId === 'rocket') {
+                        badgeStyle = 'bg-purple-50 text-purple-700 border-purple-200';
+                        accIcon = <Smartphone size={14} className="text-purple-700" />;
+                      }
+
+                      const isAdd = log.type === 'add';
+
+                      return (
+                        <tr key={log.id} className="hover:bg-gray-50/80 transition-colors">
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="font-bold text-gray-900">{log.date}</div>
+                            <div className="text-[10px] text-gray-400 font-medium">{log.time || ''}</div>
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold ${badgeStyle}`}>
+                              {accIcon}
+                              <span>{log.accountName || log.accountId}</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {isAdd ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800">
+                                <Plus size={12} />
+                                <span>Balance Added</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-800">
+                                <SlidersHorizontal size={12} />
+                                <span>Calibrated / Set</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span className={`text-xs sm:text-sm font-black ${isAdd || log.amount >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                              {log.amount >= 0 ? '+' : ''}Tk {log.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <span className="text-gray-500 font-medium">Tk {log.previousBalance?.toLocaleString() || '0'}</span>
+                              <ArrowRight size={12} className="text-gray-400" />
+                              <span className="font-black text-gray-900">Tk {log.newBalance?.toLocaleString() || '0'}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 max-w-xs">
+                            <span className="text-gray-700 font-medium text-xs break-words">
+                              {log.note || <span className="text-gray-400 italic">No note</span>}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditLog(log)}
+                                title="Edit Note or Amount"
+                                className="p-1.5 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer border border-blue-200"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeletingLog(log);
+                                  setRevertBalanceOnDelete(true);
+                                }}
+                                title="Delete History Entry"
+                                className="p-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer border border-rose-200"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                {filteredBalanceLogs.length === 0 && (
+                  <div className="text-center py-10 px-4 bg-gray-50/50">
+                    <div className="w-12 h-12 mx-auto rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-2">
+                      <History size={24} />
+                    </div>
+                    <p className="text-sm font-bold text-gray-700 mb-1">কোন ব্যালেন্স হিস্ট্রি পাওয়া যায়নি</p>
+                    <p className="text-xs text-gray-400 max-w-sm mx-auto">
+                      উপরে যে কোনো অ্যাকাউন্টে ব্যালেন্স যোগ করলে অথবা ব্যালেন্স এডিট করলে এখানে স্বয়ংক্রিয়ভাবে বিস্তারিত লগ জমা হবে।
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Pagination Bar */}
+              {totalHistoryPages > 1 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-2">
+                  <div className="text-xs font-medium text-gray-500">
+                    Showing {(historyPage - 1) * historyPerPage + 1} to {Math.min(historyPage * historyPerPage, filteredBalanceLogs.length)} of {filteredBalanceLogs.length} logs
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={historyPage === 1}
+                      onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                      className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <ChevronLeft size={14} />
+                      <span>Previous</span>
+                    </button>
+                    <span className="text-xs font-black px-2 py-1 bg-gray-100 rounded-md text-gray-800">
+                      {historyPage} / {totalHistoryPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={historyPage === totalHistoryPages}
+                      onClick={() => setHistoryPage(p => Math.min(totalHistoryPages, p + 1))}
+                      className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Next</span>
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1017,6 +1435,257 @@ export function Settings() {
                   <span>Restore</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Direct Calibrate / Set Balance Modal */}
+      {isCalibrateModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-3 border-b border-gray-100 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-700">
+                  <SlidersHorizontal size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 uppercase tracking-wider">
+                    Edit / Set Current Balance
+                  </h3>
+                  <p className="text-xs text-gray-500 font-medium">Directly calibrate account balance</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsCalibrateModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleDirectCalibrateSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Target Account *
+                </label>
+                <select
+                  value={calibrateAccountId}
+                  onChange={e => {
+                    const id = e.target.value as any;
+                    setCalibrateAccountId(id);
+                    const acc = accounts.find(a => a.id === id);
+                    setCalibrateNewBalance(acc ? String(acc.balance) : '');
+                  }}
+                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-bold text-gray-900 bg-white cursor-pointer"
+                >
+                  <option value="cash">Cash (হাতে নগদ)</option>
+                  <option value="bkash">bKash (বিকাশ)</option>
+                  <option value="nagad">Nagad (নগদ)</option>
+                  <option value="rocket">Rocket (রকেট)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Current Actual Balance (Tk) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">Tk</span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    required
+                    value={calibrateNewBalance}
+                    onChange={e => setCalibrateNewBalance(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full pl-8 pr-3 py-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-black text-gray-900"
+                  />
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  আগের ব্যালেন্স ছিল: Tk {accounts.find(a => a.id === calibrateAccountId)?.balance?.toLocaleString() || '0'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Note / Reason
+                </label>
+                <input
+                  type="text"
+                  value={calibrateNote}
+                  onChange={e => setCalibrateNote(e.target.value)}
+                  placeholder="e.g. Physical count reconciliation, closing adjustment"
+                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setIsCalibrateModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCalibrate}
+                  className="px-5 py-2 text-xs font-bold text-white bg-[#084b3e] hover:bg-[#126b55] rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Save size={14} />
+                  <span>{isSubmittingCalibrate ? 'Saving...' : 'Save Balance'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Existing Balance Log Modal */}
+      {editingLog && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-3 border-b border-gray-100 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-700">
+                  <Edit2 size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 uppercase tracking-wider">
+                    Edit Balance History Entry
+                  </h3>
+                  <p className="text-xs text-gray-500 font-medium">Account: {editingLog.accountName}</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setEditingLog(null)}
+                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateLogSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Date *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={editLogDate}
+                  onChange={e => setEditLogDate(e.target.value)}
+                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Amount (Tk) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">Tk</span>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={editLogAmount}
+                    onChange={e => setEditLogAmount(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-black text-gray-900"
+                  />
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  পরিমাণ পরিবর্তন করলে অ্যাকাউন্টের বর্তমান ব্যালেন্স স্বয়ংক্রিয়ভাবে সমন্বয় করা হবে।
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Note / Description
+                </label>
+                <input
+                  type="text"
+                  value={editLogNote}
+                  onChange={e => setEditLogNote(e.target.value)}
+                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-medium"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingLog(null)}
+                  className="px-4 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingEditLog}
+                  className="px-5 py-2 text-xs font-bold text-white bg-[#084b3e] hover:bg-[#126b55] rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Save size={14} />
+                  <span>{isSubmittingEditLog ? 'Updating...' : 'Update Entry'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete History Log Confirmation Modal */}
+      {deletingLog && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <div className="p-2.5 bg-rose-50 rounded-xl">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-gray-900">Delete Balance Entry?</h3>
+                <p className="text-xs text-gray-500">Record #{deletingLog.id} ({deletingLog.accountName})</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 mb-4 leading-relaxed">
+              আপনি কি <strong>{deletingLog.accountName}</strong> অ্যাকাউন্টের <strong>Tk {deletingLog.amount?.toLocaleString()}</strong> এর এই হিস্ট্রি রেকর্ডটি মুছে ফেলতে চান?
+            </p>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={revertBalanceOnDelete}
+                  onChange={e => setRevertBalanceOnDelete(e.target.checked)}
+                  className="mt-0.5 rounded text-[#084b3e] focus:ring-[#084b3e]"
+                />
+                <span className="text-xs font-medium text-amber-900 leading-snug">
+                  <strong>অ্যাকাউন্ট ব্যালেন্স সমন্বয় করুন:</strong> এই এন্ট্রি মুছে ফেলার সাথে সাথে {deletingLog.accountName} অ্যাকাউন্ট থেকে <strong>Tk {deletingLog.amount?.toLocaleString()}</strong> বিয়োগ / রিভার্ট করা হবে।
+                </span>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setDeletingLog(null)}
+                className="px-4 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingLog}
+                onClick={handleDeleteLogConfirm}
+                className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 size={14} />
+                <span>{isDeletingLog ? 'Deleting...' : 'Confirm Delete'}</span>
+              </button>
             </div>
           </div>
         </div>

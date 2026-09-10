@@ -118,6 +118,21 @@ export interface Account {
   updatedAt?: string;
 }
 
+export interface BalanceLog {
+  id?: number;
+  date: string;
+  time?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  accountId: string;
+  accountName: string;
+  type: 'add' | 'edit';
+  amount: number;
+  previousBalance: number;
+  newBalance: number;
+  note?: string;
+}
+
 export class AlBarakahDB extends Dexie {
   sales!: Table<Sale>;
   mfs!: Table<MfsTransaction>;
@@ -128,6 +143,7 @@ export class AlBarakahDB extends Dexie {
   expenseServices!: Table<ExpenseService>;
   customers!: Table<Customer>;
   accounts!: Table<Account, string>;
+  balanceLogs!: Table<BalanceLog>;
 
   constructor() {
     super('AlBarakahDB');
@@ -149,6 +165,9 @@ export class AlBarakahDB extends Dexie {
     });
     this.version(6).stores({
       accounts: 'id, name, type'
+    });
+    this.version(7).stores({
+      balanceLogs: '++id, date, accountId, type'
     });
   }
 }
