@@ -88,7 +88,13 @@ export function sanitizePayload<T>(item: T): T {
     if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
       continue;
     }
-    result[key] = sanitizePayload(value);
+    if (value === undefined) {
+      continue;
+    }
+    const sanitizedVal = sanitizePayload(value);
+    if (sanitizedVal !== undefined) {
+      result[key] = sanitizedVal;
+    }
   }
   return result as T;
 }

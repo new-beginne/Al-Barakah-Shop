@@ -73,9 +73,58 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["customerName", "totalAmount", "paidAmount"]
+    },
+    "CustomerRecord": {
+      "title": "CustomerRecord",
+      "description": "Customer address book record",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "AccountRecord": {
+      "title": "AccountRecord",
+      "description": "Financial account balance record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "balance": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "balance"]
+    },
+    "BalanceLogRecord": {
+      "title": "BalanceLogRecord",
+      "description": "Balance adjustment audit log",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "accountId": { "type": "string" },
+        "accountName": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["date", "accountId", "amount", "type"]
+    },
+    "TestConnection": {
+      "title": "TestConnection",
+      "description": "Probe for testing connection",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string" }
+      }
     }
   },
   "firestore": {
+    "/test/{testId}": {
+      "schema": "TestConnection",
+      "description": "Probe path to verify database connection"
+    },
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "Shop owner profile"
@@ -95,6 +144,18 @@
     "/users/{userId}/dues/{dueId}": {
       "schema": "DueRecord",
       "description": "Shop customer dues"
+    },
+    "/users/{userId}/customers/{customerId}": {
+      "schema": "CustomerRecord",
+      "description": "Shop customers"
+    },
+    "/users/{userId}/accounts/{accountId}": {
+      "schema": "AccountRecord",
+      "description": "Shop financial accounts"
+    },
+    "/users/{userId}/balanceLogs/{logId}": {
+      "schema": "BalanceLogRecord",
+      "description": "Shop balance audit logs"
     }
   }
 }

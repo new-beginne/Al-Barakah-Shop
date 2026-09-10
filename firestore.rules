@@ -16,6 +16,11 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Health probe for testing connection
+    match /test/{testId} {
+      allow read: if true;
+    }
+
     // User Profile Document
     match /users/{userId} {
       allow read: if isOwner(userId);
@@ -83,6 +88,15 @@ service cloud.firestore {
         allow create, update: if isOwner(userId)
           && request.resource.data.name is string
           && request.resource.data.balance is number;
+        allow delete: if isOwner(userId);
+      }
+
+      // Balance Logs Subcollection
+      match /balanceLogs/{logId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.amount is number
+          && request.resource.data.accountId is string;
         allow delete: if isOwner(userId);
       }
     }
