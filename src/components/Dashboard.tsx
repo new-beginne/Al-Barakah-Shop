@@ -12,6 +12,7 @@ import { SalesEntry } from './SalesEntry';
 import { Expenses } from './Expenses';
 import { MfsLedger } from './MfsLedger';
 import { Reports } from './Reports';
+import { useAuth } from '../context/AuthContext';
 
 export function Dashboard() {
   const [filterType, setFilterType] = useState('today');
@@ -19,9 +20,15 @@ export function Dashboard() {
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [activeTab, setActiveTab] = useState('overview');
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
+  const { isBalanceVisible } = useAuth();
 
   const today = format(new Date(), 'yyyy-MM-dd');
   
+  const formatCurrency = (val: number | undefined) => {
+    if (!isBalanceVisible) return '****';
+    return (val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
   // Fetch all data
   const allSales = useLiveQuery(() => db.sales.orderBy('id').reverse().toArray()) || [];
   const allMfs = useLiveQuery(() => db.mfs.orderBy('id').reverse().toArray()) || [];
@@ -200,7 +207,7 @@ export function Dashboard() {
             <ArrowUpRight size={16} className="text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-[#084b3e] transition-colors">Tk {totalSalesRange.toFixed(2)}</h2>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-[#084b3e] transition-colors">Tk {formatCurrency(totalSalesRange)}</h2>
             <p className="text-[10px] mt-1 text-gray-400 font-medium">Selected Range</p>
           </div>
         </div>
@@ -217,7 +224,7 @@ export function Dashboard() {
             <ArrowUpRight size={16} className="text-[#084b3e] opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-[#084b3e] transition-colors">Tk {totalExpensesRange.toFixed(2)}</h2>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-[#084b3e] transition-colors">Tk {formatCurrency(totalExpensesRange)}</h2>
             <p className="text-[10px] mt-1 text-gray-400 font-medium">Selected Range</p>
           </div>
         </div>
@@ -234,7 +241,7 @@ export function Dashboard() {
             <ArrowUpRight size={16} className="text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-purple-700 transition-colors">Tk {netProfitToday.toFixed(2)}</h2>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-purple-700 transition-colors">Tk {formatCurrency(netProfitToday)}</h2>
             <p className="text-[10px] mt-1 text-gray-400 font-medium">Net Profit (Sales + MFS)</p>
           </div>
         </div>
@@ -251,7 +258,7 @@ export function Dashboard() {
             <ArrowUpRight size={16} className="text-sky-500 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-sky-600 transition-colors">Tk {cashOnHand.toFixed(2)}</h2>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-sky-600 transition-colors">Tk {formatCurrency(cashOnHand)}</h2>
             <p className="text-[10px] mt-1 text-gray-400 font-medium">Excluding dues</p>
           </div>
         </div>
@@ -271,7 +278,7 @@ export function Dashboard() {
             <ArrowUpRight size={16} className="text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-rose-600 transition-colors">Tk {totalDues.toFixed(2)}</h2>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-rose-600 transition-colors">Tk {formatCurrency(totalDues)}</h2>
             <p className="text-[10px] mt-1 text-gray-400 font-medium">Pending Balance</p>
           </div>
         </Link>
@@ -288,7 +295,7 @@ export function Dashboard() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold text-gray-500">
-              Total Funds: <strong className="text-gray-900 font-black">Tk {totalCapitalFunds.toLocaleString()}</strong>
+              Total Funds: <strong className="text-gray-900 font-black">Tk {isBalanceVisible ? totalCapitalFunds.toLocaleString() : '****'}</strong>
             </span>
             <Link
               to="/settings"
@@ -319,7 +326,7 @@ export function Dashboard() {
                   {acc.id === 'cash' ? 'Cash' : acc.name}
                 </span>
                 <span className="text-xs sm:text-sm font-black mt-1 truncate">
-                  Tk {(acc.balance || 0).toLocaleString()}
+                  Tk {isBalanceVisible ? (acc.balance || 0).toLocaleString() : '****'}
                 </span>
               </div>
             );

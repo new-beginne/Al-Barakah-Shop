@@ -27,6 +27,8 @@ interface AuthContextType {
   isOnline: boolean;
   syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
   lastSynced: string | null;
+  isBalanceVisible: boolean;
+  toggleBalanceVisibility: () => void;
   registerWithStore: (storeName: string, phone: string, password: string) => Promise<{ success: boolean; error?: string }>;
   loginWithPhone: (phone: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -61,6 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [lastSynced, setLastSynced] = useState<string | null>(() => {
     return localStorage.getItem('albarakah_last_synced') || null;
   });
+
+  const [isBalanceVisible, setIsBalanceVisible] = useState(false);
+  const toggleBalanceVisibility = () => setIsBalanceVisible(prev => !prev);
 
   // Check network status & auto-sync events
   useEffect(() => {
@@ -276,6 +281,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isOnline,
       syncStatus,
       lastSynced,
+      isBalanceVisible,
+      toggleBalanceVisibility,
       registerWithStore,
       loginWithPhone,
       logout,

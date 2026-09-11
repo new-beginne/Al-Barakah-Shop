@@ -8,7 +8,7 @@ import { Reports } from './components/Reports';
 import { Settings } from './components/Settings';
 import { Customers } from './components/Customers';
 import { CustomerProfile } from './components/CustomerProfile';
-import { Menu, User, Calendar as CalendarIcon, Clock, WifiOff, Cloud, RefreshCw, Store } from 'lucide-react';
+import { Menu, User, Calendar as CalendarIcon, Clock, WifiOff, Cloud, RefreshCw, Store, Eye, EyeOff } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -17,7 +17,7 @@ import { AuthModal } from './components/AuthModal';
 function TopHeader() {
   const [time, setTime] = useState(new Date());
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const { user, profile, isOnline, syncStatus, triggerSync } = useAuth();
+  const { user, profile, isOnline, syncStatus, triggerSync, isBalanceVisible, toggleBalanceVisibility } = useAuth();
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 60000);
@@ -76,8 +76,15 @@ function TopHeader() {
             </button>
           )}
 
-          {/* Date & Time */}
+          {/* Date, Time & Balance Visibility Toggle */}
           <div className="hidden xl:flex items-center gap-2">
+            <button 
+              onClick={toggleBalanceVisibility}
+              title={isBalanceVisible ? 'Hide sensitive data' : 'Show sensitive data'}
+              className="flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-600 px-2.5 py-1 rounded-full border border-gray-200 shadow-sm transition-colors"
+            >
+              {isBalanceVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
             <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-full border border-gray-200 text-xs font-bold text-gray-700 shadow-sm">
               <CalendarIcon size={14} className="text-gray-400"/> 
               {format(time, 'dd/MM/yyyy')}
