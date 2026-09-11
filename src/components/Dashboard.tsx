@@ -103,7 +103,7 @@ export function Dashboard() {
     return order.map(id => {
       const found = allAccounts.find(a => a.id === id);
       const defaultName = id === 'cash' ? 'Cash' : id === 'bkash' ? 'bKash' : id === 'nagad' ? 'Nagad' : 'Rocket';
-      return found || { id, name: defaultName, balance: 0 };
+      return found ? { ...found, name: defaultName } : { id, name: defaultName, balance: 0 };
     });
   }, [allAccounts]);
   const totalCapitalFunds = targetAccountsList.reduce((sum, a) => sum + (a.balance || 0), 0);
@@ -283,7 +283,7 @@ export function Dashboard() {
           <div className="flex items-center gap-2">
             <Wallet size={16} className="text-[#084b3e]" />
             <span className="text-xs font-black uppercase tracking-wider text-gray-800">
-              Accounts & Wallets Balance (বর্তমান ব্যালেন্স)
+              Accounts & Wallets Balance
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -316,7 +316,7 @@ export function Dashboard() {
             return (
               <div key={acc.id} className={`p-2.5 rounded-xl border ${badgeColor} flex flex-col justify-between`}>
                 <span className="text-[10px] font-bold uppercase truncate">
-                  {acc.id === 'cash' ? 'Cash (হাতে নগদ)' : acc.name}
+                  {acc.id === 'cash' ? 'Cash' : acc.name}
                 </span>
                 <span className="text-xs sm:text-sm font-black mt-1 truncate">
                   Tk {(acc.balance || 0).toLocaleString()}

@@ -1089,9 +1089,9 @@ export function Settings() {
                     <div className="w-12 h-12 mx-auto rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-2">
                       <History size={24} />
                     </div>
-                    <p className="text-sm font-bold text-gray-700 mb-1">কোন ব্যালেন্স হিস্ট্রি পাওয়া যায়নি</p>
+                    <p className="text-sm font-bold text-gray-700 mb-1">No balance history found</p>
                     <p className="text-xs text-gray-400 max-w-sm mx-auto">
-                      উপরে যে কোনো অ্যাকাউন্টে ব্যালেন্স যোগ করলে অথবা ব্যালেন্স এডিট করলে এখানে স্বয়ংক্রিয়ভাবে বিস্তারিত লগ জমা হবে।
+                      When you add or edit balance for any account above, the detailed log will automatically appear here.
                     </p>
                   </div>
                 )}
@@ -1480,10 +1480,10 @@ export function Settings() {
                   }}
                   className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-[#084b3e] outline-none text-xs sm:text-sm font-bold text-gray-900 bg-white cursor-pointer"
                 >
-                  <option value="cash">Cash (হাতে নগদ)</option>
-                  <option value="bkash">bKash (বিকাশ)</option>
-                  <option value="nagad">Nagad (নগদ)</option>
-                  <option value="rocket">Rocket (রকেট)</option>
+                  <option value="cash">Cash</option>
+                  <option value="bkash">bKash</option>
+                  <option value="nagad">Nagad</option>
+                  <option value="rocket">Rocket</option>
                 </select>
               </div>
 
@@ -1505,7 +1505,7 @@ export function Settings() {
                   />
                 </div>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  আগের ব্যালেন্স ছিল: Tk {accounts.find(a => a.id === calibrateAccountId)?.balance?.toLocaleString() || '0'}
+                  Previous balance was: Tk {accounts.find(a => a.id === calibrateAccountId)?.balance?.toLocaleString() || '0'}
                 </p>
               </div>
 
@@ -1599,7 +1599,7 @@ export function Settings() {
                   />
                 </div>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  পরিমাণ পরিবর্তন করলে অ্যাকাউন্টের বর্তমান ব্যালেন্স স্বয়ংক্রিয়ভাবে সমন্বয় করা হবে।
+                  Changing the amount will automatically adjust the current balance of the account.
                 </p>
               </div>
 
@@ -1652,7 +1652,7 @@ export function Settings() {
             </div>
 
             <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-              আপনি কি <strong>{deletingLog.accountName}</strong> অ্যাকাউন্টের <strong>Tk {deletingLog.amount?.toLocaleString()}</strong> এর এই হিস্ট্রি রেকর্ডটি মুছে ফেলতে চান?
+              Are you sure you want to delete this history record of <strong>Tk {deletingLog.amount?.toLocaleString()}</strong> from <strong>{deletingLog.accountName}</strong> account?
             </p>
 
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
@@ -1664,7 +1664,7 @@ export function Settings() {
                   className="mt-0.5 rounded text-[#084b3e] focus:ring-[#084b3e]"
                 />
                 <span className="text-xs font-medium text-amber-900 leading-snug">
-                  <strong>অ্যাকাউন্ট ব্যালেন্স সমন্বয় করুন:</strong> এই এন্ট্রি মুছে ফেলার সাথে সাথে {deletingLog.accountName} অ্যাকাউন্ট থেকে <strong>Tk {deletingLog.amount?.toLocaleString()}</strong> বিয়োগ / রিভার্ট করা হবে।
+                  <strong>Adjust Account Balance:</strong> Deleting this entry will also subtract / revert <strong>Tk {deletingLog.amount?.toLocaleString()}</strong> from the {deletingLog.accountName} account.
                 </span>
               </label>
             </div>

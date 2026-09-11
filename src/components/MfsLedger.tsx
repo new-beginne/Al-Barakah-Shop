@@ -310,7 +310,7 @@ export function MfsLedger() {
           }`}
         >
           <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-black tracking-wider text-[#e2136e]">bKash (বিকাশ)</span>
+            <span className="text-xs font-black tracking-wider text-[#e2136e]">bKash</span>
             <span className="w-2.5 h-2.5 rounded-full bg-[#e2136e]"></span>
           </div>
           <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
@@ -343,7 +343,7 @@ export function MfsLedger() {
           }`}
         >
           <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-black tracking-wider text-[#f7941d]">Nagad (নগদ)</span>
+            <span className="text-xs font-black tracking-wider text-[#f7941d]">Nagad</span>
             <span className="w-2.5 h-2.5 rounded-full bg-[#f7941d]"></span>
           </div>
           <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
@@ -376,7 +376,7 @@ export function MfsLedger() {
           }`}
         >
           <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-black tracking-wider text-[#8c3494]">Rocket (রকেট)</span>
+            <span className="text-xs font-black tracking-wider text-[#8c3494]">Rocket</span>
             <span className="w-2.5 h-2.5 rounded-full bg-[#8c3494]"></span>
           </div>
           <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
@@ -409,7 +409,7 @@ export function MfsLedger() {
           }`}
         >
           <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-black tracking-wider text-[#00457c]">Upay (উপায়)</span>
+            <span className="text-xs font-black tracking-wider text-[#00457c]">Upay</span>
             <span className="w-2.5 h-2.5 rounded-full bg-[#00457c]"></span>
           </div>
           <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
@@ -486,7 +486,7 @@ export function MfsLedger() {
           {/* Transaction Type Buttons */}
           <div>
             <label className="block text-[11px] font-black uppercase tracking-wider text-gray-500 mb-2">
-              Transaction Type (লেনদেনের ধরণ)
+              Transaction Type
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {TRANSACTION_TYPES.map(t => {

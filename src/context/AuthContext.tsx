@@ -62,21 +62,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return localStorage.getItem('albarakah_last_synced') || null;
   });
 
-  // Check network status
+  // Check network status & auto-sync events
   useEffect(() => {
+    let syncTimeout: any;
+
+    const runAutoSync = () => {
+      if (user && navigator.onLine) {
+        // Debounce sync slightly so rapid DB writes don't spam the network
+        clearTimeout(syncTimeout);
+        syncTimeout = setTimeout(() => {
+          triggerSync().catch(console.warn);
+        }, 1500);
+      }
+    };
+
     const handleOnline = () => {
       setIsOnline(true);
-      if (user) {
-        triggerSync();
-      }
+      runAutoSync();
     };
     const handleOffline = () => setIsOnline(false);
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    // Listen for custom db-changed events dispatched from Dexie hooks
+    window.addEventListener('albarakah-db-changed', runAutoSync);
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('albarakah-db-changed', runAutoSync);
+      clearTimeout(syncTimeout);
     };
   }, [user]);
 

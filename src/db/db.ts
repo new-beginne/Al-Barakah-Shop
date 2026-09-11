@@ -173,3 +173,17 @@ export class AlBarakahDB extends Dexie {
 }
 
 export const db = new AlBarakahDB();
+
+// Global Sync Event Dispatcher
+function dispatchSyncEvent() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('albarakah-db-changed'));
+  }
+}
+
+// Hook into all tables to trigger auto-sync on any change
+db.tables.forEach(table => {
+  table.hook('creating', () => { dispatchSyncEvent(); });
+  table.hook('updating', () => { dispatchSyncEvent(); });
+  table.hook('deleting', () => { dispatchSyncEvent(); });
+});

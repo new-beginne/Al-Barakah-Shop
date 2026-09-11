@@ -3,28 +3,28 @@ import { db, Account, MfsTransaction, BalanceLog, getRecordMetadata } from '../d
 export const DEFAULT_ACCOUNTS: Omit<Account, 'createdAt' | 'updatedAt'>[] = [
   {
     id: 'cash',
-    name: 'Cash (হাতে নগদ)',
+    name: 'Cash',
     type: 'cash',
     balance: 0,
     note: 'Cash Drawer'
   },
   {
     id: 'bkash',
-    name: 'bKash (বিকাশ)',
+    name: 'bKash',
     type: 'mfs',
     balance: 0,
     note: 'bKash Wallet'
   },
   {
     id: 'nagad',
-    name: 'Nagad (নগদ)',
+    name: 'Nagad',
     type: 'mfs',
     balance: 0,
     note: 'Nagad Wallet'
   },
   {
     id: 'rocket',
-    name: 'Rocket (রকেট)',
+    name: 'Rocket',
     type: 'mfs',
     balance: 0,
     note: 'Rocket Wallet'
@@ -67,6 +67,8 @@ export async function initDefaultAccounts(): Promise<void> {
           createdAt: now,
           updatedAt: now
         });
+      } else if (acc.name !== def.name) {
+        await db.accounts.update(def.id, { name: def.name });
       }
     }
   } catch (error) {
@@ -81,11 +83,11 @@ export function mapPaymentMethodToAccountId(method?: string): string | null {
   if (!method) return 'cash';
   const clean = method.toLowerCase().trim();
   if (clean === 'cash') return 'cash';
-  if (clean.includes('bkash') || clean.includes('b-kash') || clean.includes('বিকাশ')) return 'bkash';
-  if (clean.includes('nagad') || clean.includes('নগদ')) return 'nagad';
-  if (clean.includes('rocket') || clean.includes('রকেট')) return 'rocket';
-  if (clean.includes('upay') || clean.includes('উপায়')) return 'upay';
-  if (clean.includes('bank') || clean.includes('card') || clean.includes('ব্যাংক')) return 'bank';
+  if (clean.includes('bkash') || clean.includes('b-kash')) return 'bkash';
+  if (clean.includes('nagad')) return 'nagad';
+  if (clean.includes('rocket')) return 'rocket';
+  if (clean.includes('upay')) return 'upay';
+  if (clean.includes('bank') || clean.includes('card')) return 'bank';
   return 'cash';
 }
 
