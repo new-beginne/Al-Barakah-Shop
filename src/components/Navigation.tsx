@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, ShoppingCart, Users, Package, Wallet, FileBarChart, Settings as SettingsIcon, Store, Leaf, Menu } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Users, Package, Wallet, FileBarChart, Settings as SettingsIcon, Store, Leaf, Menu, HandCoins, Smartphone, History } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../context/AuthContext';
 
@@ -7,9 +7,11 @@ const navItems = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
   { name: 'Sales', path: '/sales', icon: ShoppingCart },
   { name: 'Customers', path: '/customers', icon: Users },
-  { name: 'Items', path: '/mfs', icon: Package },
+  { name: 'MFS', path: '/mfs', icon: Smartphone },
+  { name: 'Borrowings', path: '/borrowings', icon: HandCoins },
   { name: 'Expenses', path: '/expenses', icon: Wallet },
   { name: 'Reports', path: '/reports', icon: FileBarChart },
+  { name: 'History', path: '/history', icon: History },
   { name: 'Settings', path: '/settings', icon: SettingsIcon },
 ];
 
@@ -41,7 +43,7 @@ export function Sidebar() {
       <nav className="flex-1 px-4 py-2 space-y-2 z-10 mt-2">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/sales'); 
+          const isActive = location.pathname === item.path; 
           
           return (
             <Link

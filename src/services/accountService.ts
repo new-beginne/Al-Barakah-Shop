@@ -1,4 +1,8 @@
+import Dexie from 'dexie';
 import { db, Account, MfsTransaction, BalanceLog, getRecordMetadata } from '../db/db';
+
+let isInitialized = false;
+let initPromise: Promise<void> | null = null;
 
 export const DEFAULT_ACCOUNTS: Omit<Account, 'createdAt' | 'updatedAt'>[] = [
   {
@@ -32,48 +36,73 @@ export const DEFAULT_ACCOUNTS: Omit<Account, 'createdAt' | 'updatedAt'>[] = [
 ];
 
 export async function initDefaultAccounts(): Promise<void> {
-  try {
-    const now = new Date().toISOString();
+  if (isInitialized) return;
+  if (initPromise) return initPromise;
 
-    // Clean up old non-standard accounts if any (like upay, bank)
-    const existing = await db.accounts.toArray();
-    for (const item of existing) {
-      if (!['cash', 'bkash', 'nagad', 'rocket'].includes(item.id)) {
-        await db.accounts.delete(item.id);
-      }
-    }
-
-    // Check if bKash/Nagad/Rocket have latest MFS balances
-    const allMfs = await db.mfs.toArray();
-    const getMfsLatestBal = (op: string): number => {
-      const opTxs = allMfs
-        .filter(t => t.operator?.toLowerCase() === op.toLowerCase())
-        .sort((a, b) => (b.id || 0) - (a.id || 0));
-      return opTxs.length > 0 && typeof opTxs[0].balanceAfter === 'number' ? opTxs[0].balanceAfter : 0;
-    };
-
-    // Ensure only the 4 core accounts exist
-    for (const def of DEFAULT_ACCOUNTS) {
-      const acc = await db.accounts.get(def.id);
-      if (!acc) {
-        let initialBal = def.balance;
-        if (def.type === 'mfs') {
-          const mfsBal = getMfsLatestBal(def.id);
-          if (mfsBal > 0) initialBal = mfsBal;
+  initPromise = (async () => {
+    try {
+      // Must use ignoreTransaction so it doesn't try to access tables (like mfs)
+      // on an active IDBTransaction from another transaction (e.g. sales or dues)
+      await Dexie.ignoreTransaction(async () => {
+        if (!db.isOpen()) {
+          await db.open();
         }
-        await db.accounts.put({
-          ...def,
-          balance: initialBal,
-          createdAt: now,
-          updatedAt: now
-        });
-      } else if (acc.name !== def.name) {
-        await db.accounts.update(def.id, { name: def.name });
-      }
+
+        const now = new Date().toISOString();
+
+        // Clean up old non-standard accounts if any (like upay, bank)
+        const existing = await db.accounts.toArray();
+        for (const item of existing) {
+          if (!['cash', 'bkash', 'nagad', 'rocket'].includes(item.id)) {
+            await db.accounts.delete(item.id);
+          }
+        }
+
+        // Check if bKash/Nagad/Rocket have latest MFS balances
+        let allMfs: MfsTransaction[] = [];
+        try {
+          allMfs = await db.mfs.toArray();
+        } catch (e) {
+          console.warn('Could not query mfs for initial balances:', e);
+        }
+
+        const getMfsLatestBal = (op: string): number => {
+          const opTxs = allMfs
+            .filter(t => t.operator?.toLowerCase() === op.toLowerCase())
+            .sort((a, b) => (b.id || 0) - (a.id || 0));
+          return opTxs.length > 0 && typeof opTxs[0].balanceAfter === 'number' ? opTxs[0].balanceAfter : 0;
+        };
+
+        // Ensure only the 4 core accounts exist
+        for (const def of DEFAULT_ACCOUNTS) {
+          const acc = await db.accounts.get(def.id);
+          if (!acc) {
+            let initialBal = def.balance;
+            if (def.type === 'mfs') {
+              const mfsBal = getMfsLatestBal(def.id);
+              if (mfsBal > 0) initialBal = mfsBal;
+            }
+            await db.accounts.put({
+              ...def,
+              balance: initialBal,
+              createdAt: now,
+              updatedAt: now
+            });
+          } else if (acc.name !== def.name) {
+            await db.accounts.update(def.id, { name: def.name });
+          }
+        }
+
+        isInitialized = true;
+      });
+    } catch (error) {
+      console.error('Failed to initialize accounts:', error);
+    } finally {
+      initPromise = null;
     }
-  } catch (error) {
-    console.error('Failed to initialize accounts:', error);
-  }
+  })();
+
+  return initPromise;
 }
 
 /**

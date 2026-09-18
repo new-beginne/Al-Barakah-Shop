@@ -82,22 +82,20 @@ export function Dashboard() {
   }, 0);
   const expensesToday = allExpenses.filter(e => e.date === today).reduce((acc, e) => acc + e.amount, 0);
   const mfsCashImpact = todayMfs.reduce((acc, m) => {
-    // Send Money (Out) & Cash-Out & Recharge: Cash in hand increases
-    // Send Money (In) & Cash-In: Cash in hand decreases
-    if (
-      m.type === 'Cash-Out' || 
-      m.type === 'Send Money (Out)' || 
-      m.type === 'Send-Money-Out' || 
-      m.type === 'Recharge'
-    ) {
+    // Cash-Out: Customer receives cash from drawer -> Cash in hand decreases
+    // Cash-In, Recharge, Send Money: Customer gives cash to shop -> Cash in hand increases
+    if (m.type === 'Cash-Out') {
+      return acc - m.amount;
+    }
+    if (m.type === 'Cash-In' || m.type === 'Recharge') {
       return acc + m.amount;
     }
     if (
-      m.type === 'Cash-In' || 
-      m.type === 'Send Money (In)' || 
-      m.type === 'Send-Money-In'
+      m.type === 'Send Money' ||
+      m.type === 'Send Money (Out)' || 
+      m.type === 'Send-Money-Out'
     ) {
-      return acc - m.amount;
+      return acc + (m.amount + (m.charge || 0));
     }
     return acc;
   }, 0);
@@ -130,7 +128,7 @@ export function Dashboard() {
     const daySales = allSales.filter(s => s.date === dayStr).reduce((acc, s) => acc + s.amount, 0);
     const dayExpenses = allExpenses.filter(e => e.date === dayStr).reduce((acc, e) => acc + e.amount, 0);
     return {
-      name: format(day, 'dd MMM'), 
+      name: format(day, 'dd/MM'), 
       Sales: daySales,
       Expenses: dayExpenses,
       NetCashflow: daySales - dayExpenses,

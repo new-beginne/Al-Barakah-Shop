@@ -40,269 +40,116 @@ export function generateStatementPdf(options: StatementPdfOptions) {
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const nowStr = format(new Date(), 'dd MMM yyyy, hh:mm a');
+  const nowStr = format(new Date(), 'dd/MM/yyyy, hh:mm a');
 
-  // --- Header ---
+  // --- Brand Header (Clean Left & Right Layout) ---
+  // Left: Shop identity
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(15, 23, 42);
-  doc.text('AL-BARAKAH DIGITAL STUDIO & ONLINE SERVICE', pageWidth / 2, 14, { align: 'center' });
+  doc.setFontSize(14);
+  doc.setTextColor(8, 75, 62); // Brand Emerald #084b3e
+  doc.text('AL-BARAKAH DIGITAL STUDIO & ONLINE SERVICE', 14, 15);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.setTextColor(100, 116, 139);
-  doc.text('Professional Digital Photo Studio, Govt / Online Services & MFS', pageWidth / 2, 19, { align: 'center' });
+  doc.setTextColor(100, 116, 139); // Slate-500
+  doc.text('Digital Photo Studio • Printing • Online & Govt Services • MFS Banking', 14, 20);
 
-  const titleText = mode === 'full' 
-    ? 'FULL FINANCIAL STATEMENT & AUDIT LEDGER'
-    : `${activeTab.toUpperCase()} STATEMENT & TRANSACTION REPORT`;
+  // Right: Document Title & Metadata
+  const rightX = pageWidth - 14;
+  const reportTitle = mode === 'full' || activeTab === 'all'
+    ? 'STATEMENT OF ACCOUNTS'
+    : `${activeTab.toUpperCase()} STATEMENT`;
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(15, 23, 42);
-  doc.text(titleText, pageWidth / 2, 25, { align: 'center' });
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42); // Slate-900
+  doc.text(reportTitle, rightX, 15, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Period: ${periodLabel}   |   Generated: ${nowStr}`, pageWidth / 2, 29.5, { align: 'center' });
+  doc.text(`Period: ${periodLabel}`, rightX, 20, { align: 'right' });
+  doc.text(`Generated: ${nowStr}`, rightX, 24.5, { align: 'right' });
 
-  // Divider
-  doc.setDrawColor(226, 232, 240);
+  // Clean, subtle horizontal divider line
+  doc.setDrawColor(226, 232, 240); // Slate-200
   doc.setLineWidth(0.4);
-  doc.line(14, 32, pageWidth - 14, 32);
+  doc.line(14, 28, pageWidth - 14, 28);
 
-  // --- Summary Metric Cards ---
-  const cardY = 35;
-  const cardHeight = 15;
-  const gap = 3.5;
-  const numCards = 3;
-  const cardWidth = (pageWidth - 28 - (gap * (numCards - 1))) / numCards;
+  // --- Clean Minimalist Summary Bar (No cluttered boxes) ---
+  const barY = 32;
+  const barHeight = 15;
+  const barWidth = pageWidth - 28;
 
-  // Total Sales Card
-  doc.setFillColor(248, 250, 252);
+  // Background container
+  doc.setFillColor(248, 250, 252); // Slate-50
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, cardY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+  doc.roundedRect(14, barY, barWidth, barHeight, 2, 2, 'FD');
+
+  const colWidth = barWidth / 3;
+
+  // Metric 1: Total Sales
+  const m1X = 14 + 6;
   doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(100, 116, 139);
-  doc.text('TOTAL SALES', 17, cardY + 4.5);
-  doc.setFontSize(10);
+  doc.text('TOTAL SALES', m1X, barY + 4.5);
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`Tk ${totalSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 17, cardY + 10);
-  doc.setFontSize(6.5);
+  doc.text(`Tk ${totalSales.toLocaleString('en-US')}`, m1X, barY + 9.8);
+  doc.setFontSize(6.8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(22, 101, 52);
-  doc.text(`Profit: Tk ${salesProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 17, cardY + 13.5);
+  doc.text(`Sales Profit: Tk ${salesProfit.toLocaleString('en-US')}`, m1X, barY + 13.3);
 
-  // Total Expenses Card
-  const expX = 14 + cardWidth + gap;
-  doc.setFillColor(248, 250, 252);
-  doc.roundedRect(expX, cardY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+  // Vertical divider 1
+  doc.setDrawColor(226, 232, 240);
+  doc.line(14 + colWidth, barY + 2.5, 14 + colWidth, barY + barHeight - 2.5);
+
+  // Metric 2: Total Expenses
+  const m2X = 14 + colWidth + 6;
   doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(100, 116, 139);
-  doc.text('TOTAL EXPENSES', expX + 3, cardY + 4.5);
-  doc.setFontSize(10);
-  doc.setTextColor(185, 28, 28);
-  doc.text(`Tk ${totalExpense.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, expX + 3, cardY + 10);
-  doc.setFontSize(6.5);
+  doc.text('TOTAL EXPENSES', m2X, barY + 4.5);
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(220, 38, 38);
+  doc.text(`Tk ${totalExpense.toLocaleString('en-US')}`, m2X, barY + 9.8);
+  doc.setFontSize(6.8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
-  doc.text('Costs & bills recorded', expX + 3, cardY + 13.5);
+  doc.text(`${expenses.length} operating expense record${expenses.length === 1 ? '' : 's'}`, m2X, barY + 13.3);
 
-  // Net Profit Card
-  const profitX = expX + cardWidth + gap;
-  doc.setFillColor(15, 23, 42);
-  doc.roundedRect(profitX, cardY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+  // Vertical divider 2
+  doc.line(14 + (colWidth * 2), barY + 2.5, 14 + (colWidth * 2), barY + barHeight - 2.5);
+
+  // Metric 3: Net Profit
+  const m3X = 14 + (colWidth * 2) + 6;
   doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(203, 213, 225);
-  doc.text('NET PROFIT', profitX + 3, cardY + 4.5);
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text(`Tk ${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, profitX + 3, cardY + 10);
-  doc.setFontSize(6.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('NET PROFIT', m3X, barY + 4.5);
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(netProfit >= 0 ? 8 : 220, netProfit >= 0 ? 75 : 38, netProfit >= 0 ? 62 : 38);
+  doc.text(`${netProfit >= 0 ? 'Tk ' : '-Tk '}${Math.abs(netProfit).toLocaleString('en-US')}`, m3X, barY + 9.8);
+  doc.setFontSize(6.8);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(148, 163, 184);
-  doc.text(`MFS Profit: Tk ${mfsProfit.toLocaleString('en-US')}`, profitX + 3, cardY + 13.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`MFS Profit: Tk ${mfsProfit.toLocaleString('en-US')}`, m3X, barY + 13.3);
 
-  let currentY = cardY + cardHeight + 6;
+  let currentY = barY + barHeight + 6;
 
-  // --- Table Generation Function Helpers ---
-  const addSalesTable = (startY: number) => {
-    if (mode === 'full') {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('1. Sales Transactions', 14, startY - 1.5);
-    }
+  // --- Table Generation Helpers (Clean, Simple, Uncluttered) ---
 
-    const salesRows = sales.map((s, index) => [
-      (index + 1).toString(),
-      `${s.date}${s.time ? ` ${s.time}` : ''}`,
-      s.serviceName + (s.quantity && s.quantity != 1 && s.quantity !== '1' ? ` (${s.quantity})` : ''),
-      s.customerName || '—',
-      s.paymentMethod || 'Cash',
-      `Tk ${s.amount.toLocaleString()}`,
-      `Tk ${(s.cost || 0).toLocaleString()}`,
-      `+Tk ${s.profit.toLocaleString()}`,
-    ]);
-
-    autoTable(doc, {
-      startY: startY,
-      head: [['#', 'Date & Time', 'Service / Product', 'Customer', 'Payment', 'Amount', 'Cost', 'Profit']],
-      body: salesRows.length > 0 ? salesRows : [['—', '—', 'No sales transactions in this period', '—', '—', '—', '—', '—']],
-      theme: 'grid',
-      styles: {
-        fontSize: 7.5,
-        cellPadding: 2,
-        textColor: [30, 41, 59],
-        lineColor: [226, 232, 240],
-        lineWidth: 0.15,
-      },
-      headStyles: {
-        fillColor: [15, 23, 42],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7.5,
-      },
-      alternateRowStyles: {
-        fillColor: [248, 250, 252],
-      },
-      columnStyles: {
-        0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 28 },
-        2: { cellWidth: 'auto' },
-        3: { cellWidth: 26 },
-        4: { cellWidth: 20, halign: 'center' },
-        5: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
-        6: { cellWidth: 18, halign: 'right' },
-        7: { cellWidth: 20, halign: 'right', textColor: [22, 101, 52] },
-      },
-      margin: { left: 14, right: 14 },
-    });
-
-    return (doc as any).lastAutoTable.finalY;
-  };
-
-  const addExpensesTable = (startY: number) => {
-    if (mode === 'full') {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('2. Expenses & Operating Costs', 14, startY - 1.5);
-    }
-
-    const expenseRows = expenses.map((e, index) => [
-      (index + 1).toString(),
-      `${e.date}${e.time ? ` ${e.time}` : ''}`,
-      e.title,
-      e.category || 'General',
-      e.note || '—',
-      `Tk ${e.amount.toLocaleString()}`,
-    ]);
-
-    autoTable(doc, {
-      startY: startY,
-      head: [['#', 'Date & Time', 'Title / Description', 'Category', 'Note', 'Amount']],
-      body: expenseRows.length > 0 ? expenseRows : [['—', '—', 'No expense records in this period', '—', '—', '—']],
-      theme: 'grid',
-      styles: {
-        fontSize: 7.5,
-        cellPadding: 2,
-        textColor: [30, 41, 59],
-        lineColor: [226, 232, 240],
-        lineWidth: 0.15,
-      },
-      headStyles: {
-        fillColor: [15, 23, 42],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7.5,
-      },
-      alternateRowStyles: {
-        fillColor: [248, 250, 252],
-      },
-      columnStyles: {
-        0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 30 },
-        2: { cellWidth: 'auto' },
-        3: { cellWidth: 28 },
-        4: { cellWidth: 35 },
-        5: { cellWidth: 26, halign: 'right', fontStyle: 'bold', textColor: [185, 28, 28] },
-      },
-      margin: { left: 14, right: 14 },
-    });
-
-    return (doc as any).lastAutoTable.finalY;
-  };
-
-  const addMfsTable = (startY: number) => {
-    if (mode === 'full') {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('3. MFS Banking Ledger', 14, startY - 1.5);
-    }
-
-    const mfsRows = mfs.map((m, index) => [
-      (index + 1).toString(),
-      `${m.date}${m.time ? ` ${m.time}` : ''}`,
-      m.operator,
-      m.type,
-      `Tk ${m.amount.toLocaleString()}`,
-      `+Tk ${m.profit.toLocaleString()}`,
-      `Tk ${(m.balanceAfter || 0).toLocaleString()}`,
-    ]);
-
-    autoTable(doc, {
-      startY: startY,
-      head: [['#', 'Date & Time', 'Operator', 'Type', 'Amount', 'Profit', 'Balance After']],
-      body: mfsRows.length > 0 ? mfsRows : [['—', '—', 'No MFS records in this period', '—', '—', '—', '—']],
-      theme: 'grid',
-      styles: {
-        fontSize: 7.5,
-        cellPadding: 2,
-        textColor: [30, 41, 59],
-        lineColor: [226, 232, 240],
-        lineWidth: 0.15,
-      },
-      headStyles: {
-        fillColor: [15, 23, 42],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7.5,
-      },
-      alternateRowStyles: {
-        fillColor: [248, 250, 252],
-      },
-      columnStyles: {
-        0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 32 },
-        2: { cellWidth: 24, fontStyle: 'bold' },
-        3: { cellWidth: 24, halign: 'center' },
-        4: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
-        5: { cellWidth: 25, halign: 'right', textColor: [22, 101, 52] },
-        6: { cellWidth: 32, halign: 'right' },
-      },
-      margin: { left: 14, right: 14 },
-    });
-
-    return (doc as any).lastAutoTable.finalY;
-  };
-
-  // --- Unified Audit Table (All in One Single Section with Indicator Column) ---
+  // 1. Unified Audit Ledger Table (All in One)
   const addUnifiedAuditTable = (startY: number) => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(15, 23, 42);
-    doc.text('Unified Audit Ledger & Transaction Records', 14, startY - 1.5);
-
     interface UnifiedItem {
       date: string;
       time?: string;
-      type: 'Sell' | 'Cost' | 'MFS';
+      type: 'Sale' | 'Expense' | 'MFS';
       description: string;
       amount: number;
       cost: number;
@@ -311,18 +158,19 @@ export function generateStatementPdf(options: StatementPdfOptions) {
 
     const unifiedList: UnifiedItem[] = [];
 
-    // 1. Sales -> Sell
+    // Sales
     sales.forEach(s => {
       let desc = s.serviceName;
-      if (s.quantity && s.quantity != 1 && s.quantity !== '1') desc += ` (${s.quantity})`;
-      if (s.customerName) desc += ` - ${s.customerName}`;
-      desc += ` [${s.paymentMethod || 'Cash'}]`;
-      if (s.note) desc += ` (${s.note})`;
-
+      if (s.quantity && s.quantity != 1 && s.quantity !== '1') {
+        desc += ` (${s.quantity} pcs)`;
+      }
+      if (s.customerName) {
+        desc += ` • ${s.customerName}`;
+      }
       unifiedList.push({
         date: s.date,
         time: s.time,
-        type: 'Sell',
+        type: 'Sale',
         description: desc,
         amount: s.amount,
         cost: s.cost || 0,
@@ -330,16 +178,14 @@ export function generateStatementPdf(options: StatementPdfOptions) {
       });
     });
 
-    // 2. Expenses -> Cost
+    // Expenses
     expenses.forEach(e => {
       let desc = e.title;
-      if (e.category) desc += ` [${e.category}]`;
-      if (e.note) desc += ` (${e.note})`;
-
+      if (e.category) desc += ` • ${e.category}`;
       unifiedList.push({
         date: e.date,
         time: e.time,
-        type: 'Cost',
+        type: 'Expense',
         description: desc,
         amount: e.amount,
         cost: e.amount,
@@ -347,11 +193,10 @@ export function generateStatementPdf(options: StatementPdfOptions) {
       });
     });
 
-    // 3. MFS -> MFS
+    // MFS
     mfs.forEach(m => {
-      let desc = `${m.operator} ${m.type} [Bal: Tk ${(m.balanceAfter || 0).toLocaleString()}]`;
-      if (m.charge) desc += ` (Fee: Tk ${m.charge})`;
-
+      let desc = `${m.operator} ${m.type}`;
+      if (m.recipientNumber) desc += ` • ${m.recipientNumber}`;
       unifiedList.push({
         date: m.date,
         time: m.time,
@@ -373,87 +218,93 @@ export function generateStatementPdf(options: StatementPdfOptions) {
     let totalAmountSum = 0;
     let totalCostSum = 0;
 
-    const auditRows = unifiedList.map((item, index) => {
+    const rows = unifiedList.map((item, index) => {
       totalAmountSum += item.amount;
       totalCostSum += item.cost;
-      const profitStr = item.profit >= 0 ? `+Tk ${item.profit.toLocaleString()}` : `-Tk ${Math.abs(item.profit).toLocaleString()}`;
+      const profitFormatted = item.profit >= 0
+        ? `+Tk ${item.profit.toLocaleString()}`
+        : `-Tk ${Math.abs(item.profit).toLocaleString()}`;
+
       return [
         (index + 1).toString(),
         `${item.date}${item.time ? ` ${item.time}` : ''}`,
-        item.type, // Indicator column: Sell / Cost / MFS
+        item.type,
         item.description,
         `Tk ${item.amount.toLocaleString()}`,
         `Tk ${item.cost.toLocaleString()}`,
-        profitStr,
+        profitFormatted,
       ];
     });
 
-    const netProfitFormatted = netProfit >= 0 
-      ? `+Tk ${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}` 
-      : `-Tk ${Math.abs(netProfit).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+    const netProfitFormatted = netProfit >= 0
+      ? `+Tk ${netProfit.toLocaleString('en-US')}`
+      : `-Tk ${Math.abs(netProfit).toLocaleString('en-US')}`;
 
     autoTable(doc, {
       startY: startY,
-      head: [['#', 'Date & Time', 'Type', 'Particulars / Description', 'Amount', 'Cost / Out', 'Profit (+/-)']],
-      body: auditRows.length > 0 ? auditRows : [['—', '—', '—', 'No audit transactions recorded in this period', '—', '—', '—']],
-      foot: auditRows.length > 0 ? [[
+      head: [['#', 'Date & Time', 'Type', 'Description / Particulars', 'Amount', 'Cost / Out', 'Profit']],
+      body: rows.length > 0 ? rows : [['—', '—', '—', 'No transactions found for this period', '—', '—', '—']],
+      foot: rows.length > 0 ? [[
         '',
         'TOTAL',
         `${unifiedList.length} items`,
-        'Consolidated Net Audit Ledger',
+        'Net Financial Totals',
         `Tk ${totalAmountSum.toLocaleString()}`,
         `Tk ${totalCostSum.toLocaleString()}`,
         netProfitFormatted,
       ]] : undefined,
-      theme: 'grid',
+      theme: 'plain',
       styles: {
-        fontSize: 7.5,
-        cellPadding: 2,
+        fontSize: 8,
+        cellPadding: { top: 2.8, bottom: 2.8, left: 3, right: 3 },
         textColor: [30, 41, 59],
-        lineColor: [226, 232, 240],
-        lineWidth: 0.15,
+        lineColor: [241, 245, 249],
+        lineWidth: 0.2,
       },
       headStyles: {
-        fillColor: [15, 23, 42],
+        fillColor: [8, 75, 62], // Brand Emerald
         textColor: [255, 255, 255],
         fontStyle: 'bold',
-        fontSize: 7.5,
-      },
-      footStyles: {
-        fillColor: [241, 245, 249],
-        textColor: [15, 23, 42],
-        fontStyle: 'bold',
-        fontSize: 7.5,
+        fontSize: 8,
+        cellPadding: { top: 3.2, bottom: 3.2, left: 3, right: 3 },
       },
       alternateRowStyles: {
+        fillColor: [250, 252, 252],
+      },
+      footStyles: {
         fillColor: [248, 250, 252],
+        textColor: [15, 23, 42],
+        fontStyle: 'bold',
+        fontSize: 8,
+        lineColor: [203, 213, 225],
+        lineWidth: 0.3,
       },
       columnStyles: {
         0: { cellWidth: 8, halign: 'center' },
         1: { cellWidth: 28 },
-        2: { cellWidth: 16, halign: 'center', fontStyle: 'bold' },
+        2: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
         3: { cellWidth: 'auto' },
-        4: { cellWidth: 23, halign: 'right', fontStyle: 'bold' },
-        5: { cellWidth: 21, halign: 'right' },
+        4: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+        5: { cellWidth: 22, halign: 'right' },
         6: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
       },
       didParseCell: (data) => {
-        // Color type indicators
+        // Subtle colored indicator for type
         if (data.section === 'body' && data.column.index === 2) {
-          if (data.cell.raw === 'Sell') {
-            data.cell.styles.textColor = [22, 101, 52]; // Green
-          } else if (data.cell.raw === 'Cost') {
-            data.cell.styles.textColor = [185, 28, 28]; // Red
+          if (data.cell.raw === 'Sale') {
+            data.cell.styles.textColor = [22, 101, 52];
+          } else if (data.cell.raw === 'Expense') {
+            data.cell.styles.textColor = [220, 38, 38];
           } else if (data.cell.raw === 'MFS') {
-            data.cell.styles.textColor = [2, 132, 199]; // Blue/Sky
+            data.cell.styles.textColor = [8, 75, 62];
           }
         }
-        // Color profit column
+        // Profit column color
         if (data.section === 'body' && data.column.index === 6) {
-          const text = String(data.cell.raw || '');
-          if (text.startsWith('-')) {
-            data.cell.styles.textColor = [185, 28, 28];
-          } else if (text.startsWith('+')) {
+          const val = String(data.cell.raw || '');
+          if (val.startsWith('-')) {
+            data.cell.styles.textColor = [220, 38, 38];
+          } else if (val.startsWith('+')) {
             data.cell.styles.textColor = [22, 101, 52];
           }
         }
@@ -464,38 +315,183 @@ export function generateStatementPdf(options: StatementPdfOptions) {
     return (doc as any).lastAutoTable.finalY;
   };
 
-  // Render according to mode
+  // 2. Sales Tab Table
+  const addSalesTable = (startY: number) => {
+    const rows = sales.map((s, index) => [
+      (index + 1).toString(),
+      `${s.date}${s.time ? ` ${s.time}` : ''}`,
+      s.serviceName + (s.quantity && s.quantity != 1 && s.quantity !== '1' ? ` (${s.quantity} pcs)` : ''),
+      s.customerName || '—',
+      s.paymentMethod || 'Cash',
+      `Tk ${s.amount.toLocaleString()}`,
+      `Tk ${(s.cost || 0).toLocaleString()}`,
+      `+Tk ${s.profit.toLocaleString()}`,
+    ]);
+
+    autoTable(doc, {
+      startY: startY,
+      head: [['#', 'Date & Time', 'Service / Product', 'Customer', 'Payment', 'Amount', 'Cost', 'Profit']],
+      body: rows.length > 0 ? rows : [['—', '—', 'No sales transactions in this period', '—', '—', '—', '—', '—']],
+      theme: 'plain',
+      styles: {
+        fontSize: 8,
+        cellPadding: { top: 2.8, bottom: 2.8, left: 3, right: 3 },
+        textColor: [30, 41, 59],
+        lineColor: [241, 245, 249],
+        lineWidth: 0.2,
+      },
+      headStyles: {
+        fillColor: [8, 75, 62],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8,
+        cellPadding: { top: 3.2, bottom: 3.2, left: 3, right: 3 },
+      },
+      alternateRowStyles: {
+        fillColor: [250, 252, 252],
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 26 },
+        4: { cellWidth: 18, halign: 'center' },
+        5: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+        6: { cellWidth: 20, halign: 'right' },
+        7: { cellWidth: 22, halign: 'right', textColor: [22, 101, 52], fontStyle: 'bold' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    return (doc as any).lastAutoTable.finalY;
+  };
+
+  // 3. Expenses Tab Table
+  const addExpensesTable = (startY: number) => {
+    const rows = expenses.map((e, index) => [
+      (index + 1).toString(),
+      `${e.date}${e.time ? ` ${e.time}` : ''}`,
+      e.title,
+      e.category || 'General',
+      e.note || '—',
+      `Tk ${e.amount.toLocaleString()}`,
+    ]);
+
+    autoTable(doc, {
+      startY: startY,
+      head: [['#', 'Date & Time', 'Expense Title / Description', 'Category', 'Note', 'Amount']],
+      body: rows.length > 0 ? rows : [['—', '—', 'No expense records in this period', '—', '—', '—']],
+      theme: 'plain',
+      styles: {
+        fontSize: 8,
+        cellPadding: { top: 2.8, bottom: 2.8, left: 3, right: 3 },
+        textColor: [30, 41, 59],
+        lineColor: [241, 245, 249],
+        lineWidth: 0.2,
+      },
+      headStyles: {
+        fillColor: [8, 75, 62],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8,
+        cellPadding: { top: 3.2, bottom: 3.2, left: 3, right: 3 },
+      },
+      alternateRowStyles: {
+        fillColor: [250, 252, 252],
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 28 },
+        4: { cellWidth: 35 },
+        5: { cellWidth: 26, halign: 'right', fontStyle: 'bold', textColor: [220, 38, 38] },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    return (doc as any).lastAutoTable.finalY;
+  };
+
+  // 4. MFS Tab Table
+  const addMfsTable = (startY: number) => {
+    const rows = mfs.map((m, index) => [
+      (index + 1).toString(),
+      `${m.date}${m.time ? ` ${m.time}` : ''}`,
+      m.operator,
+      m.type,
+      m.recipientNumber || '—',
+      `Tk ${m.amount.toLocaleString()}`,
+      `+Tk ${m.profit.toLocaleString()}`,
+      `Tk ${(m.balanceAfter || 0).toLocaleString()}`,
+    ]);
+
+    autoTable(doc, {
+      startY: startY,
+      head: [['#', 'Date & Time', 'Operator', 'Type', 'Recipient', 'Amount', 'Profit', 'Balance']],
+      body: rows.length > 0 ? rows : [['—', '—', 'No MFS records in this period', '—', '—', '—', '—', '—']],
+      theme: 'plain',
+      styles: {
+        fontSize: 8,
+        cellPadding: { top: 2.8, bottom: 2.8, left: 3, right: 3 },
+        textColor: [30, 41, 59],
+        lineColor: [241, 245, 249],
+        lineWidth: 0.2,
+      },
+      headStyles: {
+        fillColor: [8, 75, 62],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8,
+        cellPadding: { top: 3.2, bottom: 3.2, left: 3, right: 3 },
+      },
+      alternateRowStyles: {
+        fillColor: [250, 252, 252],
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 20, fontStyle: 'bold' },
+        3: { cellWidth: 22, halign: 'center' },
+        4: { cellWidth: 'auto' },
+        5: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+        6: { cellWidth: 20, halign: 'right', textColor: [22, 101, 52], fontStyle: 'bold' },
+        7: { cellWidth: 25, halign: 'right' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    return (doc as any).lastAutoTable.finalY;
+  };
+
+  // Render table based on active tab / mode
   if (mode === 'full' || activeTab === 'all') {
-    // Single consolidated table for full audit report with Type (Sell/Cost/MFS) column
-    currentY = addUnifiedAuditTable(currentY + 3);
-  } else {
-    // Individual active tab statements
-    if (activeTab === 'sales') {
-      currentY = addSalesTable(currentY);
-    } else if (activeTab === 'expenses') {
-      currentY = addExpensesTable(currentY);
-    } else if (activeTab === 'mfs') {
-      currentY = addMfsTable(currentY);
-    }
+    currentY = addUnifiedAuditTable(currentY);
+  } else if (activeTab === 'sales') {
+    currentY = addSalesTable(currentY);
+  } else if (activeTab === 'expenses') {
+    currentY = addExpensesTable(currentY);
+  } else if (activeTab === 'mfs') {
+    currentY = addMfsTable(currentY);
   }
 
-  // --- Signatures & Footers ---
+  // --- Signatures & Footers across all pages ---
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
 
-    // Bottom Footer
+    // Subtle bottom rule
     doc.setDrawColor(226, 232, 240);
     doc.setLineWidth(0.3);
     doc.line(14, pageHeight - 12, pageWidth - 14, pageHeight - 12);
 
-    doc.setFontSize(7);
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(148, 163, 184);
-    doc.text('Al-Barakah Digital Studio & Online Service — Official Accounts Statement', 14, pageHeight - 7.5);
+    doc.text('Al-Barakah Digital Studio & Online Service — Accounts Statement', 14, pageHeight - 7.5);
     doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 7.5, { align: 'right' });
 
-    // On last page, add formal verification / signature lines if there is space
+    // On last page, add signature lines if enough room exists
     if (i === totalPages) {
       const remainingSpace = pageHeight - currentY;
       const sigY = remainingSpace > 35 ? pageHeight - 24 : pageHeight - 20;
@@ -506,6 +502,7 @@ export function generateStatementPdf(options: StatementPdfOptions) {
         doc.setTextColor(71, 85, 105);
 
         // Prepared By Line
+        doc.setDrawColor(203, 213, 225);
         doc.line(14, sigY, 65, sigY);
         doc.text('Prepared By (Manager)', 14, sigY + 4);
 
@@ -517,7 +514,7 @@ export function generateStatementPdf(options: StatementPdfOptions) {
   }
 
   const filename = mode === 'full'
-    ? `AlBarakah_Full_Statement_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`
+    ? `AlBarakah_Statement_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`
     : `AlBarakah_${activeTab}_Statement_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`;
 
   doc.save(filename);

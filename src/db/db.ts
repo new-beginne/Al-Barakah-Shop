@@ -71,6 +71,8 @@ export interface Expense {
   amount: number;
   category: string;
   note?: string;
+  paymentMethod?: string;
+  quantity?: string;
 }
 
 export interface ServiceRate {
@@ -133,6 +135,45 @@ export interface BalanceLog {
   note?: string;
 }
 
+export interface AppNotification {
+  id?: number;
+  date: string;
+  time: string;
+  createdAt: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  type: string;
+}
+
+export interface Borrowing {
+  id?: number;
+  date: string;
+  time?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lenderName: string;
+  phone: string;
+  amount: number;
+  paidAmount: number;
+  dueDate: string;
+  status: 'Unpaid' | 'Partial' | 'Paid';
+  note?: string;
+}
+
+export interface ActivityLog {
+  id?: number;
+  date: string; // 'yyyy-MM-dd'
+  time: string; // 'hh:mm:ss a'
+  timestamp: string; // ISO string
+  action: 'DELETE' | 'EDIT' | 'BULK_DELETE' | 'RESET' | 'CREATE';
+  module: 'Sales' | 'Expenses' | 'MFS' | 'Dues' | 'Customers' | 'Borrowings' | 'Services' | 'Balance' | 'All Data' | 'System';
+  entityId?: string | number;
+  title: string;
+  details?: string;
+  meta?: Record<string, any>;
+}
+
 export class AlBarakahDB extends Dexie {
   sales!: Table<Sale>;
   mfs!: Table<MfsTransaction>;
@@ -144,6 +185,9 @@ export class AlBarakahDB extends Dexie {
   customers!: Table<Customer>;
   accounts!: Table<Account, string>;
   balanceLogs!: Table<BalanceLog>;
+  notifications!: Table<AppNotification>;
+  borrowings!: Table<Borrowing>;
+  activityLogs!: Table<ActivityLog>;
 
   constructor() {
     super('AlBarakahDB');
@@ -168,6 +212,41 @@ export class AlBarakahDB extends Dexie {
     });
     this.version(7).stores({
       balanceLogs: '++id, date, accountId, type'
+    });
+    this.version(8).stores({
+      notifications: '++id, date, isRead, type'
+    });
+    this.version(9).stores({
+      borrowings: '++id, lenderName, phone, status, dueDate'
+    });
+    this.version(10).stores({
+      sales: '++id, date, category, serviceName, amount, paymentMethod',
+      mfs: '++id, date, operator, type',
+      dues: '++id, customerName, phone, status',
+      expenses: '++id, date, category',
+      services: '++id, name, category',
+      salesCategories: '++id, name',
+      expenseServices: '++id, name',
+      customers: '++id, name, phone',
+      accounts: 'id, name, type',
+      balanceLogs: '++id, date, accountId, type',
+      notifications: '++id, date, isRead, type',
+      borrowings: '++id, lenderName, phone, status, dueDate'
+    });
+    this.version(11).stores({
+      sales: '++id, date, category, serviceName, amount, paymentMethod',
+      mfs: '++id, date, operator, type',
+      dues: '++id, customerName, phone, status',
+      expenses: '++id, date, category',
+      services: '++id, name, category',
+      salesCategories: '++id, name',
+      expenseServices: '++id, name',
+      customers: '++id, name, phone',
+      accounts: 'id, name, type',
+      balanceLogs: '++id, date, accountId, type',
+      notifications: '++id, date, isRead, type',
+      borrowings: '++id, lenderName, phone, status, dueDate',
+      activityLogs: '++id, date, timestamp, action, module'
     });
   }
 }

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { generateCustomerStatementPdf, CustomerTransactionItem } from '../utils/customerStatementPdf';
+import { formatDateStr } from '../utils/dateFormatter';
 
 export function CustomerProfile() {
   const { id } = useParams<{ id: string }>();
@@ -454,7 +455,7 @@ export function CustomerProfile() {
           </div>
           <div className="text-right">
             <p className="font-bold text-gray-900">Customer ID: #CUS-{customer.id}</p>
-            <p className="text-gray-600">Date: {format(new Date(), 'dd/MM/yyyy, hh:mm a')}</p>
+            <p className="text-gray-600">Date: {format(new Date(), 'dd/MM/yy, hh:mm a')}</p>
           </div>
         </div>
       </div>
@@ -503,7 +504,7 @@ export function CustomerProfile() {
                 {customer.createdAt && (
                   <span className="flex items-center gap-1 text-[11px] text-gray-400">
                     <Calendar size={11} />
-                    <span>Since {format(new Date(customer.createdAt), 'dd MMM yyyy')}</span>
+                    <span>Since {format(new Date(customer.createdAt), 'dd/MM/yy')}</span>
                   </span>
                 )}
               </div>
@@ -738,7 +739,7 @@ export function CustomerProfile() {
                     >
                       {/* Date & Time */}
                       <td className="py-3 px-3 sm:px-4 whitespace-nowrap">
-                        <div className="font-bold text-gray-900">{t.date}</div>
+                        <div className="font-bold text-gray-900">{formatDateStr(t.date)}</div>
                         {t.time && <div className="text-[10px] text-gray-400 font-mono">{t.time}</div>}
                       </td>
 

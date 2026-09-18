@@ -179,7 +179,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 </div>
 
                 <p className="text-xs text-gray-500">
-                  Last Synced: {lastSynced ? format(new Date(lastSynced), 'dd/MM/yyyy, hh:mm a') : 'Not synced yet'}
+                  Last Synced: {lastSynced ? format(new Date(lastSynced), 'dd/MM/yy, hh:mm a') : 'Not synced yet'}
                 </p>
 
                 <button

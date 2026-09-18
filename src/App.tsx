@@ -8,11 +8,17 @@ import { Reports } from './components/Reports';
 import { Settings } from './components/Settings';
 import { Customers } from './components/Customers';
 import { CustomerProfile } from './components/CustomerProfile';
+import { Borrowings } from './components/Borrowings';
+import { HistoryView } from './components/HistoryView';
 import { Menu, User, Calendar as CalendarIcon, Clock, WifiOff, Cloud, RefreshCw, Store, Eye, EyeOff } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
+import { NotificationCenter } from './components/NotificationCenter';
+
+import { useAppNotifications } from './hooks/useAppNotifications';
+import { initDefaultAccounts } from './services/accountService';
 
 function TopHeader() {
   const [time, setTime] = useState(new Date());
@@ -76,6 +82,9 @@ function TopHeader() {
             </button>
           )}
 
+          {/* Notifications */}
+          <NotificationCenter />
+
           {/* Date, Time & Balance Visibility Toggle */}
           <div className="hidden xl:flex items-center gap-2">
             <button 
@@ -87,7 +96,7 @@ function TopHeader() {
             </button>
             <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-full border border-gray-200 text-xs font-bold text-gray-700 shadow-sm">
               <CalendarIcon size={14} className="text-gray-400"/> 
-              {format(time, 'dd/MM/yyyy')}
+              {format(time, 'dd/MM/yy')}
             </div>
             <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-full border border-gray-200 text-xs font-bold text-gray-700 shadow-sm">
               <Clock size={14} className="text-gray-400"/> 
@@ -131,6 +140,12 @@ function TopHeader() {
 }
 
 export default function App() {
+  useAppNotifications();
+
+  useEffect(() => {
+    initDefaultAccounts();
+  }, []);
+  
   return (
     <AuthProvider>
       <Router>
@@ -148,9 +163,11 @@ export default function App() {
                 <Route path="/customers" element={<Customers />} />
                 <Route path="/customers/:id" element={<CustomerProfile />} />
                 <Route path="/mfs" element={<MfsLedger />} />
+                <Route path="/borrowings" element={<Borrowings />} />
                 <Route path="/dues" element={<Navigate to="/customers" replace />} />
                 <Route path="/expenses" element={<Expenses />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/history" element={<HistoryView />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </main>

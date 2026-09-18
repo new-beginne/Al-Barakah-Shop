@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
-import { Customer, Sale, Due } from '../db/db';
+import { Customer } from '../db/db';
 
 export interface CustomerTransactionItem {
   id: string | number;
@@ -47,38 +47,45 @@ export function generateCustomerStatementPdf(options: CustomerStatementPdfOption
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const nowStr = format(new Date(), 'dd MMM yyyy, hh:mm a');
+  const nowStr = format(new Date(), 'dd/MM/yyyy, hh:mm a');
 
-  // --- Shop Header ---
+  // --- Brand Header (Clean Left & Right Layout) ---
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(15, 23, 42); // slate-900
-  doc.text('AL-BARAKAH DIGITAL STUDIO & ONLINE SERVICE', pageWidth / 2, 14, { align: 'center' });
+  doc.setFontSize(14);
+  doc.setTextColor(8, 75, 62); // Brand Emerald #084b3e
+  doc.text('AL-BARAKAH DIGITAL STUDIO & ONLINE SERVICE', 14, 15);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('Professional Digital Photo Studio, Govt / Online Services & MFS', pageWidth / 2, 19, { align: 'center' });
+  doc.text('Digital Photo Studio • Printing • Online & Govt Services • MFS Banking', 14, 20);
 
-  // Statement Title
+  // Right: Document Title
+  const rightX = pageWidth - 14;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
-  doc.text('CUSTOMER ACCOUNT STATEMENT & TRANSACTION LEDGER', pageWidth / 2, 25.5, { align: 'center' });
+  doc.text('CUSTOMER STATEMENT', rightX, 15, { align: 'right' });
 
-  // Divider line
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Period: ${periodLabel}`, rightX, 20, { align: 'right' });
+  doc.text(`Generated: ${nowStr}`, rightX, 24.5, { align: 'right' });
+
+  // Clean horizontal divider
   doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.4);
-  doc.line(14, 28.5, pageWidth - 14, 28.5);
+  doc.line(14, 28, pageWidth - 14, 28);
 
-  // --- Customer Profile Info Box ---
-  const boxY = 31;
-  const boxHeight = 22;
-  doc.setFillColor(248, 250, 252); // slate-50
+  // --- Customer Info Card ---
+  const boxY = 32;
+  const boxHeight = 18;
+  doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, boxY, pageWidth - 28, boxHeight, 1.5, 1.5, 'FD');
+  doc.roundedRect(14, boxY, pageWidth - 28, boxHeight, 2, 2, 'FD');
 
-  // Left side: Customer details
+  // Left: Customer details
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
@@ -87,89 +94,78 @@ export function generateCustomerStatementPdf(options: CustomerStatementPdfOption
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Phone: ${customer.phone || 'N/A'}`, 18, boxY + 11.5);
-  doc.text(`Address: ${customer.address || 'N/A'}`, 18, boxY + 16.5);
+  doc.text(`Phone: ${customer.phone || 'N/A'}${customer.address ? ` • Address: ${customer.address}` : ''}`, 18, boxY + 12);
 
-  // Right side: Metadata
-  const rightX = pageWidth - 18;
+  // Right: Account ID
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text(`Customer ID: #CUS-${customer.id || 'N/A'}`, rightX, boxY + 6, { align: 'right' });
+  doc.setTextColor(8, 75, 62);
+  doc.text(`Account ID: #CUS-${customer.id || 'N/A'}`, rightX - 4, boxY + 6, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Period: ${periodLabel}`, rightX, boxY + 11.5, { align: 'right' });
-  doc.text(`Date Issued: ${nowStr}`, rightX, boxY + 16.5, { align: 'right' });
+  doc.setTextColor(100, 116, 139);
+  doc.text(`${transactions.length} Total Activity Records`, rightX - 4, boxY + 12, { align: 'right' });
 
-  // --- Financial Overview Cards ---
-  const cardY = boxY + boxHeight + 4;
-  const cardHeight = 15;
-  const gap = 3.5;
-  const numCards = 3;
-  const cardWidth = (pageWidth - 28 - (gap * (numCards - 1))) / numCards;
+  // --- Clean 3-Metric Summary Bar ---
+  const barY = boxY + boxHeight + 4;
+  const barHeight = 14;
+  const barWidth = pageWidth - 28;
 
-  // 1. Total Purchases Card
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, cardY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
-  doc.setFontSize(6.8);
+  doc.roundedRect(14, barY, barWidth, barHeight, 2, 2, 'FD');
+
+  const colWidth = barWidth / 3;
+
+  // Metric 1: Total Purchases
+  const m1X = 14 + 6;
+  doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(100, 116, 139);
-  doc.text('TOTAL PURCHASES', 17, cardY + 4.5);
-  doc.setFontSize(10);
+  doc.text('TOTAL PURCHASES', m1X, barY + 4.5);
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`Tk ${totalPurchases.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 17, cardY + 10);
-  doc.setFontSize(6.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Total recorded sales`, 17, cardY + 13.5);
+  doc.text(`Tk ${totalPurchases.toLocaleString('en-US')}`, m1X, barY + 9.8);
 
-  // 2. Total Paid Card
-  const paidX = 14 + cardWidth + gap;
-  doc.setFillColor(248, 250, 252);
-  doc.roundedRect(paidX, cardY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
-  doc.setFontSize(6.8);
+  // Vertical divider 1
+  doc.setDrawColor(226, 232, 240);
+  doc.line(14 + colWidth, barY + 2.5, 14 + colWidth, barY + barHeight - 2.5);
+
+  // Metric 2: Total Paid
+  const m2X = 14 + colWidth + 6;
+  doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(100, 116, 139);
-  doc.text('TOTAL PAID / CLEARED', paidX + 3, cardY + 4.5);
-  doc.setFontSize(10);
-  doc.setTextColor(22, 101, 52); // green-700
-  doc.text(`Tk ${totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, paidX + 3, cardY + 10);
-  doc.setFontSize(6.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100, 116, 139);
-  doc.text('Payments received', paidX + 3, cardY + 13.5);
+  doc.text('TOTAL PAID / CLEARED', m2X, barY + 4.5);
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(22, 101, 52);
+  doc.text(`Tk ${totalPaid.toLocaleString('en-US')}`, m2X, barY + 9.8);
 
-  // 3. Current Outstanding Due Balance Card
-  const balanceX = paidX + cardWidth + gap;
+  // Vertical divider 2
+  doc.line(14 + (colWidth * 2), barY + 2.5, 14 + (colWidth * 2), barY + barHeight - 2.5);
+
+  // Metric 3: Current Due
+  const m3X = 14 + (colWidth * 2) + 6;
   const hasDue = currentBalanceDue > 0;
-  if (hasDue) {
-    doc.setFillColor(254, 242, 242); // red-50
-    doc.setDrawColor(254, 202, 202); // red-200
-  } else {
-    doc.setFillColor(240, 253, 244); // green-50
-    doc.setDrawColor(187, 247, 208); // green-200
-  }
-  doc.roundedRect(balanceX, cardY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
-  doc.setFontSize(6.8);
+  doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(hasDue ? 185 : 22, hasDue ? 28 : 101, hasDue ? 28 : 52);
-  doc.text('CURRENT OUTSTANDING DUE', balanceX + 3, cardY + 4.5);
-  doc.setFontSize(10);
-  doc.text(`Tk ${currentBalanceDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, balanceX + 3, cardY + 10);
-  doc.setFontSize(6.5);
-  doc.setFont('helvetica', 'normal');
-  doc.text(hasDue ? 'Unsettled balance' : 'Account fully cleared', balanceX + 3, cardY + 13.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('OUTSTANDING DUE', m3X, barY + 4.5);
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(hasDue ? 220 : 22, hasDue ? 38 : 101, hasDue ? 38 : 52);
+  doc.text(`Tk ${currentBalanceDue.toLocaleString('en-US')}`, m3X, barY + 9.8);
 
-  // --- Transactions Ledger Table ---
-  const tableStartY = cardY + cardHeight + 6;
+  // --- Transactions Ledger Table (Simple & Clean) ---
+  const tableStartY = barY + barHeight + 5;
 
   const tableRows = transactions.map((t, index) => {
     const dateStr = `${t.date}${t.time ? ` ${t.time}` : ''}`;
     const desc = t.title;
-    const typeLabel = t.type === 'due' ? 'Due Record' : t.type === 'payment' ? 'Payment' : `Sale (${t.paymentMethod || 'Cash'})`;
+    const typeLabel = t.type === 'due' ? 'Due' : t.type === 'payment' ? 'Payment' : 'Sale';
     const amtStr = `Tk ${t.amount.toLocaleString()}`;
     const paidStr = `Tk ${t.paidAmount.toLocaleString()}`;
     const dueStr = t.dueAmount > 0 ? `Tk ${t.dueAmount.toLocaleString()}` : '—';
@@ -189,33 +185,34 @@ export function generateCustomerStatementPdf(options: CustomerStatementPdfOption
 
   autoTable(doc, {
     startY: tableStartY,
-    head: [['#', 'Date & Time', 'Particulars / Description', 'Type', 'Total', 'Paid', 'Due', 'Status']],
+    head: [['#', 'Date & Time', 'Particulars / Service', 'Type', 'Total', 'Paid', 'Due', 'Status']],
     body: tableRows.length > 0 ? tableRows : [['—', '—', 'No recorded transactions for this customer', '—', '—', '—', '—', '—']],
-    theme: 'grid',
+    theme: 'plain',
     styles: {
-      fontSize: 7.5,
-      cellPadding: 2,
+      fontSize: 8,
+      cellPadding: { top: 2.8, bottom: 2.8, left: 3, right: 3 },
       textColor: [30, 41, 59],
-      lineColor: [226, 232, 240],
-      lineWidth: 0.15,
+      lineColor: [241, 245, 249],
+      lineWidth: 0.2,
     },
     headStyles: {
-      fillColor: [15, 23, 42],
+      fillColor: [8, 75, 62], // Brand Emerald #084b3e
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 7.5,
+      fontSize: 8,
+      cellPadding: { top: 3.2, bottom: 3.2, left: 3, right: 3 },
     },
     alternateRowStyles: {
-      fillColor: [248, 250, 252],
+      fillColor: [250, 252, 252],
     },
     columnStyles: {
       0: { cellWidth: 8, halign: 'center' },
       1: { cellWidth: 28 },
       2: { cellWidth: 'auto' },
-      3: { cellWidth: 26 },
+      3: { cellWidth: 20, halign: 'center' },
       4: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
       5: { cellWidth: 20, halign: 'right', textColor: [22, 101, 52] },
-      6: { cellWidth: 20, halign: 'right', textColor: [185, 28, 28] },
+      6: { cellWidth: 20, halign: 'right', textColor: [220, 38, 38], fontStyle: 'bold' },
       7: { cellWidth: 18, halign: 'center' },
     },
     margin: { left: 14, right: 14 },
@@ -223,7 +220,7 @@ export function generateCustomerStatementPdf(options: CustomerStatementPdfOption
 
   const finalY = (doc as any).lastAutoTable.finalY || tableStartY + 20;
 
-  // --- Signatures & Footers ---
+  // --- Signatures & Footers across all pages ---
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
@@ -233,10 +230,10 @@ export function generateCustomerStatementPdf(options: CustomerStatementPdfOption
     doc.setLineWidth(0.3);
     doc.line(14, pageHeight - 12, pageWidth - 14, pageHeight - 12);
 
-    doc.setFontSize(7);
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(148, 163, 184);
-    doc.text('Al-Barakah Digital Studio & Online Service — Customer Account Statement', 14, pageHeight - 7.5);
+    doc.text('Al-Barakah Digital Studio & Online Service — Customer Statement', 14, pageHeight - 7.5);
     doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 7.5, { align: 'right' });
 
     // On last page, add signature boxes
@@ -250,6 +247,7 @@ export function generateCustomerStatementPdf(options: CustomerStatementPdfOption
         doc.setTextColor(71, 85, 105);
 
         // Customer Signature Line
+        doc.setDrawColor(203, 213, 225);
         doc.line(14, sigY, 65, sigY);
         doc.text('Customer Signature', 14, sigY + 4);
 
