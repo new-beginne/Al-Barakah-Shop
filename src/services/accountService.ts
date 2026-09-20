@@ -32,6 +32,20 @@ export const DEFAULT_ACCOUNTS: Omit<Account, 'createdAt' | 'updatedAt'>[] = [
     type: 'mfs',
     balance: 0,
     note: 'Rocket Wallet'
+  },
+  {
+    id: 'upay',
+    name: 'Upay',
+    type: 'mfs',
+    balance: 0,
+    note: 'Upay Wallet'
+  },
+  {
+    id: 'bank',
+    name: 'Bank / Card',
+    type: 'bank',
+    balance: 0,
+    note: 'Bank Account'
   }
 ];
 
@@ -50,15 +64,7 @@ export async function initDefaultAccounts(): Promise<void> {
 
         const now = new Date().toISOString();
 
-        // Clean up old non-standard accounts if any (like upay, bank)
-        const existing = await db.accounts.toArray();
-        for (const item of existing) {
-          if (!['cash', 'bkash', 'nagad', 'rocket'].includes(item.id)) {
-            await db.accounts.delete(item.id);
-          }
-        }
-
-        // Check if bKash/Nagad/Rocket have latest MFS balances
+        // Check if bKash/Nagad/Rocket/Upay have latest MFS balances
         let allMfs: MfsTransaction[] = [];
         try {
           allMfs = await db.mfs.toArray();
@@ -73,7 +79,7 @@ export async function initDefaultAccounts(): Promise<void> {
           return opTxs.length > 0 && typeof opTxs[0].balanceAfter === 'number' ? opTxs[0].balanceAfter : 0;
         };
 
-        // Ensure only the 4 core accounts exist
+        // Ensure default accounts exist without deleting any custom accounts
         for (const def of DEFAULT_ACCOUNTS) {
           const acc = await db.accounts.get(def.id);
           if (!acc) {
@@ -88,8 +94,6 @@ export async function initDefaultAccounts(): Promise<void> {
               createdAt: now,
               updatedAt: now
             });
-          } else if (acc.name !== def.name) {
-            await db.accounts.update(def.id, { name: def.name });
           }
         }
 
@@ -129,14 +133,18 @@ export async function adjustAccountBalance(accountId: string, delta: number): Pr
     await initDefaultAccounts();
     const acc = await db.accounts.get(accountId);
     if (!acc) {
-      // Fallback to cash if target account doesn't exist
-      const cashAcc = await db.accounts.get('cash');
-      if (cashAcc) {
-        const newBal = (cashAcc.balance || 0) + delta;
-        await db.accounts.update('cash', { balance: newBal, updatedAt: new Date().toISOString() });
-        return newBal;
-      }
-      return 0;
+      const def = DEFAULT_ACCOUNTS.find(d => d.id === accountId);
+      const now = new Date().toISOString();
+      const newAcc: Account = {
+        id: accountId,
+        name: def ? def.name : accountId.charAt(0).toUpperCase() + accountId.slice(1),
+        type: def ? def.type : 'other',
+        balance: delta,
+        createdAt: now,
+        updatedAt: now
+      };
+      await db.accounts.put(newAcc);
+      return delta;
     }
 
     const newBal = (acc.balance || 0) + delta;

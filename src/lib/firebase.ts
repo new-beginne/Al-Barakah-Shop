@@ -1,7 +1,14 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, getFirestore, doc, getDoc } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, setLogLevel } from 'firebase/firestore';
 import config from '../../firebase-applet-config.json';
+
+// Suppress benign connection retry / offline notice warnings
+try {
+  setLogLevel('error');
+} catch {
+  // Ignore in case setLogLevel is not supported in current environment
+}
 
 const firebaseConfig = {
   apiKey: config.apiKey,
@@ -15,11 +22,11 @@ const firebaseConfig = {
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
 
-// Use initializeFirestore with auto-detect long polling for iframe/proxy environments
+// Use initializeFirestore with force long polling for reliable iframe, proxy, and container environments
 export const firestore = (() => {
   try {
     return initializeFirestore(app, {
-      experimentalAutoDetectLongPolling: true,
+      experimentalForceLongPolling: true,
     }, config.firestoreDatabaseId);
   } catch {
     return getFirestore(app, config.firestoreDatabaseId);
@@ -73,17 +80,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Test Firestore connection on boot (passive non-blocking check)
-export async function testFirestoreConnection() {
-  if (!navigator.onLine) {
-    return;
-  }
-  try {
-    // Graceful check that doesn't trigger loud unhandled network warnings in dev iframe environments
-    await getDoc(doc(firestore, 'test', 'connection'));
-  } catch (error: any) {
-    // Offline-first fallback: Dexie.js handles all app operations smoothly
-    console.info('Firebase operates in offline-first mode. Local Dexie storage is active.');
-  }
+// Test Firestore connectivity status safely
+export async function testFirestoreConnection(): Promise<boolean> {
+  return navigator.onLine;
 }
 

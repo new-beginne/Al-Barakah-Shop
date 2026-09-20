@@ -170,9 +170,21 @@ export function Customers() {
   const handleConfirmDelete = async () => {
     if (!deleteCustomerTarget || !deleteCustomerTarget.id) return;
     try {
-      await db.customers.delete(deleteCustomerTarget.id);
+      await db.transaction('rw', db.customers, db.dues, db.activityLogs, async () => {
+        await db.customers.delete(deleteCustomerTarget.id!);
+        const custPhone = deleteCustomerTarget.phone?.trim();
+        const custName = deleteCustomerTarget.name?.trim().toLowerCase();
+        const duesToDelete = await db.dues.filter(d => {
+          const dPhone = d.phone?.trim();
+          const dName = d.customerName?.trim().toLowerCase();
+          return (custPhone && dPhone && custPhone === dPhone) || (dName && dName === custName);
+        }).toArray();
+        if (duesToDelete.length > 0) {
+          await db.dues.bulkDelete(duesToDelete.map(d => d.id!).filter(Boolean));
+        }
+      });
       await logCustomerDelete(deleteCustomerTarget);
-      setSuccessMsg('Customer deleted successfully!');
+      setSuccessMsg('Customer and associated records deleted successfully!');
       setTimeout(() => setSuccessMsg(''), 3000);
     } catch (error) {
       console.error('Failed to delete customer:', error);
@@ -220,7 +232,7 @@ export function Customers() {
 
       await logDueEdit(collectDueCustomer.name, amount, collectDueMethod);
       setSuccessMsg(`Successfully collected Tk ${amount} from ${collectDueCustomer.name}`);
-      setTimeout(() => setSuccessMsg(''));
+      setTimeout(() => setSuccessMsg(''), 4000);
     } finally {
       setIsCollecting(false);
       setCollectDueCustomer(null);

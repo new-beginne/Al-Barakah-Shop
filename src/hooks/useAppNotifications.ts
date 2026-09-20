@@ -72,8 +72,8 @@ export function useAppNotifications() {
               const reg = await navigator.serviceWorker.ready;
               reg.showNotification(title, {
                 body,
-                icon: '/icon.svg',
-                badge: '/icon.svg',
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
                 vibrate: [200, 100, 200]
               } as NotificationOptions);
 

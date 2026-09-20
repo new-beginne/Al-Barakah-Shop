@@ -1,6 +1,8 @@
 import { db } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from './accountService';
 import { logCustomRangeDelete, logAllDataReset } from './activityLogService';
+import { auth } from '../lib/firebase';
+import { deleteCloudDocument, clearCloudCollections } from './syncService';
 
 export interface RangeDeleteOptions {
   startDate: string;
@@ -116,11 +118,25 @@ export async function executeCustomRangeDelete(options: RangeDeleteOptions): Pro
   }
 
   // Execute deletion in a transaction
-  await db.transaction('rw', [db.sales, db.expenses, db.mfs, db.borrowings, db.accounts, db.balanceLogs, db.activityLogs], async () => {
+  await db.transaction('rw', [db.sales, db.dues, db.expenses, db.mfs, db.borrowings, db.accounts, db.balanceLogs, db.activityLogs], async () => {
     // 1. Sales
     if (salesToDelete.length > 0) {
       const salesIds = salesToDelete.map(s => s.id!).filter(Boolean);
       await db.sales.bulkDelete(salesIds);
+
+      // Clean up associated dues
+      for (const s of salesToDelete) {
+        if (s.customerName && ((s.dueAmount || 0) > 0 || s.paymentMethod === 'Due')) {
+          const matchingDue = await db.dues
+            .where('customerName')
+            .equals(s.customerName)
+            .filter(d => Math.abs(d.totalAmount - s.amount) < 0.01 && (!d.date || d.date === s.date))
+            .first();
+          if (matchingDue && matchingDue.id) {
+            await db.dues.delete(matchingDue.id);
+          }
+        }
+      }
 
       if (adjustBalances) {
         // Reverse sales: subtract amounts received
@@ -128,6 +144,8 @@ export async function executeCustomRangeDelete(options: RangeDeleteOptions): Pro
           if (s.paymentMethod && s.paymentMethod !== 'Due') {
             const accId = mapPaymentMethodToAccountId(s.paymentMethod);
             await adjustAccountBalance(accId, -s.amount);
+          } else if ((s.paidAmount || 0) > 0) {
+            await adjustAccountBalance('cash', -(s.paidAmount || 0));
           }
         }
       }
@@ -185,6 +203,17 @@ export async function executeCustomRangeDelete(options: RangeDeleteOptions): Pro
       await db.borrowings.bulkDelete(borrowingIds);
     }
   });
+
+  // Also remove from cloud if user is online & logged in
+  const uid = auth.currentUser?.uid;
+  if (uid && navigator.onLine) {
+    (async () => {
+      for (const s of salesToDelete) if (s.id) await deleteCloudDocument(uid, 'sales', s.id);
+      for (const e of expensesToDelete) if (e.id) await deleteCloudDocument(uid, 'expenses', e.id);
+      for (const m of mfsToDelete) if (m.id) await deleteCloudDocument(uid, 'mfs', m.id);
+      for (const b of borrowingsToDelete) if (b.id) await deleteCloudDocument(uid, 'borrowings', b.id);
+    })().catch(err => console.warn('Cloud sync for range delete error:', err));
+  }
 
   const counts = {
     sales: salesToDelete.length,
@@ -281,6 +310,21 @@ export async function executeAllDataReset(options: ResetOptions): Promise<{
       await db.balanceLogs.clear();
     }
   });
+
+  // Clear pending deletion queue and wipe cloud collections if user is logged in
+  try {
+    await db.deletedRecords.clear();
+  } catch (err) {
+    console.warn('Error clearing deletedRecords queue:', err);
+  }
+
+  const uid = auth.currentUser?.uid;
+  if (uid && navigator.onLine) {
+    const cloudTables = ['sales', 'expenses', 'mfs', 'dues', 'borrowings', 'balanceLogs'];
+    if (options.wipeCustomers) cloudTables.push('customers');
+    if (options.wipePresets) cloudTables.push('services');
+    clearCloudCollections(uid, cloudTables).catch(err => console.warn('Cloud clear on reset error:', err));
+  }
 
   // Log in activity history
   await logAllDataReset({

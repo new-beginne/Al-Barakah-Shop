@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, Customer, Sale, Due } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from '../services/accountService';
+import { logDueEdit } from '../services/activityLogService';
 import { 
   ArrowLeft, 
   Phone, 
@@ -19,6 +20,7 @@ import {
   ArrowUpRight, 
   UserCheck, 
   AlertCircle, 
+  AlertTriangle,
   Clock, 
   Search, 
   Filter, 
@@ -54,6 +56,7 @@ export function CustomerProfile() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfSuccess, setPdfSuccess] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   // Collect Due modal states
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
@@ -76,6 +79,7 @@ export function CustomerProfile() {
     const custPhone = customer.phone?.trim();
 
     return allSales.filter(s => {
+      if (s.customerPhone && custPhone && s.customerPhone === custPhone) return true;
       if (!s.customerName) return false;
       const sName = s.customerName.trim().toLowerCase();
       return sName === custName;
@@ -134,8 +138,35 @@ export function CustomerProfile() {
     if (!customer) return [];
     const items: CustomerTransactionItem[] = [];
 
+    // Track matched dues to avoid pairing multiple sales to the same due
+    const matchedDueIds = new Set<string>();
+
     // Add Sales
     customerSales.forEach(s => {
+      const isDue = s.paymentMethod === 'Due';
+      // Find matching due record for this sale (same date, same amount, not yet matched)
+      let matchingDue: typeof customerDues[0] | undefined;
+      if (isDue) {
+        matchingDue = customerDues.find(d => 
+          !matchedDueIds.has(`due-${d.id}`) &&
+          d.date === s.date &&
+          Math.abs((d.totalAmount || 0) - s.amount) < 0.01
+        );
+        if (matchingDue) {
+          matchedDueIds.add(`due-${matchingDue.id}`);
+        }
+      }
+
+      const livePaid = matchingDue 
+        ? (matchingDue.paidAmount || 0) 
+        : (s.paidAmount !== undefined ? s.paidAmount : (isDue ? 0 : s.amount));
+      const liveDue = matchingDue 
+        ? Math.max(0, (matchingDue.totalAmount || 0) - (matchingDue.paidAmount || 0))
+        : (s.dueAmount !== undefined ? s.dueAmount : (isDue ? Math.max(0, s.amount - livePaid) : 0));
+      const liveStatus = isDue 
+        ? (matchingDue ? matchingDue.status : (liveDue <= 0 ? 'Paid' : (livePaid > 0 ? 'Partial' : 'Unpaid'))) 
+        : 'Paid';
+
       items.push({
         id: `sale-${s.id}`,
         date: s.date,
@@ -145,19 +176,17 @@ export function CustomerProfile() {
         category: s.category,
         paymentMethod: s.paymentMethod,
         amount: s.amount || 0,
-        paidAmount: s.paidAmount !== undefined ? s.paidAmount : (s.paymentMethod === 'Due' ? 0 : s.amount),
-        dueAmount: s.dueAmount || 0,
+        paidAmount: livePaid,
+        dueAmount: liveDue,
         profit: s.profit,
-        status: s.paymentMethod === 'Due' && s.dueAmount ? 'Due' : 'Paid',
+        status: liveStatus,
       });
     });
 
-    // Add Dues
+    // Add standalone Dues (that did not originate from one of the sales above)
     customerDues.forEach(d => {
-      const rem = Math.max(0, (d.totalAmount || 0) - (d.paidAmount || 0));
-      // Avoid exact duplicate if sale was already added
-      const existsInSales = items.some(i => i.date === d.date && Math.abs(i.amount - d.totalAmount) < 0.01);
-      if (!existsInSales) {
+      if (!matchedDueIds.has(`due-${d.id}`)) {
+        const rem = Math.max(0, (d.totalAmount || 0) - (d.paidAmount || 0));
         items.push({
           id: `due-${d.id}`,
           date: d.date || '—',
@@ -223,7 +252,8 @@ export function CustomerProfile() {
       setTimeout(() => setPdfSuccess(false), 3000);
     } catch (err) {
       console.error('PDF export error:', err);
-      alert('Could not generate PDF statement');
+      setErrorMsg('Could not generate PDF statement');
+      setTimeout(() => setErrorMsg(''), 4000);
     } finally {
       setIsExportingPdf(false);
     }
@@ -241,7 +271,8 @@ export function CustomerProfile() {
 
     const amt = parseFloat(collectAmount);
     if (isNaN(amt) || amt <= 0) {
-      alert('Please enter a valid collection amount');
+      setErrorMsg('Please enter a valid collection amount');
+      setTimeout(() => setErrorMsg(''), 4000);
       return;
     }
 
@@ -298,13 +329,21 @@ export function CustomerProfile() {
         console.error('Failed to update account balance in CustomerProfile:', err);
       }
 
+      // Log activity
+      try {
+        await logDueEdit(customer.name, amt, collectMethod);
+      } catch (logErr) {
+        console.warn('Failed to log due collection activity:', logErr);
+      }
+
       setIsCollectModalOpen(false);
       setCollectAmount('');
       setCollectNote('');
       setTimeout(() => setSuccessMsg(''), 4500);
     } catch (err) {
       console.error('Error recording payment:', err);
-      alert('Failed to record collection');
+      setErrorMsg('Failed to record collection');
+      setTimeout(() => setErrorMsg(''), 4000);
     } finally {
       setIsSubmittingCollection(false);
     }
@@ -338,7 +377,8 @@ export function CustomerProfile() {
       setTimeout(() => setSuccessMsg(''), 3500);
     } catch (err) {
       console.error('Error updating customer:', err);
-      alert('Could not update profile');
+      setErrorMsg('Could not update profile');
+      setTimeout(() => setErrorMsg(''), 4000);
     }
   };
 
@@ -436,6 +476,14 @@ export function CustomerProfile() {
         <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center text-emerald-900 font-bold text-xs sm:text-sm tracking-wider uppercase shadow-xs print:hidden">
           <CheckCircle2 className="mr-2 shrink-0 text-emerald-700" size={18} />
           {successMsg}
+        </div>
+      )}
+
+      {/* Error Banner */}
+      {errorMsg && (
+        <div className="p-3.5 bg-red-50 border border-red-300 rounded-xl flex items-center text-red-900 font-bold text-xs sm:text-sm tracking-wider uppercase shadow-xs print:hidden">
+          <AlertTriangle className="mr-2 shrink-0 text-red-700" size={18} />
+          {errorMsg}
         </div>
       )}
 

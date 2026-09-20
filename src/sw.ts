@@ -19,8 +19,8 @@ self.addEventListener('push', (event) => {
 
   const options: NotificationOptions = {
     body: data.body,
-    icon: '/icon.svg',
-    badge: '/icon.svg',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     // @ts-ignore
     vibrate: [200, 100, 200],
     data: {
@@ -102,8 +102,8 @@ self.addEventListener('periodicsync', (event: any) => {
 
         return (self.registration.showNotification as any)('Al-Barakah Reminder', {
           body,
-          icon: '/icon.svg',
-          badge: '/icon.svg',
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
           vibrate: [200, 100, 200]
         });
       })()

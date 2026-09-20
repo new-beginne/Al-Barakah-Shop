@@ -27,15 +27,20 @@ export function Sidebar() {
       </div>
 
       <div className="p-5 flex items-center gap-3">
-        <div className="bg-emerald-50 text-[#084b3e] p-2 rounded-xl shrink-0">
-          <Store size={28} strokeWidth={2.5} />
+        <div className="bg-white p-1 rounded-2xl shrink-0 shadow-sm border border-emerald-300/30 flex items-center justify-center">
+          <img 
+            src="/logo.png" 
+            alt="Al-Barakah Logo" 
+            className="w-9 h-9 object-contain rounded-full"
+            referrerPolicy="no-referrer"
+          />
         </div>
         <div className="flex flex-col min-w-0">
           <span className="text-base font-extrabold tracking-wide leading-tight truncate">
             {profile?.storeName || 'AL-BARAKAH'}
           </span>
-          <span className="text-[10px] font-medium text-emerald-100/70 uppercase tracking-wider truncate">
-            {profile?.phone ? `+88 ${profile.phone}` : 'Business Accounts'}
+          <span className="text-[10px] font-medium text-emerald-100/80 uppercase tracking-wider truncate">
+            {profile?.phone ? `+88 ${profile.phone}` : 'Digital Studio & Service'}
           </span>
         </div>
       </div>

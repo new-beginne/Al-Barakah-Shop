@@ -243,6 +243,9 @@ export function SalesEntry() {
       paymentMethod,
       note: note.trim(),
       customerName: customerName.trim() || undefined,
+      customerPhone: customerPhone.trim() || undefined,
+      paidAmount: paymentMethod === 'Due' ? calculatedPaidAmount : parsedAmount,
+      dueAmount: paymentMethod === 'Due' ? calculatedDueAmount : 0,
       quantity: parseInt(quantity) || 1,
       unitPrice: unitPrice ? parseFloat(unitPrice) : undefined,
       unitCost: unitCost ? parseFloat(unitCost) : undefined
@@ -255,11 +258,13 @@ export function SalesEntry() {
         // Record Due if applicable
         if (calculatedDueAmount > 0 && customerName.trim()) {
           await db.dues.add({
+            date,
+            time,
             customerName: customerName.trim(),
             phone: customerPhone.trim(),
             totalAmount: parsedAmount,
             paidAmount: calculatedPaidAmount,
-            status: calculatedPaidAmount >= parsedAmount ? 'Paid' : 'Partial',
+            status: calculatedPaidAmount >= parsedAmount ? 'Paid' : (calculatedPaidAmount > 0 ? 'Partial' : 'Unpaid'),
             createdAt,
             updatedAt
           });
@@ -293,11 +298,24 @@ export function SalesEntry() {
     if (!deleteTarget || !deleteTarget.id) return;
     try {
       const { id, paymentMethod: pMethod, amount: saleAmount } = deleteTarget;
-      await db.transaction('rw', db.sales, db.accounts, db.balanceLogs, db.activityLogs, async () => {
+      await db.transaction('rw', db.sales, db.dues, db.accounts, db.balanceLogs, db.activityLogs, async () => {
         await db.sales.delete(id);
         if (pMethod !== 'Due') {
           const accountId = mapPaymentMethodToAccountId(pMethod);
           await adjustAccountBalance(accountId, -saleAmount);
+        } else if ((deleteTarget.paidAmount || 0) > 0) {
+          await adjustAccountBalance('cash', -(deleteTarget.paidAmount || 0));
+        }
+        // Clean up associated due if any
+        if (deleteTarget.customerName && (deleteTarget.dueAmount || 0) > 0) {
+          const matchingDue = await db.dues
+            .where('customerName')
+            .equals(deleteTarget.customerName)
+            .filter(d => d.totalAmount === deleteTarget.amount && (!d.date || d.date === deleteTarget.date))
+            .first();
+          if (matchingDue && matchingDue.id) {
+            await db.dues.delete(matchingDue.id);
+          }
         }
       });
       await logSaleDelete(deleteTarget);

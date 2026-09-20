@@ -34,14 +34,19 @@ function TopHeader() {
     <>
       <header className="bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 sm:px-6 py-3.5 flex justify-between items-center z-10 shrink-0 sticky top-0 print:hidden">
         <div className="flex items-center gap-3 sm:gap-4">
-          <button className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg">
-            <Menu size={22} />
-          </button>
+          <div className="md:hidden flex items-center shrink-0">
+            <img 
+              src="/logo.png" 
+              alt="Al-Barakah Logo" 
+              className="w-9 h-9 rounded-full border border-emerald-100 object-contain shadow-xs bg-white p-0.5"
+              referrerPolicy="no-referrer"
+            />
+          </div>
           <div className="flex items-center gap-2.5">
             <div className="text-2xl sm:text-3xl hidden sm:block">👋</div>
             <div className="flex flex-col">
               <h2 className="text-base sm:text-lg font-extrabold text-gray-900 leading-tight">
-                {profile?.storeName ? profile.storeName : 'Welcome Back!'}
+                {profile?.storeName ? profile.storeName : 'Al-Barakah Digital'}
               </h2>
               <p className="text-[11px] font-medium text-gray-500 hidden sm:block">
                 {user ? `Phone: ${profile?.phone || ''} • Cloud Sync Enabled` : 'Manage your sales, stock and accounts with ease.'}

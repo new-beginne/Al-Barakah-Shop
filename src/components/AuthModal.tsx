@@ -90,8 +90,13 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
         {/* Header */}
         <div className="bg-[#084b3e] text-white p-5 flex items-center justify-between relative overflow-hidden">
           <div className="flex items-center gap-3 z-10">
-            <div className="bg-white/10 p-2.5 rounded-xl backdrop-blur-md border border-white/20">
-              <Store size={24} className="text-emerald-300" />
+            <div className="bg-white p-1 rounded-2xl shrink-0 shadow-sm border border-emerald-300/30 flex items-center justify-center">
+              <img 
+                src="/logo.png" 
+                alt="Al-Barakah Logo" 
+                className="w-10 h-10 object-contain rounded-full"
+                referrerPolicy="no-referrer"
+              />
             </div>
             <div>
               <h3 className="font-extrabold text-lg tracking-wide">

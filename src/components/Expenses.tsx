@@ -53,6 +53,7 @@ export function Expenses() {
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
   const [detailsExpense, setDetailsExpense] = useState<Expense | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   // Filters & Search for History Table
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,10 +91,16 @@ export function Expenses() {
   // Helpers to parse legacy / structured expense records
   const getExpensePaymentMethod = (exp: Expense): string => {
     if (exp.paymentMethod) return exp.paymentMethod;
-    if (exp.title?.includes('Pay: bKash')) return 'bKash';
-    if (exp.title?.includes('Pay: Nagad')) return 'Nagad';
-    if (exp.title?.includes('Pay: Rocket')) return 'Rocket';
-    if (exp.title?.includes('Pay: Due')) return 'Due';
+    const match = exp.title?.match(/\bPay:\s*(bKash|Nagad|Rocket|Due|Cash|Bank)\b/i);
+    if (match) {
+      const found = match[1].toLowerCase();
+      if (found === 'bkash') return 'bKash';
+      if (found === 'nagad') return 'Nagad';
+      if (found === 'rocket') return 'Rocket';
+      if (found === 'due') return 'Due';
+      if (found === 'bank') return 'Bank';
+      return 'Cash';
+    }
     return 'Cash';
   };
 
@@ -124,20 +131,23 @@ export function Expenses() {
     e.preventDefault();
 
     if (!selectedService) {
-      alert("Please select a service or expense category.");
+      setErrorMsg("Please select a service or expense category.");
+      setTimeout(() => setErrorMsg(''), 4000);
       return;
     }
 
     const price = parseFloat(amount) || 0;
     if (price <= 0) {
-      alert("Please enter a valid expense amount.");
+      setErrorMsg("Please enter a valid expense amount.");
+      setTimeout(() => setErrorMsg(''), 4000);
       return;
     }
 
     let finalTitle = selectedService;
     if (selectedService === 'Other') {
       if (!customServiceName.trim()) {
-        alert("Please enter a custom service name.");
+        setErrorMsg("Please enter a custom service name.");
+        setTimeout(() => setErrorMsg(''), 4000);
         return;
       }
       finalTitle = customServiceName.trim();
@@ -174,7 +184,8 @@ export function Expenses() {
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
       console.error('Failed to record expense:', err);
-      alert('Error saving expense. Please try again.');
+      setErrorMsg('Error saving expense. Please try again.');
+      setTimeout(() => setErrorMsg(''), 4000);
     }
   };
 
@@ -198,7 +209,8 @@ export function Expenses() {
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
       console.error('Failed to delete expense:', err);
-      alert('Failed to delete expense. Please try again.');
+      setErrorMsg('Failed to delete expense. Please try again.');
+      setTimeout(() => setErrorMsg(''), 4000);
     }
   };
 
@@ -285,6 +297,14 @@ export function Expenses() {
         <div className="bg-emerald-50 text-emerald-700 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm border border-emerald-100 animate-in fade-in slide-in-from-top-2">
           <CheckCircle2 size={18} />
           <span>{successMsg}</span>
+        </div>
+      )}
+
+      {/* Error Notification Banner */}
+      {errorMsg && (
+        <div className="bg-red-50 text-red-700 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm border border-red-100 animate-in fade-in slide-in-from-top-2">
+          <AlertCircle size={18} />
+          <span>{errorMsg}</span>
         </div>
       )}
 

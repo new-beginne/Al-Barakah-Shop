@@ -2,14 +2,19 @@ import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, Borrowing } from '../db/db';
 import { recordActivityLog } from '../services/activityLogService';
-import { Plus, Search, HandCoins, AlertCircle, Calendar } from 'lucide-react';
+import { adjustAccountBalance } from '../services/accountService';
+import { Plus, Search, HandCoins, AlertCircle, Calendar, Trash2, Edit2, CheckCircle2 } from 'lucide-react';
 import { format, isPast, isToday } from 'date-fns';
 
 export function Borrowings() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Borrowing | null>(null);
   const [selectedBorrowing, setSelectedBorrowing] = useState<Borrowing | null>(null);
+  const [editingBorrowing, setEditingBorrowing] = useState<Borrowing | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   // Form State
   const [lenderName, setLenderName] = useState('');
@@ -17,9 +22,19 @@ export function Borrowings() {
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [note, setNote] = useState('');
+  const [receiveAccount, setReceiveAccount] = useState('cash');
+
+  // Edit Form State
+  const [editLenderName, setEditLenderName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
+  const [editNote, setEditNote] = useState('');
 
   // Payment Form State
   const [payAmount, setPayAmount] = useState('');
+  const [payAccount, setPayAccount] = useState('cash');
+
+  const accounts = useLiveQuery(() => db.accounts.toArray()) || [];
 
   const borrowings = useLiveQuery(() => 
     db.borrowings.orderBy('id').reverse().toArray()
@@ -37,18 +52,32 @@ export function Borrowings() {
   const handleAddBorrowing = async (e: React.FormEvent) => {
     e.preventDefault();
     const now = new Date();
-    await db.borrowings.add({
+    const parsedAmount = Number(amount);
+
+    const newId = await db.borrowings.add({
       date: format(now, 'yyyy-MM-dd'),
       time: format(now, 'hh:mm:ss a'),
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
       lenderName,
       phone,
-      amount: Number(amount),
+      amount: parsedAmount,
       paidAmount: 0,
       dueDate,
       status: 'Unpaid',
       note
+    });
+
+    if (receiveAccount !== 'none' && parsedAmount > 0) {
+      await adjustAccountBalance(receiveAccount, parsedAmount);
+    }
+
+    await recordActivityLog({
+      action: 'CREATE',
+      module: 'Borrowings',
+      title: `Borrowing Tk ${parsedAmount.toLocaleString()} from ${lenderName}`,
+      details: `Received in ${receiveAccount} (Due: ${dueDate})`,
+      meta: { borrowingId: newId, lenderName, amount: parsedAmount, receiveAccount }
     });
 
     setLenderName('');
@@ -56,14 +85,18 @@ export function Borrowings() {
     setAmount('');
     setDueDate('');
     setNote('');
+    setReceiveAccount('cash');
     setIsModalOpen(false);
+    setSuccessMsg(`Recorded borrowing of Tk ${parsedAmount.toLocaleString()} successfully.`);
+    setTimeout(() => setSuccessMsg(''), 4000);
   };
 
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBorrowing || !selectedBorrowing.id) return;
 
-    const newPaidAmount = selectedBorrowing.paidAmount + Number(payAmount);
+    const paymentNum = Number(payAmount);
+    const newPaidAmount = selectedBorrowing.paidAmount + paymentNum;
     const newStatus = newPaidAmount >= selectedBorrowing.amount ? 'Paid' : 'Partial';
 
     await db.borrowings.update(selectedBorrowing.id, {
@@ -72,15 +105,20 @@ export function Borrowings() {
       updatedAt: new Date().toISOString()
     });
 
+    if (payAccount !== 'none' && paymentNum > 0) {
+      await adjustAccountBalance(payAccount, -paymentNum);
+    }
+
     await recordActivityLog({
       action: 'EDIT',
       module: 'Borrowings',
-      title: `Repaid Tk ${Number(payAmount).toLocaleString()} for ${selectedBorrowing.lenderName}`,
-      details: `Paid amount updated to Tk ${newPaidAmount.toLocaleString()} of Tk ${selectedBorrowing.amount.toLocaleString()} (Status: ${newStatus})`,
+      title: `Repaid Tk ${paymentNum.toLocaleString()} for ${selectedBorrowing.lenderName}`,
+      details: `Paid amount updated to Tk ${newPaidAmount.toLocaleString()} of Tk ${selectedBorrowing.amount.toLocaleString()} from ${payAccount}`,
       meta: {
         borrowingId: selectedBorrowing.id,
         lenderName: selectedBorrowing.lenderName,
-        paymentAmount: Number(payAmount),
+        paymentAmount: paymentNum,
+        payAccount,
         newStatus
       }
     });
@@ -88,12 +126,68 @@ export function Borrowings() {
     setPayAmount('');
     setSelectedBorrowing(null);
     setIsPaymentModalOpen(false);
+    setSuccessMsg(`Repayment of Tk ${paymentNum.toLocaleString()} processed successfully.`);
+    setTimeout(() => setSuccessMsg(''), 4000);
   };
 
   const openPaymentModal = (borrowing: Borrowing) => {
     setSelectedBorrowing(borrowing);
     setPayAmount((borrowing.amount - borrowing.paidAmount).toString());
+    setPayAccount('cash');
     setIsPaymentModalOpen(true);
+  };
+
+  const openEditModal = (b: Borrowing) => {
+    setEditingBorrowing(b);
+    setEditLenderName(b.lenderName);
+    setEditPhone(b.phone);
+    setEditDueDate(b.dueDate);
+    setEditNote(b.note || '');
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBorrowing?.id) return;
+
+    await db.borrowings.update(editingBorrowing.id, {
+      lenderName: editLenderName.trim(),
+      phone: editPhone.trim(),
+      dueDate: editDueDate,
+      note: editNote.trim(),
+      updatedAt: new Date().toISOString()
+    });
+
+    await recordActivityLog({
+      action: 'EDIT',
+      module: 'Borrowings',
+      title: `Updated details for ${editLenderName}`,
+      details: `Phone: ${editPhone}, Due: ${editDueDate}`,
+      meta: { borrowingId: editingBorrowing.id }
+    });
+
+    setIsEditModalOpen(false);
+    setEditingBorrowing(null);
+    setSuccessMsg('Borrowing record updated successfully.');
+    setTimeout(() => setSuccessMsg(''), 3500);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget?.id) return;
+
+    await db.borrowings.delete(deleteTarget.id);
+
+    await recordActivityLog({
+      action: 'DELETE',
+      module: 'Borrowings',
+      title: `Deleted borrowing record: ${deleteTarget.lenderName}`,
+      details: `Amount: Tk ${deleteTarget.amount.toLocaleString()}, Repaid: Tk ${deleteTarget.paidAmount.toLocaleString()}`,
+      meta: { borrowingId: deleteTarget.id, lenderName: deleteTarget.lenderName }
+    });
+
+    setDeleteTarget(null);
+    setSuccessMsg('Borrowing record deleted.');
+    setTimeout(() => setSuccessMsg(''), 3000);
   };
 
   return (
@@ -152,7 +246,7 @@ export function Borrowings() {
                 <th className="px-6 py-4 text-right">Amount</th>
                 <th className="px-6 py-4">Due Date</th>
                 <th className="px-6 py-4 text-center">Status</th>
-                <th className="px-6 py-4 text-right">Action</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -199,14 +293,30 @@ export function Borrowings() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {b.status !== 'Paid' && (
+                        <div className="flex items-center justify-end gap-1.5">
+                          {b.status !== 'Paid' && (
+                            <button
+                              onClick={() => openPaymentModal(b)}
+                              className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                            >
+                              Repay
+                            </button>
+                          )}
                           <button
-                            onClick={() => openPaymentModal(b)}
-                            className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                            onClick={() => openEditModal(b)}
+                            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                            title="Edit"
                           >
-                            Repay
+                            <Edit2 size={14} />
                           </button>
-                        )}
+                          <button
+                            onClick={() => setDeleteTarget(b)}
+                            className="p-1.5 text-rose-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -280,6 +390,20 @@ export function Borrowings() {
                   </div>
                 </div>
                 <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Receive In Account</label>
+                  <select
+                    value={receiveAccount}
+                    onChange={(e) => setReceiveAccount(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold outline-none"
+                  >
+                    <option value="cash">Cash Drawer</option>
+                    {accounts.filter(a => a.id !== 'cash').map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                    <option value="none">Do not adjust any account balance</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Note (Optional)</label>
                   <textarea
                     value={note}
@@ -312,6 +436,107 @@ export function Borrowings() {
         </div>
       )}
 
+      {/* Edit Borrowing Modal */}
+      {isEditModalOpen && editingBorrowing && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+              <h3 className="font-bold text-lg text-gray-900">Edit Borrowing Record</h3>
+              <button onClick={() => setIsEditModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-1">
+                ✕
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              <form id="edit-borrowing-form" onSubmit={handleSaveEdit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Lender Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editLenderName}
+                    onChange={(e) => setEditLenderName(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Phone</label>
+                  <input
+                    type="tel"
+                    required
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Due Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={editDueDate}
+                    onChange={(e) => setEditDueDate(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Note (Optional)</label>
+                  <textarea
+                    value={editNote}
+                    onChange={(e) => setEditNote(e.target.value)}
+                    rows={2}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none resize-none"
+                  />
+                </div>
+              </form>
+            </div>
+            <div className="p-4 border-t border-gray-100 bg-gray-50 shrink-0 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="edit-borrowing-form"
+                className="px-6 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white text-sm font-bold rounded-xl shadow-sm transition-colors"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden p-6 space-y-4">
+            <h3 className="font-bold text-lg text-gray-900">Delete Borrowing Record?</h3>
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete the borrowing record for <span className="font-bold text-gray-900">{deleteTarget.lenderName}</span> (Tk {deleteTarget.amount.toLocaleString()})?
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Repayment Modal */}
       {isPaymentModalOpen && selectedBorrowing && (
         <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -329,17 +554,33 @@ export function Borrowings() {
                 <div className="font-medium text-gray-600 mt-1">Outstanding: <span className="font-bold text-rose-600">Tk {(selectedBorrowing.amount - selectedBorrowing.paidAmount).toLocaleString()}</span></div>
               </div>
 
-              <form id="payment-form" onSubmit={handlePayment}>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Payment Amount (Tk)</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  max={selectedBorrowing.amount - selectedBorrowing.paidAmount}
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-lg font-black outline-none font-mono text-center"
-                />
+              <form id="payment-form" onSubmit={handlePayment} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Payment Amount (Tk)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max={selectedBorrowing.amount - selectedBorrowing.paidAmount}
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-lg font-black outline-none font-mono text-center"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Pay From Account</label>
+                  <select
+                    value={payAccount}
+                    onChange={(e) => setPayAccount(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold outline-none"
+                  >
+                    <option value="cash">Cash Drawer</option>
+                    {accounts.filter(a => a.id !== 'cash').map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                    <option value="none">Do not adjust account balance</option>
+                  </select>
+                </div>
               </form>
             </div>
 
@@ -347,14 +588,14 @@ export function Borrowings() {
               <button
                 type="button"
                 onClick={() => setIsPaymentModalOpen(false)}
-                className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors"
+                className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 form="payment-form"
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors"
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
               >
                 Confirm Payment
               </button>

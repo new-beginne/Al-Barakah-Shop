@@ -30,7 +30,8 @@ import {
   Shield,
   Layers,
   History,
-  Check
+  Check,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AuthModal } from './AuthModal';
@@ -48,6 +49,7 @@ import { DataManagementSettings } from './DataManagementSettings';
 
 export function Settings() {
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const { user, profile, isOnline, syncStatus, lastSynced, triggerSync } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -274,7 +276,8 @@ export function Settings() {
     e.preventDefault();
     const amount = parseFloat(balanceAmount);
     if (isNaN(amount) || amount <= 0) {
-      alert('Please enter a valid amount greater than 0.');
+      setErrorMsg('Please enter a valid amount greater than 0.');
+      setTimeout(() => setErrorMsg(''), 4000);
       return;
     }
 
@@ -297,7 +300,8 @@ export function Settings() {
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
       console.error('Error submitting balance:', err);
-      alert('Failed to add balance. Please try again.');
+      setErrorMsg('Failed to add balance. Please try again.');
+      setTimeout(() => setErrorMsg(''), 4000);
     } finally {
       setIsSubmittingBalance(false);
     }
@@ -308,7 +312,8 @@ export function Settings() {
     e.preventDefault();
     const newBal = parseFloat(calibrateNewBalance);
     if (isNaN(newBal) || newBal < 0) {
-      alert('Please enter a valid balance amount (0 or more).');
+      setErrorMsg('Please enter a valid balance amount (0 or more).');
+      setTimeout(() => setErrorMsg(''), 4000);
       return;
     }
 
@@ -331,7 +336,8 @@ export function Settings() {
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
       console.error('Error calibrating balance:', err);
-      alert('Failed to update balance. Please try again.');
+      setErrorMsg('Failed to update balance. Please try again.');
+      setTimeout(() => setErrorMsg(''), 4000);
     } finally {
       setIsSubmittingCalibrate(false);
     }
@@ -350,7 +356,8 @@ export function Settings() {
     if (!editingLog?.id) return;
     const newAmt = parseFloat(editLogAmount);
     if (isNaN(newAmt)) {
-      alert('Please enter a valid amount.');
+      setErrorMsg('Please enter a valid amount.');
+      setTimeout(() => setErrorMsg(''), 4000);
       return;
     }
 
@@ -366,7 +373,8 @@ export function Settings() {
       setTimeout(() => setSuccessMsg(''), 3500);
     } catch (err) {
       console.error('Error updating log:', err);
-      alert('Failed to update history log.');
+      setErrorMsg('Failed to update history log.');
+      setTimeout(() => setErrorMsg(''), 4000);
     } finally {
       setIsSubmittingEditLog(false);
     }
@@ -382,7 +390,8 @@ export function Settings() {
       setTimeout(() => setSuccessMsg(''), 3500);
     } catch (err) {
       console.error('Error deleting log:', err);
-      alert('Failed to delete history entry.');
+      setErrorMsg('Failed to delete history entry.');
+      setTimeout(() => setErrorMsg(''), 4000);
     } finally {
       setIsDeletingLog(false);
     }
@@ -401,7 +410,8 @@ export function Settings() {
       setTimeout(() => setSuccessMsg(''), 3500);
     } catch (error) {
       console.error('Export error:', error);
-      alert('Backup failed.');
+      setErrorMsg('Backup failed. Please check browser storage permissions.');
+      setTimeout(() => setErrorMsg(''), 4000);
     }
   };
 
@@ -435,7 +445,8 @@ export function Settings() {
       }, 1500);
     } catch (error) {
       console.error('Import error:', error);
-      alert('Restore failed.');
+      setErrorMsg('Restore failed. Please check file format.');
+      setTimeout(() => setErrorMsg(''), 4000);
     } finally {
       setPendingRestoreFile(null);
     }
@@ -510,6 +521,14 @@ export function Settings() {
         <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-sm">
           <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
           <span>{successMsg}</span>
+        </div>
+      )}
+
+      {/* Error Notification */}
+      {errorMsg && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-800 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-sm">
+          <AlertCircle size={18} className="shrink-0 text-red-600" />
+          <span>{errorMsg}</span>
         </div>
       )}
 

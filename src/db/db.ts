@@ -30,6 +30,7 @@ export interface Sale {
   dueAmount?: number;
   paidAmount?: number;
   customerName?: string;
+  customerPhone?: string;
 }
 
 export interface MfsTransaction {
@@ -112,7 +113,7 @@ export interface Customer {
 export interface Account {
   id: string; // e.g. 'cash', 'bkash', 'nagad', 'rocket', 'upay', 'bank'
   name: string;
-  type: 'cash' | 'mfs' | 'bank';
+  type: 'cash' | 'mfs' | 'bank' | 'other';
   balance: number;
   accountNumber?: string;
   note?: string;
@@ -174,6 +175,13 @@ export interface ActivityLog {
   meta?: Record<string, any>;
 }
 
+export interface DeletedRecord {
+  id?: number;
+  table: string;
+  remoteId: string;
+  deletedAt: string;
+}
+
 export class AlBarakahDB extends Dexie {
   sales!: Table<Sale>;
   mfs!: Table<MfsTransaction>;
@@ -188,6 +196,7 @@ export class AlBarakahDB extends Dexie {
   notifications!: Table<AppNotification>;
   borrowings!: Table<Borrowing>;
   activityLogs!: Table<ActivityLog>;
+  deletedRecords!: Table<DeletedRecord>;
 
   constructor() {
     super('AlBarakahDB');
@@ -248,6 +257,22 @@ export class AlBarakahDB extends Dexie {
       borrowings: '++id, lenderName, phone, status, dueDate',
       activityLogs: '++id, date, timestamp, action, module'
     });
+    this.version(12).stores({
+      sales: '++id, date, category, serviceName, amount, paymentMethod',
+      mfs: '++id, date, operator, type',
+      dues: '++id, customerName, phone, status',
+      expenses: '++id, date, category',
+      services: '++id, name, category',
+      salesCategories: '++id, name',
+      expenseServices: '++id, name',
+      customers: '++id, name, phone',
+      accounts: 'id, name, type',
+      balanceLogs: '++id, date, accountId, type',
+      notifications: '++id, date, isRead, type',
+      borrowings: '++id, lenderName, phone, status, dueDate',
+      activityLogs: '++id, date, timestamp, action, module',
+      deletedRecords: '++id, table, remoteId'
+    });
   }
 }
 
@@ -260,9 +285,31 @@ function dispatchSyncEvent() {
   }
 }
 
-// Hook into all tables to trigger auto-sync on any change
+// Track synced tables
+const SYNCED_TABLES = new Set([
+  'sales',
+  'expenses',
+  'mfs',
+  'dues',
+  'customers',
+  'accounts',
+  'balanceLogs',
+  'borrowings',
+  'services'
+]);
+
+// Hook into tables to record changes and track deletions
 db.tables.forEach(table => {
   table.hook('creating', () => { dispatchSyncEvent(); });
   table.hook('updating', () => { dispatchSyncEvent(); });
-  table.hook('deleting', () => { dispatchSyncEvent(); });
+  table.hook('deleting', function(primKey) {
+    if (SYNCED_TABLES.has(table.name) && primKey !== undefined && primKey !== null) {
+      db.deletedRecords.add({
+        table: table.name,
+        remoteId: String(primKey),
+        deletedAt: new Date().toISOString()
+      }).catch(() => {});
+    }
+    dispatchSyncEvent();
+  });
 });

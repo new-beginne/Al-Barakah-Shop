@@ -7,7 +7,7 @@ import {
   signOut 
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, firestore, testFirestoreConnection } from '../lib/firebase';
+import { auth, firestore } from '../lib/firebase';
 import { fullSync, SyncResult } from '../services/syncService';
 
 import { sanitizeText, BruteForceGuard } from '../lib/security';
@@ -99,11 +99,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(syncTimeout);
     };
   }, [user]);
-
-  // Boot connection check
-  useEffect(() => {
-    testFirestoreConnection();
-  }, []);
 
   // Listen to Firebase Auth state
   useEffect(() => {

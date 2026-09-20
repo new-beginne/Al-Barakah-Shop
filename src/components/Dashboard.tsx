@@ -72,15 +72,22 @@ export function Dashboard() {
   const totalProfitToday = todaySales.reduce((acc, sale) => acc + sale.profit, 0);
   const todayMfs = allMfs.filter(m => m.date === today);
   const mfsProfitToday = todayMfs.reduce((acc, m) => acc + m.profit, 0);
-  const netProfitToday = totalProfitToday + mfsProfitToday;
+  const expensesToday = allExpenses.filter(e => e.date === today).reduce((acc, e) => acc + e.amount, 0);
+  const netProfitToday = (totalProfitToday + mfsProfitToday) - expensesToday;
 
   const cashReceivedToday = todaySales.reduce((acc, sale) => {
-    if (sale.paymentMethod === 'Due') {
+    const method = (sale.paymentMethod || 'cash').toLowerCase().trim();
+    if (method === 'due') {
       return acc + (sale.paidAmount !== undefined ? sale.paidAmount : 0);
     }
-    return acc + sale.amount;
+    if (method === 'cash') {
+      return acc + sale.amount;
+    }
+    return acc;
   }, 0);
-  const expensesToday = allExpenses.filter(e => e.date === today).reduce((acc, e) => acc + e.amount, 0);
+  const cashExpensesToday = allExpenses
+    .filter(e => e.date === today && (e.paymentMethod || 'Cash').toLowerCase().trim() === 'cash')
+    .reduce((acc, e) => acc + e.amount, 0);
   const mfsCashImpact = todayMfs.reduce((acc, m) => {
     // Cash-Out: Customer receives cash from drawer -> Cash in hand decreases
     // Cash-In, Recharge, Send Money: Customer gives cash to shop -> Cash in hand increases
@@ -99,17 +106,32 @@ export function Dashboard() {
     }
     return acc;
   }, 0);
-  const cashOnHandTodayFlow = cashReceivedToday + mfsCashImpact - expensesToday; 
+  const cashOnHandTodayFlow = cashReceivedToday + mfsCashImpact - cashExpensesToday; 
   const cashAccount = allAccounts.find(a => a.id === 'cash');
   const cashOnHand = cashAccount ? cashAccount.balance : cashOnHandTodayFlow;
-  // Exactly 4 accounts: Cash, bKash, Nagad, Rocket
+  
+  // All accounts (Cash, bKash, Nagad, Rocket, Upay, Bank, custom)
   const targetAccountsList = useMemo(() => {
-    const order = ['cash', 'bkash', 'nagad', 'rocket'];
-    return order.map(id => {
+    const defaultAccountsOrder = ['cash', 'bkash', 'nagad', 'rocket', 'upay', 'bank'];
+    const list: Array<{ id: string; name: string; balance: number; type?: string }> = [];
+    
+    defaultAccountsOrder.forEach(id => {
       const found = allAccounts.find(a => a.id === id);
-      const defaultName = id === 'cash' ? 'Cash' : id === 'bkash' ? 'bKash' : id === 'nagad' ? 'Nagad' : 'Rocket';
-      return found ? { ...found, name: defaultName } : { id, name: defaultName, balance: 0 };
+      if (found) {
+        list.push(found);
+      } else {
+        const defaultName = id === 'cash' ? 'Cash' : id === 'bkash' ? 'bKash' : id === 'nagad' ? 'Nagad' : id === 'rocket' ? 'Rocket' : id === 'upay' ? 'Upay' : 'Bank';
+        list.push({ id, name: defaultName, balance: 0, type: id === 'cash' ? 'cash' : id === 'bank' ? 'bank' : 'mfs' });
+      }
     });
+
+    allAccounts.forEach(acc => {
+      if (!list.some(item => item.id === acc.id)) {
+        list.push(acc);
+      }
+    });
+
+    return list;
   }, [allAccounts]);
   const totalCapitalFunds = targetAccountsList.reduce((sum, a) => sum + (a.balance || 0), 0);
 

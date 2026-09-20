@@ -99,6 +99,30 @@ service cloud.firestore {
           && request.resource.data.accountId is string;
         allow delete: if isOwner(userId);
       }
+
+      // Borrowings Subcollection
+      match /borrowings/{borrowingId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.amount is number
+          && request.resource.data.lenderName is string;
+        allow delete: if isOwner(userId);
+      }
+
+      // Services Subcollection
+      match /services/{serviceId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.name is string;
+        allow delete: if isOwner(userId);
+      }
+
+      // Activity Logs Subcollection
+      match /activityLogs/{logId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
     }
 
   }
