@@ -153,11 +153,11 @@ function TopHeader() {
             onClick={async () => {
               await logout();
             }}
-            title="লগআউট ও দোকান লক করুন (Logout & Lock Shop)"
+            title="Lock & Logout"
             className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold border border-red-200 shadow-xs transition-all cursor-pointer"
           >
             <LogOut size={13} />
-            <span className="hidden sm:inline">লক / লগআউট</span>
+            <span className="hidden sm:inline">Lock / Logout</span>
           </button>
 
         </div>
@@ -183,7 +183,7 @@ function AuthenticatedApp() {
           Al-Barakah Digital Studio
         </p>
         <span className="text-xs text-emerald-200 mt-1 font-medium">
-          যাচাই করা হচ্ছে ও নিরাপত্তা নিশ্চিত করা হচ্ছে...
+          Verifying security and session...
         </span>
       </div>
     );

@@ -330,10 +330,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Update password for currently logged-in user
   const updateStorePassword = async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
     if (!auth.currentUser) {
-      return { success: false, error: 'ইউজার লগইন করা নেই। দয়া করে লগইন করুন।' };
+      return { success: false, error: 'User is not logged in. Please log in first.' };
     }
     if (!newPassword || newPassword.length < 6) {
-      return { success: false, error: 'পাসওয়ার্ড কমপক্ষে ৬ ডিজিট বা অক্ষরের হতে হবে।' };
+      return { success: false, error: 'Password must be at least 6 characters long.' };
     }
 
     try {
@@ -344,13 +344,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (err?.code === 'auth/requires-recent-login') {
         return { 
           success: false, 
-          error: 'নিরাপত্তার স্বার্থে আবার লগইন করে পাসওয়ার্ড পরিবর্তন করুন (Recent login required).' 
+          error: 'Please log in again before changing your password (Recent login required).' 
         };
       }
       if (err?.code === 'auth/weak-password') {
-        return { success: false, error: 'পাসওয়ার্ডটি দুর্বল। আরও শক্তিশালী পাসওয়ার্ড দিন।' };
+        return { success: false, error: 'Password is too weak. Please use a stronger password.' };
       }
-      return { success: false, error: err?.message || 'পাসওয়ার্ড পরিবর্তন ব্যর্থ হয়েছে।' };
+      return { success: false, error: err?.message || 'Password update failed.' };
     }
   };
 
@@ -358,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateStoreName = async (newStoreName: string): Promise<{ success: boolean; error?: string }> => {
     const cleanName = sanitizeText(newStoreName.trim());
     if (!cleanName) {
-      return { success: false, error: 'দোকানের নাম খালি রাখা যাবে না।' };
+      return { success: false, error: 'Store name cannot be empty.' };
     }
 
     const updatedProfile: UserProfile = {

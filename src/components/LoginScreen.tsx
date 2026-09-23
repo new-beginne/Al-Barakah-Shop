@@ -25,11 +25,11 @@ export function LoginScreen() {
     setSuccessMessage('');
 
     if (!phone.trim()) {
-      setErrorMessage('দয়া করে আপনার মোবাইল নম্বর লিখুন (Enter phone number)');
+      setErrorMessage('Please enter your mobile phone number.');
       return;
     }
     if (!password) {
-      setErrorMessage('দয়া করে পাসওয়ার্ড লিখুন (Enter password)');
+      setErrorMessage('Please enter your store password.');
       return;
     }
 
@@ -38,9 +38,9 @@ export function LoginScreen() {
     setLoading(false);
 
     if (res.success) {
-      setSuccessMessage('সফলভাবে লগইন হয়েছে! অ্যাপ আনলক হচ্ছে...');
+      setSuccessMessage('Logged in successfully! Unlocking store...');
     } else {
-      setErrorMessage(res.error || 'লগইন ব্যর্থ হয়েছে। ফোন নম্বর বা পাসওয়ার্ড সঠিক কি না দেখুন।');
+      setErrorMessage(res.error || 'Login failed. Please verify your phone number or password.');
     }
   };
 
@@ -50,19 +50,19 @@ export function LoginScreen() {
     setSuccessMessage('');
 
     if (!storeName.trim()) {
-      setErrorMessage('দোকানের নাম লিখুন (Enter store name)');
+      setErrorMessage('Please enter your store name.');
       return;
     }
     if (!phone.trim()) {
-      setErrorMessage('মোবাইল নম্বর লিখুন (Enter phone number)');
+      setErrorMessage('Please enter your mobile phone number.');
       return;
     }
     if (!password || password.length < 6) {
-      setErrorMessage('পাসওয়ার্ড কমপক্ষে ৬ ডিজিট বা অক্ষরের হতে হবে (At least 6 characters)');
+      setErrorMessage('Password must be at least 6 characters long.');
       return;
     }
     if (password !== confirmPassword) {
-      setErrorMessage('পাসওয়ার্ড ও কনফার্ম পাসওয়ার্ড মিলছে না (Passwords do not match)');
+      setErrorMessage('Password and confirm password do not match.');
       return;
     }
 
@@ -71,9 +71,9 @@ export function LoginScreen() {
     setLoading(false);
 
     if (res.success) {
-      setSuccessMessage('একাউন্ট তৈরি সম্পন্ন হয়েছে! অ্যাপে প্রবেশ করা হচ্ছে...');
+      setSuccessMessage('Store account created successfully! Opening store...');
     } else {
-      setErrorMessage(res.error || 'রেজিস্ট্রেশন ব্যর্থ হয়েছে। আবার চেষ্টা করুন।');
+      setErrorMessage(res.error || 'Registration failed. Please try again.');
     }
   };
 
@@ -100,19 +100,19 @@ export function LoginScreen() {
             Al-Barakah Digital Manager
           </h1>
           <p className="text-xs text-emerald-200/90 font-medium mt-1">
-            ডিজিটাল স্টুডিও ও অনলাইন সেবা • শপ একাউন্ট
+            Digital Studio & Online Service • Store Account
           </p>
 
           {/* Security status badge */}
           <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/15 text-[11px] font-bold text-emerald-100">
             <Lock size={12} className="text-amber-300" />
-            <span>লগআউট অবস্থায় ডাটা সুরক্ষিত ও লক করা</span>
+            <span>Store Data Protected & Locked</span>
           </div>
 
           {!isOnline && (
             <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-red-500/20 border border-red-400/30 rounded-full text-[10px] font-bold text-red-200">
               <WifiOff size={11} />
-              <span>অফলাইন মোড (Offline Unlock Active)</span>
+              <span>Offline Mode (Offline Unlock Active)</span>
             </div>
           )}
         </div>
@@ -133,7 +133,7 @@ export function LoginScreen() {
             }`}
           >
             <LogIn size={15} />
-            <span>লগইন করুন</span>
+            <span>Login</span>
           </button>
           <button
             type="button"
@@ -149,7 +149,7 @@ export function LoginScreen() {
             }`}
           >
             <UserPlus size={15} />
-            <span>নতুন একাউন্ট</span>
+            <span>New Account</span>
           </button>
         </div>
 
@@ -175,7 +175,7 @@ export function LoginScreen() {
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                  রেজিস্টার্ড মোবাইল নম্বর (Phone Number)
+                  Phone Number
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
@@ -195,7 +195,7 @@ export function LoginScreen() {
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                  পাসওয়ার্ড (Password)
+                  Password
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
@@ -205,7 +205,7 @@ export function LoginScreen() {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="আপনার দোকানের পাসওয়ার্ড দিন"
+                    placeholder="Enter your store password"
                     className="w-full pl-10 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#084b3e] transition-all"
                     required
                   />
@@ -228,12 +228,12 @@ export function LoginScreen() {
                   {loading ? (
                     <>
                       <RefreshCw size={16} className="animate-spin" />
-                      <span>যাচাই করা হচ্ছে...</span>
+                      <span>Verifying...</span>
                     </>
                   ) : (
                     <>
                       <Lock size={16} />
-                      <span>লগইন করুন ও অ্যাপ খুলুন</span>
+                      <span>Login & Open Store</span>
                     </>
                   )}
                 </button>
@@ -244,7 +244,7 @@ export function LoginScreen() {
             <form onSubmit={handleRegister} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">
-                  দোকানের নাম (Store Name)
+                  Store Name
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
@@ -254,7 +254,7 @@ export function LoginScreen() {
                     type="text"
                     value={storeName}
                     onChange={(e) => setStoreName(e.target.value)}
-                    placeholder="আল-বারাকাহ ডিজিটাল স্টুডিও"
+                    placeholder="Al-Barakah Digital Studio"
                     className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#084b3e] transition-all"
                     required
                   />
@@ -263,7 +263,7 @@ export function LoginScreen() {
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">
-                  মোবাইল নম্বর (Phone Number)
+                  Phone Number
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
@@ -282,7 +282,7 @@ export function LoginScreen() {
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">
-                  পাসওয়ার্ড (Password)
+                  Password
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
@@ -292,7 +292,7 @@ export function LoginScreen() {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="কমপক্ষে ৬ ডিজিট বা অক্ষর"
+                    placeholder="Minimum 6 characters"
                     className="w-full pl-10 pr-10 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#084b3e] transition-all"
                     required
                   />
@@ -308,7 +308,7 @@ export function LoginScreen() {
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">
-                  কনফার্ম পাসওয়ার্ড (Confirm Password)
+                  Confirm Password
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
@@ -318,7 +318,7 @@ export function LoginScreen() {
                     type={showConfirmPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="পাসওয়ার্ডটি পুনরায় লিখুন"
+                    placeholder="Re-enter password"
                     className="w-full pl-10 pr-10 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#084b3e] transition-all"
                     required
                   />
@@ -341,12 +341,12 @@ export function LoginScreen() {
                   {loading ? (
                     <>
                       <RefreshCw size={16} className="animate-spin" />
-                      <span>একাউন্ট তৈরি হচ্ছে...</span>
+                      <span>Creating Account...</span>
                     </>
                   ) : (
                     <>
                       <UserPlus size={16} />
-                      <span>একাউন্ট তৈরি করুন ও শুরু করুন</span>
+                      <span>Create Account & Start</span>
                     </>
                   )}
                 </button>
@@ -357,7 +357,7 @@ export function LoginScreen() {
           {/* Security Guarantee Note */}
           <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-center gap-2 text-[11px] font-semibold text-gray-500">
             <ShieldCheck size={14} className="text-emerald-700 shrink-0" />
-            <span>লগআউট করলে দোকানের সকল সেলস ও ব্যালেন্স সম্পূর্ণ গোপন থাকবে</span>
+            <span>All sales, records and balances remain hidden when logged out</span>
           </div>
         </div>
       </div>
