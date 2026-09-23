@@ -11,7 +11,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, firestore } from '../lib/firebase';
 import { fullSync, SyncResult } from '../services/syncService';
 
-import { sanitizeText, BruteForceGuard } from '../lib/security';
+import { sanitizeText, BruteForceGuard, calculateSha256 } from '../lib/security';
 
 export interface UserProfile {
   uid: string;
@@ -197,6 +197,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(newProfile);
       localStorage.setItem('albarakah_user_profile', JSON.stringify(newProfile));
 
+      // Cache credentials hash for offline unlocking
+      try {
+        const pwHash = await calculateSha256(password);
+        localStorage.setItem('albarakah_offline_auth', JSON.stringify({
+          phone: cleanPhone,
+          pwHash,
+          profile: newProfile,
+          uid: userCred.user.uid
+        }));
+      } catch (e) {
+        console.warn('Could not cache offline auth hash:', e);
+      }
+
       // Push existing local Dexie data to Cloud
       setTimeout(() => {
         triggerSync();
@@ -242,16 +255,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       BruteForceGuard.clear(cleanPhone);
 
       // Fetch Profile
+      let activeProfile: UserProfile | null = null;
       try {
         const docRef = doc(firestore, 'users', userCred.user.uid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as UserProfile;
+          activeProfile = data;
           setProfile(data);
           localStorage.setItem('albarakah_user_profile', JSON.stringify(data));
         }
       } catch (profileErr) {
         console.warn('Could not fetch profile from Firestore on login:', profileErr);
+      }
+
+      // Cache credentials hash for offline unlocking
+      try {
+        const pwHash = await calculateSha256(password);
+        localStorage.setItem('albarakah_offline_auth', JSON.stringify({
+          phone: cleanPhone,
+          pwHash,
+          profile: activeProfile || { uid: userCred.user.uid, storeName: 'Al-Barakah Digital Studio', phone: cleanPhone },
+          uid: userCred.user.uid
+        }));
+      } catch (e) {
+        console.warn('Could not cache offline auth hash:', e);
       }
 
       // Sync and pull all cloud records to local IndexedDB!
@@ -262,12 +290,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true };
     } catch (err: any) {
       console.error('Login error:', err);
+
+      // Offline login fallback if network unavailable
+      const isNetworkIssue = !navigator.onLine || err?.code === 'auth/network-request-failed';
+      if (isNetworkIssue) {
+        const savedOffline = localStorage.getItem('albarakah_offline_auth');
+        if (savedOffline) {
+          try {
+            const creds = JSON.parse(savedOffline);
+            const inputHash = await calculateSha256(password);
+            if (creds.phone === cleanPhone && creds.pwHash === inputHash) {
+              BruteForceGuard.clear(cleanPhone);
+              setProfile(creds.profile);
+              setUser({
+                uid: creds.uid,
+                email: phoneToEmail(cleanPhone),
+              } as any);
+              return { success: true };
+            }
+          } catch (offlineErr) {
+            console.warn('Offline verification error:', offlineErr);
+          }
+        }
+      }
+
       const failRecord = BruteForceGuard.recordFailure(cleanPhone);
       let message = 'Login failed. Please check your phone number or password.';
       if (failRecord.locked) {
         message = `Account temporarily locked due to repeated failed attempts. Please try again after ${failRecord.waitSeconds} seconds.`;
       } else if (err?.code === 'auth/user-not-found' || err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-credential') {
         message = `Incorrect phone number or password. ${failRecord.attemptsLeft} attempt(s) remaining before temporary lockout.`;
+      } else if (isNetworkIssue) {
+        message = 'Device is offline and no offline session was found for this phone number. Please connect to internet to login.';
       }
       return { success: false, error: message };
     }
@@ -333,10 +387,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       await signOut(auth);
+      setUser(null);
       setProfile(null);
       localStorage.removeItem('albarakah_user_profile');
     } catch (err) {
       console.error('Logout error:', err);
+      setUser(null);
+      setProfile(null);
     }
   };
 
