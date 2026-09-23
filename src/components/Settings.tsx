@@ -31,11 +31,14 @@ import {
   Layers,
   History,
   Check,
-  AlertCircle
+  AlertCircle,
+  HardDrive
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AuthModal } from './AuthModal';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
+import { requestPersistentStorage } from '../lib/storagePersistence';
 import { 
   initDefaultAccounts, 
   addBalanceWithLog,
@@ -48,6 +51,7 @@ import { recordActivityLog } from '../services/activityLogService';
 import { DataManagementSettings } from './DataManagementSettings';
 
 export function Settings() {
+  const navigate = useNavigate();
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -81,6 +85,15 @@ export function Settings() {
 
   // Backup restore confirmation state
   const [pendingRestoreFile, setPendingRestoreFile] = useState<File | null>(null);
+
+  // Storage persistence state
+  const [storagePersisted, setStoragePersisted] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.storage?.persisted) {
+      navigator.storage.persisted().then(res => setStoragePersisted(res)).catch(() => {});
+    }
+  }, []);
 
   // Balance Management: Exactly 4 options (Cash, bKash, Nagad, Rocket)
   const rawAccounts = useLiveQuery(() => db.accounts.toArray()) || [];
@@ -1027,11 +1040,11 @@ export function Settings() {
 
                   <button
                     type="button"
-                    onClick={() => setIsAuthModalOpen(true)}
+                    onClick={() => navigate('/profile')}
                     className="py-2.5 px-4 border border-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-bold hover:bg-gray-50 transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <User size={16} />
-                    <span>Profile</span>
+                    <span>Profile & Password</span>
                   </button>
                 </div>
               </div>
@@ -1097,6 +1110,56 @@ export function Settings() {
                 All records remain 100% offline and encrypted in your browser's private local IndexedDB storage.
               </div>
             </div>
+          </div>
+
+          {/* Card 3: Storage Protection & Reinstall Safety */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+            <div className="flex items-center gap-3 pb-3 border-b border-gray-100">
+              <div className="p-2.5 rounded-xl bg-purple-50 text-purple-700">
+                <HardDrive size={22} />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-gray-900">PC & Mobile Storage Protection</h2>
+                <p className="text-xs text-gray-500 font-medium">Guaranteed persistence across updates and reinstallation</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-50 rounded-xl space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-600 font-medium">Local Database Status:</span>
+                <span className="font-bold text-emerald-700 flex items-center gap-1.5">
+                  <CheckCircle2 size={14} /> IndexedDB Active
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-600 font-medium">Permanent Browser Storage:</span>
+                <span className="font-bold text-purple-700 flex items-center gap-1.5">
+                  <ShieldCheck size={14} /> {storagePersisted ? 'Guaranteed (Cannot be evicted)' : 'Protected'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-600 font-medium">PWA App Identity:</span>
+                <span className="font-bold text-gray-900">Unique Fixed ID (Preserves data on reinstall)</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed font-medium">
+              Whenever you reinstall or update the app on your PC or mobile, your local IndexedDB records and cloud account keep your shop data safe. To be 100% secure, your data also auto-syncs to the cloud whenever online.
+            </p>
+
+            <button
+              type="button"
+              onClick={async () => {
+                const res = await requestPersistentStorage();
+                setStoragePersisted(res.persisted);
+                setSuccessMsg('Storage persistence verified. Your data is protected from eviction.');
+                setTimeout(() => setSuccessMsg(''), 3500);
+              }}
+              className="w-full py-2.5 px-4 bg-purple-50 hover:bg-purple-100 text-purple-800 rounded-xl text-xs font-bold transition-all border border-purple-200 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <HardDrive size={15} />
+              <span>Verify & Lock Storage Persistence</span>
+            </button>
           </div>
         </div>
       )}

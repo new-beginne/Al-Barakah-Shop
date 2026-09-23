@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Sidebar, BottomNav } from './components/Navigation';
 import { Dashboard } from './components/Dashboard';
 import { SalesEntry } from './components/SalesEntry';
@@ -10,6 +10,7 @@ import { Customers } from './components/Customers';
 import { CustomerProfile } from './components/CustomerProfile';
 import { Borrowings } from './components/Borrowings';
 import { HistoryView } from './components/HistoryView';
+import { StoreProfile } from './components/StoreProfile';
 import { Menu, User, Calendar as CalendarIcon, Clock, WifiOff, Cloud, RefreshCw, Store, Eye, EyeOff } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useEffect } from 'react';
@@ -24,6 +25,7 @@ function TopHeader() {
   const [time, setTime] = useState(new Date());
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const { user, profile, isOnline, syncStatus, triggerSync, isBalanceVisible, toggleBalanceVisibility } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const updateTime = () => setTime(new Date());
@@ -133,8 +135,8 @@ function TopHeader() {
           {user ? (
             <button
               type="button"
-              onClick={() => setIsAuthOpen(true)}
-              title="View Store Profile & Sync"
+              onClick={() => navigate('/profile')}
+              title="Store Profile"
               className="flex items-center gap-2 bg-[#084b3e] text-white pl-2 pr-3 py-1 rounded-full shadow-sm hover:bg-[#0c5e4e] transition-colors"
             >
               <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -193,6 +195,7 @@ export default function App() {
                 <Route path="/expenses" element={<Expenses />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/history" element={<HistoryView />} />
+                <Route path="/profile" element={<StoreProfile />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </main>

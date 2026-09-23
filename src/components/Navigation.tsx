@@ -26,8 +26,8 @@ export function Sidebar() {
         <Leaf size={240} className="text-white transform -rotate-45" />
       </div>
 
-      <div className="p-5 flex items-center gap-3">
-        <div className="bg-white p-1 rounded-2xl shrink-0 shadow-sm border border-emerald-300/30 flex items-center justify-center">
+      <Link to="/profile" className="p-5 flex items-center gap-3 hover:bg-white/5 transition-colors group">
+        <div className="bg-white p-1 rounded-2xl shrink-0 shadow-sm border border-emerald-300/30 flex items-center justify-center group-hover:scale-105 transition-transform">
           <img 
             src="/logo.png?v=2" 
             alt="Al-Barakah Logo" 
@@ -43,7 +43,7 @@ export function Sidebar() {
             {profile?.phone ? `+88 ${profile.phone}` : 'Digital Studio & Service'}
           </span>
         </div>
-      </div>
+      </Link>
 
       <nav className="flex-1 px-4 py-2 space-y-2 z-10 mt-2">
         {navItems.map((item) => {

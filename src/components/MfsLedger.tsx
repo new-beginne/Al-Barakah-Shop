@@ -80,7 +80,8 @@ export function MfsLedger() {
   // Get true account balance from db.accounts
   const getOperatorBalance = (op: OperatorType): number => {
     const targetId = op.toLowerCase();
-    const acc = allAccounts.find(a => a.id === targetId || a.name?.toLowerCase() === targetId);
+    const acc = allAccounts.find(a => a.id.toLowerCase() === targetId) || 
+                allAccounts.find(a => a.name?.toLowerCase() === targetId);
     return acc ? (acc.balance || 0) : 0;
   };
 
@@ -347,6 +348,14 @@ export function MfsLedger() {
     if (delType === 'Cash-Out') {
       reverseWalletDelta = -delAmt;
       reverseCashDelta = delAmt;
+    } else if (delType === 'Adjustment') {
+      // Adjustment only affected the operator wallet, not physical cash drawer
+      const prevTx = allMfs
+        .filter(t => t.operator === delOp && (t.id || 0) < id)
+        .sort((a, b) => (b.id || 0) - (a.id || 0))[0];
+      const targetBal = prevTx && typeof prevTx.balanceAfter === 'number' ? prevTx.balanceAfter : 0;
+      reverseWalletDelta = targetBal - getOperatorBalance(delOp);
+      reverseCashDelta = 0;
     } else {
       // Cash-In, Recharge, Send Money:
       // Originally: wallet = -(delAmt + delChg), cash = +delAmt

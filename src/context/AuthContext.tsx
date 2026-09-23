@@ -4,7 +4,8 @@ import {
   onAuthStateChanged, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
-  signOut 
+  signOut,
+  updatePassword
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, firestore } from '../lib/firebase';
@@ -31,6 +32,8 @@ interface AuthContextType {
   toggleBalanceVisibility: () => void;
   registerWithStore: (storeName: string, phone: string, password: string) => Promise<{ success: boolean; error?: string }>;
   loginWithPhone: (phone: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  updateStorePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  updateStoreName: (newStoreName: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   triggerSync: () => Promise<SyncResult>;
 }
@@ -115,6 +118,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         } catch (err) {
           console.warn('Could not fetch online profile, using cached profile:', err);
+        }
+
+        // Auto-sync on startup/reinstall so all records are immediately restored to local IndexedDB
+        if (navigator.onLine) {
+          setTimeout(() => {
+            fullSync(currentUser.uid).then((res) => {
+              if (res.success) {
+                setSyncStatus('synced');
+                setLastSynced(new Date().toISOString());
+              }
+            }).catch(console.warn);
+          }, 800);
         }
       } else {
         setProfile(null);
@@ -258,6 +273,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Update password for currently logged-in user
+  const updateStorePassword = async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
+    if (!auth.currentUser) {
+      return { success: false, error: 'ইউজার লগইন করা নেই। দয়া করে লগইন করুন।' };
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, error: 'পাসওয়ার্ড কমপক্ষে ৬ ডিজিট বা অক্ষরের হতে হবে।' };
+    }
+
+    try {
+      await updatePassword(auth.currentUser, newPassword);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Update password error:', err);
+      if (err?.code === 'auth/requires-recent-login') {
+        return { 
+          success: false, 
+          error: 'নিরাপত্তার স্বার্থে আবার লগইন করে পাসওয়ার্ড পরিবর্তন করুন (Recent login required).' 
+        };
+      }
+      if (err?.code === 'auth/weak-password') {
+        return { success: false, error: 'পাসওয়ার্ডটি দুর্বল। আরও শক্তিশালী পাসওয়ার্ড দিন।' };
+      }
+      return { success: false, error: err?.message || 'পাসওয়ার্ড পরিবর্তন ব্যর্থ হয়েছে।' };
+    }
+  };
+
+  // Update store profile name
+  const updateStoreName = async (newStoreName: string): Promise<{ success: boolean; error?: string }> => {
+    const cleanName = sanitizeText(newStoreName.trim());
+    if (!cleanName) {
+      return { success: false, error: 'দোকানের নাম খালি রাখা যাবে না।' };
+    }
+
+    const updatedProfile: UserProfile = {
+      uid: user ? user.uid : (profile?.uid || 'guest'),
+      storeName: cleanName,
+      phone: profile?.phone || '',
+      createdAt: profile?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setProfile(updatedProfile);
+    localStorage.setItem('albarakah_user_profile', JSON.stringify(updatedProfile));
+
+    // If logged in and online, also persist to Firestore
+    if (user && isOnline) {
+      try {
+        await setDoc(doc(firestore, 'users', user.uid), updatedProfile, { merge: true });
+      } catch (e) {
+        console.warn('Could not sync store name update to firestore:', e);
+      }
+    }
+
+    return { success: true };
+  };
+
   const logout = async () => {
     try {
       await signOut(auth);
@@ -280,6 +352,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toggleBalanceVisibility,
       registerWithStore,
       loginWithPhone,
+      updateStorePassword,
+      updateStoreName,
       logout,
       triggerSync
     }}>

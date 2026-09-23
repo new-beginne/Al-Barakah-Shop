@@ -1,5 +1,6 @@
 import Dexie from 'dexie';
 import { db, Account, MfsTransaction, BalanceLog, getRecordMetadata } from '../db/db';
+import { syncSingleAccountToCloud } from './syncService';
 
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
@@ -56,6 +57,23 @@ export async function initDefaultAccounts(): Promise<void> {
           // ignore
         }
 
+        // Normalize legacy accounts (e.g. 'bKash' -> 'bkash') to prevent duplicate / case mismatch
+        try {
+          const allAccs = await db.accounts.toArray();
+          for (const a of allAccs) {
+            const lowerId = a.id.toLowerCase();
+            if (a.id !== lowerId) {
+              const existingLower = await db.accounts.get(lowerId);
+              if (!existingLower) {
+                await db.accounts.put({ ...a, id: lowerId });
+              }
+              await db.accounts.delete(a.id);
+            }
+          }
+        } catch (e) {
+          console.warn('Could not normalize legacy account IDs:', e);
+        }
+
         const now = new Date().toISOString();
 
         // Check if bKash/Nagad/Rocket have latest MFS balances
@@ -69,7 +87,11 @@ export async function initDefaultAccounts(): Promise<void> {
         const getMfsLatestBal = (op: string): number => {
           const opTxs = allMfs
             .filter(t => t.operator?.toLowerCase() === op.toLowerCase())
-            .sort((a, b) => (b.id || 0) - (a.id || 0));
+            .sort((a, b) => {
+              const timeA = `${a.date} ${a.time || ''}`;
+              const timeB = `${b.date} ${b.time || ''}`;
+              return timeB.localeCompare(timeA) || (b.id || 0) - (a.id || 0);
+            });
           return opTxs.length > 0 && typeof opTxs[0].balanceAfter === 'number' ? opTxs[0].balanceAfter : 0;
         };
 
@@ -123,24 +145,34 @@ export async function adjustAccountBalance(accountId: string, delta: number): Pr
   if (delta === 0) return 0;
   try {
     await initDefaultAccounts();
-    const acc = await db.accounts.get(accountId);
+    const cleanId = accountId.toLowerCase().trim();
+    let acc = await db.accounts.get(cleanId);
     if (!acc) {
-      const def = DEFAULT_ACCOUNTS.find(d => d.id === accountId);
-      const now = new Date().toISOString();
+      const all = await db.accounts.toArray();
+      acc = all.find(a => a.id.toLowerCase() === cleanId || a.name?.toLowerCase() === cleanId);
+    }
+
+    const def = DEFAULT_ACCOUNTS.find(d => d.id === cleanId);
+    const now = new Date().toISOString();
+    let newBal = delta;
+
+    if (!acc) {
       const newAcc: Account = {
-        id: accountId,
-        name: def ? def.name : accountId.charAt(0).toUpperCase() + accountId.slice(1),
+        id: cleanId,
+        name: def ? def.name : cleanId.charAt(0).toUpperCase() + cleanId.slice(1),
         type: def ? def.type : 'other',
         balance: delta,
         createdAt: now,
         updatedAt: now
       };
       await db.accounts.put(newAcc);
-      return delta;
+    } else {
+      newBal = (acc.balance || 0) + delta;
+      await db.accounts.update(acc.id, { balance: newBal, updatedAt: now });
     }
 
-    const newBal = (acc.balance || 0) + delta;
-    await db.accounts.update(accountId, { balance: newBal, updatedAt: new Date().toISOString() });
+    // Immediately push to cloud so refreshing does not lose the update
+    syncSingleAccountToCloud(cleanId).catch(console.warn);
     return newBal;
   } catch (err) {
     console.error(`Error adjusting balance for account ${accountId}:`, err);
@@ -154,40 +186,62 @@ export async function adjustAccountBalance(accountId: string, delta: number): Pr
 export async function setAccountBalance(accountId: string, newBalance: number, note?: string): Promise<void> {
   try {
     await initDefaultAccounts();
+    const cleanId = accountId.toLowerCase().trim();
     const now = new Date().toISOString();
-    const acc = await db.accounts.get(accountId);
+    let acc = await db.accounts.get(cleanId);
+    if (!acc) {
+      const all = await db.accounts.toArray();
+      acc = all.find(a => a.id.toLowerCase() === cleanId || a.name?.toLowerCase() === cleanId);
+    }
 
-    if (acc) {
-      await db.accounts.update(accountId, {
+    const def = DEFAULT_ACCOUNTS.find(d => d.id === cleanId);
+    const targetId = acc ? acc.id : cleanId;
+
+    if (!acc) {
+      await db.accounts.put({
+        id: cleanId,
+        name: def ? def.name : cleanId.charAt(0).toUpperCase() + cleanId.slice(1),
+        type: def ? def.type : 'other',
+        balance: newBalance,
+        note: note,
+        createdAt: now,
+        updatedAt: now
+      });
+    } else {
+      await db.accounts.update(targetId, {
         balance: newBalance,
         note: note !== undefined ? note : acc.note,
         updatedAt: now
       });
-
-      // If it's an MFS account, also append a balance adjustment in MFS log
-      if (acc.type === 'mfs') {
-        const operatorName = 
-          accountId === 'bkash' ? 'bKash' :
-          accountId === 'nagad' ? 'Nagad' :
-          accountId === 'rocket' ? 'Rocket' : acc.name;
-
-        const meta = getRecordMetadata();
-        const mfsEntry: MfsTransaction = {
-          date: meta.date,
-          time: meta.time,
-          createdAt: meta.createdAt,
-          updatedAt: meta.updatedAt,
-          operator: operatorName as any,
-          type: 'Balance-Adjust',
-          amount: 0,
-          charge: 0,
-          profit: 0,
-          balanceAfter: newBalance,
-          note: note || 'Settings Balance Update'
-        };
-        await db.mfs.add(mfsEntry);
-      }
     }
+
+    // If it's an MFS account, also append a balance adjustment in MFS log
+    const accType = acc ? acc.type : (def ? def.type : 'other');
+    if (accType === 'mfs') {
+      const operatorName = 
+        cleanId === 'bkash' ? 'bKash' :
+        cleanId === 'nagad' ? 'Nagad' :
+        cleanId === 'rocket' ? 'Rocket' : (acc?.name || cleanId);
+
+      const meta = getRecordMetadata();
+      const mfsEntry: MfsTransaction = {
+        date: meta.date,
+        time: meta.time,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        operator: operatorName as any,
+        type: 'Balance-Adjust',
+        amount: 0,
+        charge: 0,
+        profit: 0,
+        balanceAfter: newBalance,
+        note: note || 'Settings Balance Update'
+      };
+      await db.mfs.add(mfsEntry);
+    }
+
+    // Immediately push to cloud
+    syncSingleAccountToCloud(targetId).catch(console.warn);
   } catch (err) {
     console.error(`Error setting balance for account ${accountId}:`, err);
     throw err;
@@ -300,17 +354,34 @@ export async function editBalanceWithLog(
     throw new Error('Invalid new balance');
   }
   await initDefaultAccounts();
-  const acc = await db.accounts.get(accountId);
-  if (!acc) throw new Error(`Account not found: ${accountId}`);
+  const cleanId = accountId.toLowerCase().trim();
+  let acc = await db.accounts.get(cleanId);
+  if (!acc) {
+    const all = await db.accounts.toArray();
+    acc = all.find(a => a.id.toLowerCase() === cleanId || a.name?.toLowerCase() === cleanId);
+  }
 
-  const prevBal = acc.balance || 0;
-  const diff = newBalance - prevBal;
+  const def = DEFAULT_ACCOUNTS.find(d => d.id === cleanId);
   const now = new Date().toISOString();
+  const prevBal = acc ? (acc.balance || 0) : 0;
+  const diff = newBalance - prevBal;
+  const targetId = acc ? acc.id : cleanId;
 
-  await db.accounts.update(accountId, {
-    balance: newBalance,
-    updatedAt: now
-  });
+  if (!acc) {
+    await db.accounts.put({
+      id: cleanId,
+      name: def ? def.name : cleanId.charAt(0).toUpperCase() + cleanId.slice(1),
+      type: def ? def.type : 'other',
+      balance: newBalance,
+      createdAt: now,
+      updatedAt: now
+    });
+  } else {
+    await db.accounts.update(targetId, {
+      balance: newBalance,
+      updatedAt: now
+    });
+  }
 
   const meta = getRecordMetadata();
   const logId = await db.balanceLogs.add({
@@ -318,14 +389,17 @@ export async function editBalanceWithLog(
     time: meta.time,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
-    accountId,
-    accountName: acc.name,
+    accountId: targetId,
+    accountName: acc ? acc.name : (def ? def.name : targetId),
     type: 'edit',
     amount: diff,
     previousBalance: prevBal,
     newBalance: newBalance,
     note: note?.trim() || `Balance calibrated from Tk ${prevBal.toLocaleString()} to Tk ${newBalance.toLocaleString()}`
   });
+
+  // Immediately sync to cloud so refresh never reverts it
+  syncSingleAccountToCloud(targetId).catch(console.warn);
 
   return { newBalance, logId: Number(logId) };
 }

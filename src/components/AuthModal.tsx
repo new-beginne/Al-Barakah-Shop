@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { 
   X, Store, Phone, Lock, Cloud, CloudOff, RefreshCw, 
-  LogOut, CheckCircle2, AlertCircle, ShieldCheck, UserCheck, Smartphone
+  LogOut, CheckCircle2, AlertCircle, ShieldCheck, UserCheck, Smartphone, ExternalLink, KeyRound
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -16,6 +17,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
     user, profile, isOnline, syncStatus, lastSynced, 
     registerWithStore, loginWithPhone, logout, triggerSync 
   } = useAuth();
+  const navigate = useNavigate();
 
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [storeName, setStoreName] = useState('');
@@ -205,6 +207,20 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   Log in on any mobile or computer using this phone number and password to automatically access all your sales, expenses, and store records.
                 </span>
               </div>
+
+              {/* Go to Profile Page Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  navigate('/profile');
+                }}
+                className="w-full py-2.5 px-4 bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs hover:bg-emerald-800 transition-all"
+              >
+                <Store size={15} />
+                <span>Store Profile & Change Password</span>
+                <ExternalLink size={13} className="opacity-80" />
+              </button>
 
               {/* Logout Button */}
               <button
