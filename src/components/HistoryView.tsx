@@ -6,11 +6,9 @@ import {
   History, 
   Trash2, 
   Edit3, 
-  RefreshCw, 
   Search, 
   Calendar, 
   Clock, 
-  Filter, 
   Eye, 
   AlertTriangle, 
   CheckCircle2, 
@@ -18,11 +16,13 @@ import {
   Download, 
   X,
   FileText,
-  SlidersHorizontal,
+  ChevronLeft,
   ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCcw,
+  Sparkles
 } from 'lucide-react';
-import { format, subDays, startOfMonth, parseISO } from 'date-fns';
+import { format, subDays, startOfMonth } from 'date-fns';
 
 export function HistoryView() {
   const rawLogs = useLiveQuery(() => db.activityLogs.orderBy('id').reverse().toArray()) || [];
@@ -33,6 +33,10 @@ export function HistoryView() {
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7days' | 'this_month' | 'custom'>('all');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   // Modal inspection
   const [inspectLog, setInspectLog] = useState<ActivityLog | null>(null);
@@ -111,16 +115,38 @@ export function HistoryView() {
     });
   }, [rawLogs, selectedActionFilter, selectedModuleFilter, dateFilter, customStartDate, customEndDate, searchQuery]);
 
+  // Paginated records
+  const totalPages = Math.ceil(filteredLogs.length / pageSize) || 1;
+  const paginatedLogs = useMemo(() => {
+    const startIdx = (currentPage - 1) * pageSize;
+    return filteredLogs.slice(startIdx, startIdx + pageSize);
+  }, [filteredLogs, currentPage, pageSize]);
+
+  // Reset to page 1 on filter changes
+  const handleActionFilterChange = (filter: 'all' | 'DELETE' | 'EDIT' | 'BULK_DELETE' | 'RESET') => {
+    setSelectedActionFilter(filter);
+    setCurrentPage(1);
+  };
+
+  const handleModuleFilterChange = (mod: string) => {
+    setSelectedModuleFilter(mod);
+    setCurrentPage(1);
+  };
+
+  const handleDateFilterChange = (d: 'all' | 'today' | '7days' | 'this_month' | 'custom') => {
+    setDateFilter(d);
+    setCurrentPage(1);
+  };
+
   // Clear all handler
   const handleConfirmClearAll = async () => {
     try {
       await clearAllActivityLogs();
       setIsClearAllOpen(false);
-      setSuccessMsg('All activity history logs cleared successfully.');
-      setTimeout(() => setSuccessMsg(''), 4000);
+      setSuccessMsg('Activity logs cleared successfully.');
+      setTimeout(() => setSuccessMsg(''), 3000);
     } catch (err) {
       console.error(err);
-      alert('Failed to clear logs.');
     }
   };
 
@@ -130,7 +156,7 @@ export function HistoryView() {
     try {
       await deleteActivityLog(deleteTargetLog.id);
       setDeleteTargetLog(null);
-      setSuccessMsg('History entry removed.');
+      setSuccessMsg('Record removed from history.');
       setTimeout(() => setSuccessMsg(''), 3000);
     } catch (err) {
       console.error(err);
@@ -142,7 +168,7 @@ export function HistoryView() {
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(rawLogs, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `albarakah_activity_history_${format(new Date(), 'yyyy-MM-dd_HHmm')}.json`);
+    downloadAnchor.setAttribute('download', `albarakah_history_${format(new Date(), 'yyyy-MM-dd_HHmm')}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -152,333 +178,319 @@ export function HistoryView() {
     switch (action) {
       case 'DELETE':
         return {
-          bg: 'bg-rose-50 text-rose-700 border-rose-200',
-          icon: <Trash2 size={12} className="shrink-0" />,
+          bg: 'bg-rose-50 text-rose-700 border-rose-100',
+          dot: 'bg-rose-500',
           label: 'Deleted',
         };
       case 'BULK_DELETE':
         return {
-          bg: 'bg-purple-50 text-purple-700 border-purple-200',
-          icon: <Layers size={12} className="shrink-0" />,
+          bg: 'bg-purple-50 text-purple-700 border-purple-100',
+          dot: 'bg-purple-500',
           label: 'Range Delete',
         };
       case 'RESET':
         return {
-          bg: 'bg-red-100 text-red-800 border-red-300 font-black',
-          icon: <AlertTriangle size={12} className="shrink-0" />,
+          bg: 'bg-amber-50 text-amber-800 border-amber-200',
+          dot: 'bg-amber-500',
           label: 'Data Reset',
         };
       case 'EDIT':
         return {
-          bg: 'bg-blue-50 text-blue-700 border-blue-200',
-          icon: <Edit3 size={12} className="shrink-0" />,
+          bg: 'bg-blue-50 text-blue-700 border-blue-100',
+          dot: 'bg-blue-500',
           label: 'Edited',
         };
       default:
         return {
-          bg: 'bg-gray-100 text-gray-700 border-gray-200',
-          icon: <Clock size={12} className="shrink-0" />,
+          bg: 'bg-gray-50 text-gray-700 border-gray-100',
+          dot: 'bg-gray-400',
           label: action,
         };
     }
   };
 
   return (
-    <div className="p-4 md:p-6 mx-auto mb-16 md:mb-0 w-full max-w-7xl space-y-6 animate-in fade-in duration-200">
+    <div className="p-4 md:p-6 mx-auto mb-16 md:mb-0 w-full max-w-7xl space-y-4 animate-in fade-in duration-200">
       
-      {/* Header & Actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[#084b3e] flex items-center justify-center shadow-xs">
-            <History size={24} />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-gray-900 leading-tight">
-              Activity & History Logs
+      {/* Minimal Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+              Activity History
             </h1>
-            <p className="text-xs text-gray-500 font-medium">
-              Track all deletions, edits, range deletions, and database operations.
-            </p>
+            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-[#084b3e] border border-emerald-100">
+              {rawLogs.length} logs
+            </span>
           </div>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Automatic audit trail for all edits, deletions, and database operations.
+          </p>
         </div>
 
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             type="button"
             onClick={handleExportLogs}
             disabled={rawLogs.length === 0}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors border border-gray-200 cursor-pointer disabled:opacity-50"
-            title="Download JSON audit log"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+            title="Export JSON audit log"
           >
-            <Download size={15} />
-            <span>Export JSON</span>
+            <Download size={14} className="text-gray-500" />
+            <span>Export</span>
           </button>
 
           {rawLogs.length > 0 && (
             <button
               type="button"
               onClick={() => setIsClearAllOpen(true)}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer"
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 shadow-2xs transition-colors cursor-pointer"
             >
-              <Trash2 size={15} />
-              <span>Clear History</span>
+              <Trash2 size={14} />
+              <span>Clear</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Success Banner */}
+      {/* Success Notification Banner */}
       {successMsg && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl flex items-center text-xs sm:text-sm font-bold animate-in fade-in">
-          <CheckCircle2 className="mr-2 shrink-0 text-emerald-600" size={18} />
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl flex items-center text-xs font-bold animate-in fade-in">
+          <CheckCircle2 className="mr-2 shrink-0 text-emerald-600" size={16} />
           {successMsg}
         </div>
       )}
 
-      {/* Top 3 Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-gray-500 block uppercase tracking-wider">
-              Total Logged Events
-            </span>
-            <span className="text-2xl sm:text-3xl font-black text-gray-900 mt-1 block">
-              {stats.totalLogs.toLocaleString()}
-            </span>
-            <span className="text-[11px] font-medium text-gray-400 mt-0.5 block">
-              Chronological records
-            </span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-gray-50 text-gray-600 flex items-center justify-center">
-            <History size={24} />
+      {/* Minimal Stat Strip (3 sleek cards) */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white px-4 py-3 rounded-xl border border-gray-100 shadow-2xs">
+          <span className="text-[11px] font-bold text-gray-400 block uppercase tracking-wider">
+            Total Logged
+          </span>
+          <div className="text-xl sm:text-2xl font-black text-gray-900 mt-0.5">
+            {stats.totalLogs.toLocaleString()}
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-rose-600 block uppercase tracking-wider">
-              Deletions Recorded
-            </span>
-            <span className="text-2xl sm:text-3xl font-black text-rose-700 mt-1 block">
-              {(stats.totalDeletes + stats.totalBulk).toLocaleString()}
-            </span>
-            <span className="text-[11px] font-medium text-rose-500/80 mt-0.5 block">
-              {stats.totalBulk} bulk/range actions
-            </span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
-            <Trash2 size={24} />
+        <div className="bg-white px-4 py-3 rounded-xl border border-gray-100 shadow-2xs">
+          <span className="text-[11px] font-bold text-blue-600 block uppercase tracking-wider">
+            Edits
+          </span>
+          <div className="text-xl sm:text-2xl font-black text-blue-700 mt-0.5">
+            {stats.totalEdits.toLocaleString()}
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-blue-600 block uppercase tracking-wider">
-              Edits Recorded
-            </span>
-            <span className="text-2xl sm:text-3xl font-black text-blue-700 mt-1 block">
-              {stats.totalEdits.toLocaleString()}
-            </span>
-            <span className="text-[11px] font-medium text-blue-500/80 mt-0.5 block">
-              Profiles & dues updated
-            </span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-            <Edit3 size={24} />
+        <div className="bg-white px-4 py-3 rounded-xl border border-gray-100 shadow-2xs">
+          <span className="text-[11px] font-bold text-rose-600 block uppercase tracking-wider">
+            Deletions
+          </span>
+          <div className="text-xl sm:text-2xl font-black text-rose-700 mt-0.5">
+            {(stats.totalDeletes + stats.totalBulk).toLocaleString()}
           </div>
         </div>
       </div>
 
-      {/* Filter Toolbar */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+      {/* Main Card: Filters & Ledger Table */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-xs p-4 sm:p-5 space-y-4">
         
-        {/* Action Type Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-          <span className="font-bold text-gray-500 uppercase tracking-wider text-[11px] mr-1 hidden sm:inline">
-            Action:
-          </span>
+        {/* Minimal Category Tabs */}
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-gray-100/80 rounded-xl">
           <button
             type="button"
-            onClick={() => setSelectedActionFilter('all')}
-            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer ${
+            onClick={() => handleActionFilterChange('all')}
+            className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               selectedActionFilter === 'all'
-                ? 'bg-[#084b3e] text-white shadow-xs'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? 'bg-[#084b3e] text-white shadow-2xs'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
             }`}
           >
-            All Actions ({rawLogs.length})
+            <span>All</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+              selectedActionFilter === 'all' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'
+            }`}>
+              {rawLogs.length}
+            </span>
           </button>
+
           <button
             type="button"
-            onClick={() => setSelectedActionFilter('DELETE')}
-            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+            onClick={() => handleActionFilterChange('DELETE')}
+            className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               selectedActionFilter === 'DELETE'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                ? 'bg-[#084b3e] text-white shadow-2xs'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
             }`}
           >
-            <Trash2 size={13} />
             <span>Deletions</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+              selectedActionFilter === 'DELETE' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'
+            }`}>
+              {stats.totalDeletes + stats.totalBulk}
+            </span>
           </button>
+
           <button
             type="button"
-            onClick={() => setSelectedActionFilter('EDIT')}
-            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+            onClick={() => handleActionFilterChange('EDIT')}
+            className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               selectedActionFilter === 'EDIT'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                ? 'bg-[#084b3e] text-white shadow-2xs'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
             }`}
           >
-            <Edit3 size={13} />
             <span>Edits</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+              selectedActionFilter === 'EDIT' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'
+            }`}>
+              {stats.totalEdits}
+            </span>
           </button>
-          <button
-            type="button"
-            onClick={() => setSelectedActionFilter('BULK_DELETE')}
-            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
-              selectedActionFilter === 'BULK_DELETE'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
-            }`}
-          >
-            <Layers size={13} />
-            <span>Range Deletes</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedActionFilter('RESET')}
-            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
-              selectedActionFilter === 'RESET'
-                ? 'bg-red-700 text-white shadow-xs'
-                : 'bg-red-50 text-red-700 hover:bg-red-100'
-            }`}
-          >
-            <AlertTriangle size={13} />
-            <span>Reset Events</span>
-          </button>
+
+          {stats.totalBulk > 0 && (
+            <button
+              type="button"
+              onClick={() => handleActionFilterChange('BULK_DELETE')}
+              className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                selectedActionFilter === 'BULK_DELETE'
+                  ? 'bg-[#084b3e] text-white shadow-2xs'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
+              }`}
+            >
+              <span>Range / Reset</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                selectedActionFilter === 'BULK_DELETE' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'
+              }`}>
+                {stats.totalBulk}
+              </span>
+            </button>
+          )}
         </div>
 
-        {/* Search, Module & Date Range Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-2 border-t border-gray-100">
+        {/* Minimal Search & Filter Bar */}
+        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
           
-          {/* Search Box */}
-          <div className="sm:col-span-5 relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
             <input
               type="text"
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search by title, description, ID, date..."
-              className="w-full pl-10 pr-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:border-[#084b3e] outline-none transition-all"
+              onChange={e => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="Search by title, details, date..."
+              className="w-full pl-9 pr-8 py-2 bg-gray-50/70 border border-gray-200 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:border-[#084b3e] outline-none transition-all"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
           {/* Module Selector */}
-          <div className="sm:col-span-3">
-            <select
-              value={selectedModuleFilter}
-              onChange={e => setSelectedModuleFilter(e.target.value)}
-              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-700 focus:bg-white focus:border-[#084b3e] outline-none cursor-pointer"
-            >
-              <option value="all">All Modules</option>
-              <option value="Sales">Sales</option>
-              <option value="Expenses">Expenses</option>
-              <option value="MFS">MFS</option>
-              <option value="Customers">Customers</option>
-              <option value="Dues">Dues</option>
-              <option value="Borrowings">Borrowings</option>
-              <option value="Services">Services</option>
-              <option value="Balance">Balance</option>
-              <option value="All Data">All Data / Range</option>
-            </select>
-          </div>
+          <select
+            value={selectedModuleFilter}
+            onChange={e => handleModuleFilterChange(e.target.value)}
+            className="px-3 py-2 bg-gray-50/70 border border-gray-200 rounded-xl text-xs sm:text-sm font-medium text-gray-700 focus:bg-white focus:border-[#084b3e] outline-none cursor-pointer sm:w-44 shrink-0"
+          >
+            <option value="all">All Modules</option>
+            <option value="Sales">Sales</option>
+            <option value="Expenses">Expenses</option>
+            <option value="MFS">MFS</option>
+            <option value="Customers">Customers</option>
+            <option value="Dues">Dues</option>
+            <option value="Borrowings">Borrowings</option>
+            <option value="Services">Services</option>
+            <option value="Balance">Balance</option>
+            <option value="All Data">All Data / Range</option>
+          </select>
 
           {/* Date Filter */}
-          <div className="sm:col-span-4 flex gap-2">
-            <select
-              value={dateFilter}
-              onChange={e => setDateFilter(e.target.value as any)}
-              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-700 focus:bg-white focus:border-[#084b3e] outline-none cursor-pointer"
-            >
-              <option value="all">All Dates</option>
-              <option value="today">Today</option>
-              <option value="7days">Last 7 Days</option>
-              <option value="this_month">This Month</option>
-              <option value="custom">Custom Range...</option>
-            </select>
-          </div>
+          <select
+            value={dateFilter}
+            onChange={e => handleDateFilterChange(e.target.value as any)}
+            className="px-3 py-2 bg-gray-50/70 border border-gray-200 rounded-xl text-xs sm:text-sm font-medium text-gray-700 focus:bg-white focus:border-[#084b3e] outline-none cursor-pointer sm:w-36 shrink-0"
+          >
+            <option value="all">All Dates</option>
+            <option value="today">Today</option>
+            <option value="7days">Last 7 Days</option>
+            <option value="this_month">This Month</option>
+            <option value="custom">Custom...</option>
+          </select>
         </div>
 
-        {/* Custom Date Range Picker when selected */}
+        {/* Custom Date Inputs when 'custom' is active */}
         {dateFilter === 'custom' && (
-          <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex flex-col sm:flex-row items-center gap-3 text-xs font-bold animate-in fade-in">
-            <span className="text-gray-500 uppercase tracking-wider">Date Range:</span>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={e => setCustomStartDate(e.target.value)}
-                className="p-2 border border-gray-300 rounded-lg text-xs bg-white focus:border-[#084b3e] outline-none font-medium"
-              />
-              <span className="text-gray-400">to</span>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={e => setCustomEndDate(e.target.value)}
-                className="p-2 border border-gray-300 rounded-lg text-xs bg-white focus:border-[#084b3e] outline-none font-medium"
-              />
-            </div>
+          <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-200 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-gray-500 font-bold uppercase text-[10px]">Range:</span>
+            <input
+              type="date"
+              value={customStartDate}
+              onChange={e => {
+                setCustomStartDate(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white focus:border-[#084b3e] outline-none"
+            />
+            <span className="text-gray-400 font-bold">to</span>
+            <input
+              type="date"
+              value={customEndDate}
+              onChange={e => {
+                setCustomEndDate(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white focus:border-[#084b3e] outline-none"
+            />
           </div>
         )}
 
-      </div>
-
-      {/* History Ledger Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-          <span className="text-xs font-black uppercase tracking-wider text-gray-600">
-            Activity Ledger ({filteredLogs.length} Events)
-          </span>
-          <span className="text-[11px] text-gray-400 font-medium">
-            Sorted newest first
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/80 text-[11px] font-black text-gray-500 uppercase tracking-wider">
+        {/* Table View */}
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-gray-50/80 text-gray-500 font-bold text-xs uppercase tracking-wider border-b border-gray-100">
+              <tr>
                 <th className="py-3 px-4">Action</th>
                 <th className="py-3 px-4">Module</th>
-                <th className="py-3 px-4">Description / Target</th>
+                <th className="py-3 px-4">Event Description</th>
                 <th className="py-3 px-4">Date & Time</th>
-                <th className="py-3 px-4 text-right">Details</th>
+                <th className="py-3 px-4 text-right">Inspect</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs">
-              {filteredLogs.map(log => {
+              {paginatedLogs.map(log => {
                 const badge = getActionBadge(log.action);
 
                 return (
-                  <tr key={log.id} className="hover:bg-gray-50/80 transition-colors">
+                  <tr key={log.id} className="hover:bg-gray-50/70 transition-colors">
                     {/* Action badge */}
                     <td className="py-3 px-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.bg}`}>
-                        {badge.icon}
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${badge.bg}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
                         <span>{badge.label}</span>
                       </span>
                     </td>
 
-                    {/* Module badge */}
+                    {/* Module */}
                     <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-lg font-bold text-[11px]">
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-md font-semibold text-[11px]">
                         {log.module}
                       </span>
                     </td>
 
                     {/* Title and details */}
-                    <td className="py-3 px-4 min-w-[240px]">
-                      <div className="font-bold text-gray-900 leading-snug">
+                    <td className="py-3 px-4 max-w-xs sm:max-w-md whitespace-normal">
+                      <div className="font-semibold text-gray-900 leading-snug">
                         {log.title}
                       </div>
                       {log.details && (
@@ -490,35 +502,32 @@ export function HistoryView() {
 
                     {/* Timestamp */}
                     <td className="py-3 px-4 whitespace-nowrap text-gray-600">
-                      <div className="flex items-center gap-1.5 font-bold">
-                        <Calendar size={13} className="text-gray-400" />
-                        <span>{log.date}</span>
+                      <div className="font-semibold text-gray-800">
+                        {log.date}
                       </div>
-                      <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-0.5">
-                        <Clock size={12} />
-                        <span>{log.time}</span>
+                      <div className="text-[11px] text-gray-400">
+                        {log.time}
                       </div>
                     </td>
 
                     {/* Actions */}
                     <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
                           onClick={() => setInspectLog(log)}
-                          className="px-2.5 py-1.5 text-xs font-bold text-[#084b3e] bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-colors inline-flex items-center gap-1 cursor-pointer"
-                          title="Inspect record details"
+                          className="p-1.5 text-gray-500 hover:text-[#084b3e] hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                          title="View Details"
                         >
-                          <Eye size={14} />
-                          <span className="hidden sm:inline">Inspect</span>
+                          <Eye size={15} />
                         </button>
                         <button
                           type="button"
                           onClick={() => setDeleteTargetLog(log)}
                           className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                          title="Delete this log entry"
+                          title="Delete from log"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </td>
@@ -529,13 +538,13 @@ export function HistoryView() {
               {filteredLogs.length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-12 text-center text-gray-400">
-                    <div className="flex flex-col items-center justify-center space-y-2">
-                      <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 border border-gray-100">
-                        <History size={24} />
+                    <div className="flex flex-col items-center justify-center space-y-1.5">
+                      <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 border border-gray-100">
+                        <History size={20} />
                       </div>
-                      <p className="text-sm font-bold text-gray-600">No activity logs found</p>
-                      <p className="text-xs text-gray-400 max-w-sm">
-                        Deletions, edits, and bulk operations will appear here as they occur in the app.
+                      <p className="text-xs font-bold text-gray-600">No activity records found</p>
+                      <p className="text-[11px] text-gray-400">
+                        Edits, deletions, and updates will be logged here automatically.
                       </p>
                     </div>
                   </td>
@@ -544,81 +553,137 @@ export function HistoryView() {
             </tbody>
           </table>
         </div>
+
+        {/* Minimal Pagination & Footer */}
+        {filteredLogs.length > 0 && (
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-gray-100 text-xs">
+            <div className="text-gray-500 font-medium text-[11px]">
+              Showing <span className="font-bold text-gray-800">{(currentPage - 1) * pageSize + 1}</span> to{' '}
+              <span className="font-bold text-gray-800">
+                {Math.min(currentPage * pageSize, filteredLogs.length)}
+              </span>{' '}
+              of <span className="font-bold text-gray-800">{filteredLogs.length}</span> logs
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  title="Previous Page"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+
+                <div className="flex items-center gap-1 px-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .map((p, idx, arr) => {
+                      const prev = arr[idx - 1];
+                      return (
+                        <React.Fragment key={p}>
+                          {prev && p - prev > 1 && <span className="px-1 text-gray-400 text-[10px]">...</span>}
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage(p)}
+                            className={`min-w-6 h-6 px-1.5 rounded-md font-bold text-xs transition-colors cursor-pointer ${
+                              currentPage === p
+                                ? 'bg-[#084b3e] text-white'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      );
+                    })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  title="Next Page"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
 
-      {/* Log Inspection Modal */}
+      {/* Minimal Log Inspection Modal */}
       {inspectLog && (
         <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
           onClick={() => setInspectLog(null)}
         >
           <div 
-            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-4"
+            className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-3.5"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex justify-between items-start border-b border-gray-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-50 text-[#084b3e]">
-                  <FileText size={20} />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-gray-900 leading-tight">
-                    Activity Details #{inspectLog.id}
-                  </h3>
-                  <p className="text-xs text-gray-500 font-medium">
-                    {inspectLog.date} at {inspectLog.time}
-                  </p>
-                </div>
+            <div className="flex justify-between items-start border-b border-gray-100 pb-2.5">
+              <div>
+                <h3 className="text-sm font-black text-gray-900 leading-tight">
+                  Activity Record #{inspectLog.id}
+                </h3>
+                <p className="text-[11px] text-gray-400 font-medium">
+                  {inspectLog.date} • {inspectLog.time}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => setInspectLog(null)}
                 className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
 
-            {/* Main Info */}
-            <div className="space-y-2.5 text-xs">
-              <div className="flex justify-between items-center p-2.5 bg-gray-50 rounded-xl">
-                <span className="font-bold text-gray-500 uppercase tracking-wider text-[10px]">Action Type</span>
-                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] border ${getActionBadge(inspectLog.action).bg}`}>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between items-center py-1.5 border-b border-gray-50">
+                <span className="text-gray-500 font-medium">Action</span>
+                <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] border ${getActionBadge(inspectLog.action).bg}`}>
                   {inspectLog.action}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center p-2.5 bg-gray-50 rounded-xl">
-                <span className="font-bold text-gray-500 uppercase tracking-wider text-[10px]">Module</span>
+              <div className="flex justify-between items-center py-1.5 border-b border-gray-50">
+                <span className="text-gray-500 font-medium">Module</span>
                 <span className="font-bold text-gray-900">{inspectLog.module}</span>
               </div>
 
-              <div className="p-3 bg-gray-50 rounded-xl space-y-1">
-                <span className="font-bold text-gray-500 uppercase tracking-wider text-[10px] block">Title</span>
-                <p className="font-black text-gray-900 text-sm">{inspectLog.title}</p>
+              <div className="py-1.5 border-b border-gray-50">
+                <span className="text-gray-500 font-medium block text-[11px]">Title</span>
+                <p className="font-bold text-gray-900 mt-0.5">{inspectLog.title}</p>
               </div>
 
               {inspectLog.details && (
-                <div className="p-3 bg-gray-50 rounded-xl space-y-1">
-                  <span className="font-bold text-gray-500 uppercase tracking-wider text-[10px] block">Details</span>
-                  <p className="font-medium text-gray-700 leading-relaxed">{inspectLog.details}</p>
+                <div className="py-1.5 border-b border-gray-50">
+                  <span className="text-gray-500 font-medium block text-[11px]">Details</span>
+                  <p className="text-gray-700 mt-0.5 leading-relaxed">{inspectLog.details}</p>
                 </div>
               )}
 
               {/* JSON Metadata snapshot if exists */}
               {inspectLog.meta && (
-                <div className="p-3 bg-gray-900 text-emerald-400 rounded-xl font-mono text-[11px] max-h-48 overflow-y-auto space-y-1">
-                  <span className="text-[10px] text-gray-400 font-bold uppercase block">Metadata Snapshot:</span>
+                <div className="p-2.5 bg-gray-900 text-emerald-400 rounded-xl font-mono text-[10px] max-h-40 overflow-y-auto mt-2">
+                  <span className="text-[10px] text-gray-400 font-bold block mb-1">Payload / Snapshot:</span>
                   <pre className="whitespace-pre-wrap">{JSON.stringify(inspectLog.meta, null, 2)}</pre>
                 </div>
               )}
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-gray-100">
+            <div className="flex justify-end pt-2">
               <button
                 type="button"
                 onClick={() => setInspectLog(null)}
-                className="px-5 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+                className="px-4 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -630,41 +695,38 @@ export function HistoryView() {
       {/* Delete Single Log Modal */}
       {deleteTargetLog && (
         <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
           onClick={() => setDeleteTargetLog(null)}
         >
           <div 
-            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-4"
+            className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-3"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="p-2.5 bg-rose-50 rounded-xl">
-                <AlertTriangle size={22} />
+            <div className="flex items-center gap-2.5 text-rose-600">
+              <div className="p-2 bg-rose-50 rounded-xl">
+                <AlertTriangle size={18} />
               </div>
-              <div>
-                <h3 className="text-base font-black text-gray-900">Remove History Record?</h3>
-                <p className="text-xs text-gray-500">Log Entry #{deleteTargetLog.id}</p>
-              </div>
+              <h3 className="text-sm font-black text-gray-900">Remove from History?</h3>
             </div>
 
-            <p className="text-xs text-gray-600 leading-relaxed">
-              Are you sure you want to remove this record from the history logs? This will only remove the log entry, not alter your actual transactions.
+            <p className="text-xs text-gray-500 leading-relaxed">
+              This will only remove this audit log entry from your device. Your actual sales, expenses, and accounts will not be affected.
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => setDeleteTargetLog(null)}
-                className="px-4 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl"
+                className="px-3.5 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDeleteSingle}
-                className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl"
+                className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl cursor-pointer"
               >
-                Delete Log
+                Delete
               </button>
             </div>
           </div>
@@ -674,37 +736,37 @@ export function HistoryView() {
       {/* Clear All History Modal */}
       {isClearAllOpen && (
         <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
           onClick={() => setIsClearAllOpen(false)}
         >
           <div 
-            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-4 text-center"
+            className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-3 text-center"
             onClick={e => e.stopPropagation()}
           >
-            <div className="w-14 h-14 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-              <AlertTriangle size={28} />
+            <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertTriangle size={20} />
             </div>
 
-            <h3 className="text-lg font-black text-gray-900">Clear All Activity History?</h3>
+            <h3 className="text-sm font-black text-gray-900">Clear All Activity History?</h3>
 
             <p className="text-xs text-gray-500 leading-relaxed">
-              This will permanently delete all {rawLogs.length} audit and history entries from your device. Your sales, expenses, and accounts will NOT be affected.
+              This will permanently delete all {rawLogs.length} audit records. Your sales, expenses, customer accounts, and cash balances will NOT be altered.
             </p>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setIsClearAllOpen(false)}
-                className="flex-1 py-2.5 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl"
+                className="flex-1 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmClearAll}
-                className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl"
+                className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl cursor-pointer"
               >
-                Clear All Logs
+                Clear All
               </button>
             </div>
           </div>

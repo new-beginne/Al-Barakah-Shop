@@ -92,7 +92,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
           <div className="flex items-center gap-3 z-10">
             <div className="bg-white p-1 rounded-2xl shrink-0 shadow-sm border border-emerald-300/30 flex items-center justify-center">
               <img 
-                src="/logo.png" 
+                src="/logo.png?v=2" 
                 alt="Al-Barakah Logo" 
                 className="w-10 h-10 object-contain rounded-full"
                 referrerPolicy="no-referrer"

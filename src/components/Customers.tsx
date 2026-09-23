@@ -38,7 +38,7 @@ export function Customers() {
   // Collect Due modal state
   const [collectDueCustomer, setCollectDueCustomer] = useState<Customer | null>(null);
   const [collectDueAmount, setCollectDueAmount] = useState('');
-  const [collectDueMethod, setCollectDueMethod] = useState<'Cash' | 'bKash' | 'Nagad' | 'Rocket' | 'Bank'>('Cash');
+  const [collectDueMethod, setCollectDueMethod] = useState<'Cash' | 'bKash' | 'Nagad' | 'Rocket'>('Cash');
   const [collectDueNote, setCollectDueNote] = useState('');
   const [isCollecting, setIsCollecting] = useState(false);
 
@@ -468,7 +468,6 @@ export function Customers() {
                   <option value="bKash">bKash</option>
                   <option value="Nagad">Nagad</option>
                   <option value="Rocket">Rocket</option>
-                  <option value="Bank">Bank</option>
                 </select>
               </div>
               <div className="pt-2">

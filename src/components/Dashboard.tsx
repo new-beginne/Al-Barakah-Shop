@@ -110,9 +110,9 @@ export function Dashboard() {
   const cashAccount = allAccounts.find(a => a.id === 'cash');
   const cashOnHand = cashAccount ? cashAccount.balance : cashOnHandTodayFlow;
   
-  // All accounts (Cash, bKash, Nagad, Rocket, Upay, Bank, custom)
+  // All active accounts (Cash, bKash, Nagad, Rocket)
   const targetAccountsList = useMemo(() => {
-    const defaultAccountsOrder = ['cash', 'bkash', 'nagad', 'rocket', 'upay', 'bank'];
+    const defaultAccountsOrder = ['cash', 'bkash', 'nagad', 'rocket'];
     const list: Array<{ id: string; name: string; balance: number; type?: string }> = [];
     
     defaultAccountsOrder.forEach(id => {
@@ -120,12 +120,13 @@ export function Dashboard() {
       if (found) {
         list.push(found);
       } else {
-        const defaultName = id === 'cash' ? 'Cash' : id === 'bkash' ? 'bKash' : id === 'nagad' ? 'Nagad' : id === 'rocket' ? 'Rocket' : id === 'upay' ? 'Upay' : 'Bank';
-        list.push({ id, name: defaultName, balance: 0, type: id === 'cash' ? 'cash' : id === 'bank' ? 'bank' : 'mfs' });
+        const defaultName = id === 'cash' ? 'Cash' : id === 'bkash' ? 'bKash' : id === 'nagad' ? 'Nagad' : 'Rocket';
+        list.push({ id, name: defaultName, balance: 0, type: id === 'cash' ? 'cash' : 'mfs' });
       }
     });
 
     allAccounts.forEach(acc => {
+      if (acc.id === 'upay' || acc.id === 'bank') return;
       if (!list.some(item => item.id === acc.id)) {
         list.push(acc);
       }

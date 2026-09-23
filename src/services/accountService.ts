@@ -32,20 +32,6 @@ export const DEFAULT_ACCOUNTS: Omit<Account, 'createdAt' | 'updatedAt'>[] = [
     type: 'mfs',
     balance: 0,
     note: 'Rocket Wallet'
-  },
-  {
-    id: 'upay',
-    name: 'Upay',
-    type: 'mfs',
-    balance: 0,
-    note: 'Upay Wallet'
-  },
-  {
-    id: 'bank',
-    name: 'Bank / Card',
-    type: 'bank',
-    balance: 0,
-    note: 'Bank Account'
   }
 ];
 
@@ -62,9 +48,17 @@ export async function initDefaultAccounts(): Promise<void> {
           await db.open();
         }
 
+        // Clean up disabled accounts (upay, bank) so they don't appear in UI
+        try {
+          await db.accounts.delete('upay');
+          await db.accounts.delete('bank');
+        } catch (e) {
+          // ignore
+        }
+
         const now = new Date().toISOString();
 
-        // Check if bKash/Nagad/Rocket/Upay have latest MFS balances
+        // Check if bKash/Nagad/Rocket have latest MFS balances
         let allMfs: MfsTransaction[] = [];
         try {
           allMfs = await db.mfs.toArray();
@@ -119,8 +113,6 @@ export function mapPaymentMethodToAccountId(method?: string): string | null {
   if (clean.includes('bkash') || clean.includes('b-kash')) return 'bkash';
   if (clean.includes('nagad')) return 'nagad';
   if (clean.includes('rocket')) return 'rocket';
-  if (clean.includes('upay')) return 'upay';
-  if (clean.includes('bank') || clean.includes('card')) return 'bank';
   return 'cash';
 }
 
@@ -177,8 +169,7 @@ export async function setAccountBalance(accountId: string, newBalance: number, n
         const operatorName = 
           accountId === 'bkash' ? 'bKash' :
           accountId === 'nagad' ? 'Nagad' :
-          accountId === 'rocket' ? 'Rocket' :
-          accountId === 'upay' ? 'Upay' : acc.name;
+          accountId === 'rocket' ? 'Rocket' : acc.name;
 
         const meta = getRecordMetadata();
         const mfsEntry: MfsTransaction = {

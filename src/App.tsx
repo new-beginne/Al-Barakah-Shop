@@ -26,8 +26,25 @@ function TopHeader() {
   const { user, profile, isOnline, syncStatus, triggerSync, isBalanceVisible, toggleBalanceVisibility } = useAuth();
 
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 60000);
-    return () => clearInterval(timer);
+    const updateTime = () => setTime(new Date());
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+
+    // Sync immediately when tab gains focus or user returns
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        updateTime();
+      }
+    };
+
+    window.addEventListener('focus', updateTime);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', updateTime);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   return (
@@ -36,7 +53,7 @@ function TopHeader() {
         <div className="flex items-center gap-3 sm:gap-4">
           <div className="md:hidden flex items-center shrink-0">
             <img 
-              src="/logo.png" 
+              src="/logo.png?v=2" 
               alt="Al-Barakah Logo" 
               className="w-9 h-9 rounded-full border border-emerald-100 object-contain shadow-xs bg-white p-0.5"
               referrerPolicy="no-referrer"
@@ -103,7 +120,10 @@ function TopHeader() {
               <CalendarIcon size={14} className="text-gray-400"/> 
               {format(time, 'dd/MM/yy')}
             </div>
-            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-full border border-gray-200 text-xs font-bold text-gray-700 shadow-sm">
+            <div 
+              className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-full border border-gray-200 text-xs font-bold text-gray-700 shadow-sm"
+              title={format(time, 'hh:mm:ss a')}
+            >
               <Clock size={14} className="text-gray-400"/> 
               {format(time, 'hh:mm a')}
             </div>

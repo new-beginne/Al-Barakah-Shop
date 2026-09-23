@@ -779,7 +779,7 @@ export function Settings() {
         <div className="space-y-6">
           {/* 4 Accounts Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {accounts.map((acc) => (
+            {accounts.filter(a => a.id !== 'upay' && a.id !== 'bank').map((acc) => (
               <div 
                 key={acc.id} 
                 className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between"
