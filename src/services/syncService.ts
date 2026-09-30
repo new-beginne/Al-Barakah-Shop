@@ -177,6 +177,13 @@ export async function pushLocalToCloud(uid: string, forceAll: boolean = false): 
     return 0;
   }
 
+  // MULTI-TENANT ISOLATION GUARD: Verify this device's active user matches target uid
+  const activeUid = typeof localStorage !== 'undefined' ? localStorage.getItem('albarakah_active_uid') : null;
+  if (activeUid && activeUid !== uid) {
+    console.warn(`[Sync Guard] Blocked pushLocalToCloud! Target uid (${uid}) does not match active local uid (${activeUid}).`);
+    return 0;
+  }
+
   // 1. Strict dirty check: if not forceAll, only proceed if there are actual changes!
   const pendingDeletions = await db.deletedRecords.toArray();
   const dirtyTables = getPendingModifiedTables();
@@ -483,6 +490,13 @@ async function mergeWithTimestamp<T extends { id?: any; updatedAt?: string }>(
 export async function pullCloudToLocal(uid: string): Promise<number> {
   if (!uid || !navigator.onLine) return 0;
   if (isQuotaExceededBlocked()) return 0;
+
+  // MULTI-TENANT ISOLATION GUARD: Verify this device's active user matches target uid
+  const activeUid = typeof localStorage !== 'undefined' ? localStorage.getItem('albarakah_active_uid') : null;
+  if (activeUid && activeUid !== uid) {
+    console.warn(`[Sync Guard] Skipping pullCloudToLocal because active user changed (${activeUid} !== ${uid})`);
+    return 0;
+  }
 
   let count = 0;
   // Mute Dexie hooks so pulling down cloud data DOES NOT trigger pushLocalToCloud again!

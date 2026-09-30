@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { db, Customer } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from '../services/accountService';
-import { logCustomerDelete, logCustomerEdit, logDueEdit } from '../services/activityLogService';
+import { logCustomerDelete, logCustomerEdit, logDueEdit, logDueClear } from '../services/activityLogService';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { format } from 'date-fns';
 import { 
   Users, 
   UserPlus, 
@@ -210,32 +211,98 @@ export function Customers() {
       ).sort((a, b) => (a.id || 0) - (b.id || 0));
 
       let remainingToCollect = amount;
+      let totalProfitEarned = 0;
       const now = new Date().toISOString();
-      const meta = { date: formatDateStr(new Date().toISOString()), time: new Date().toLocaleTimeString(), updatedAt: now };
+      const todayDate = format(new Date(), 'yyyy-MM-dd');
+      const todayTime = format(new Date(), 'hh:mm:ss a');
 
-      await db.transaction('rw', db.dues, db.accounts, db.balanceLogs, async () => {
+      await db.transaction('rw', [db.dues, db.sales, db.accounts, db.balanceLogs, db.activityLogs], async () => {
         for (const d of customerDues) {
           if (remainingToCollect <= 0) break;
           const pendingForThisDue = (d.totalAmount || 0) - (d.paidAmount || 0);
           if (pendingForThisDue > 0) {
             const collectFromThis = Math.min(pendingForThisDue, remainingToCollect);
             const newPaid = (d.paidAmount || 0) + collectFromThis;
+            const isFullClear = newPaid >= (d.totalAmount || 0);
+
             await db.dues.update(d.id!, {
               paidAmount: newPaid,
-              status: newPaid >= (d.totalAmount || 0) ? 'Paid' : 'Partial',
+              status: isFullClear ? 'Paid' : 'Partial',
               updatedAt: now
             });
+
+            // Calculate proportional cost and profit for this cleared portion
+            const totalDueAmt = d.totalAmount || collectFromThis;
+            const ratio = totalDueAmt > 0 ? (collectFromThis / totalDueAmt) : 1;
+            const costPart = Math.round(((d.cost || 0) * ratio) * 100) / 100;
+            const profitPart = d.profit !== undefined 
+              ? Math.round(((d.profit) * ratio) * 100) / 100 
+              : Math.max(0, collectFromThis - costPart);
+
+            totalProfitEarned += profitPart;
+
+            // CRITICAL: When due is cleared, add to sales & profit immediately!
+            await db.sales.add({
+              date: todayDate,
+              time: todayTime,
+              createdAt: now,
+              updatedAt: now,
+              category: d.category || 'Due Collection',
+              serviceName: d.serviceName ? `Due Clear: ${d.serviceName}` : `Due Cleared (${d.customerName})`,
+              amount: collectFromThis,
+              cost: costPart,
+              profit: profitPart,
+              paymentMethod: collectDueMethod,
+              note: `Due cleared (${isFullClear ? 'Full' : 'Partial'}): Tk ${collectFromThis.toLocaleString()} of Tk ${totalDueAmt.toLocaleString()} for ${d.serviceName || 'Service'}${collectDueNote.trim() ? ` - ${collectDueNote.trim()}` : ''}`,
+              customerName: d.customerName,
+              customerPhone: d.phone,
+              paidAmount: collectFromThis,
+              dueAmount: 0,
+              quantity: 1
+            });
+
             remainingToCollect -= collectFromThis;
           }
+        }
+
+        // If there's an excess payment beyond recorded dues, record as general due collection sale
+        if (remainingToCollect > 0) {
+          totalProfitEarned += remainingToCollect;
+          await db.sales.add({
+            date: todayDate,
+            time: todayTime,
+            createdAt: now,
+            updatedAt: now,
+            category: 'Due Collection',
+            serviceName: `Due Payment (${collectDueCustomer.name})`,
+            amount: remainingToCollect,
+            cost: 0,
+            profit: remainingToCollect,
+            paymentMethod: collectDueMethod,
+            note: `Due credit collected: Tk ${remainingToCollect.toLocaleString()}${collectDueNote.trim() ? ` - ${collectDueNote.trim()}` : ''}`,
+            customerName: collectDueCustomer.name,
+            customerPhone: collectDueCustomer.phone,
+            paidAmount: remainingToCollect,
+            dueAmount: 0,
+            quantity: 1
+          });
         }
         
         const accountId = mapPaymentMethodToAccountId(collectDueMethod);
         await adjustAccountBalance(accountId, amount);
       });
 
-      await logDueEdit(collectDueCustomer.name, amount, collectDueMethod);
-      setSuccessMsg(`Successfully collected Tk ${amount} from ${collectDueCustomer.name}`);
-      setTimeout(() => setSuccessMsg(''), 4000);
+      // Record clear log in Activity History
+      await logDueClear(
+        collectDueCustomer.name, 
+        amount, 
+        collectDueMethod, 
+        totalProfitEarned,
+        collectDueNote.trim() ? `Note: ${collectDueNote.trim()}` : undefined
+      );
+
+      setSuccessMsg(`Successfully cleared Tk ${amount.toLocaleString()} due from ${collectDueCustomer.name}. Added to sales & profit.`);
+      setTimeout(() => setSuccessMsg(''), 4500);
     } finally {
       setIsCollecting(false);
       setCollectDueCustomer(null);

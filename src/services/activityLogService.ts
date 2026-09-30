@@ -2,7 +2,7 @@ import { db, ActivityLog } from '../db/db';
 import { format } from 'date-fns';
 
 export async function recordActivityLog(entry: {
-  action: 'DELETE' | 'EDIT' | 'BULK_DELETE' | 'RESET' | 'CREATE';
+  action: 'DELETE' | 'EDIT' | 'BULK_DELETE' | 'RESET' | 'CREATE' | 'CLEAR';
   module: 'Sales' | 'Expenses' | 'MFS' | 'Dues' | 'Customers' | 'Borrowings' | 'Services' | 'Balance' | 'All Data' | 'System';
   entityId?: string | number;
   title: string;
@@ -151,6 +151,16 @@ export async function logDueEdit(customerName: string, amount: number, paymentMe
     title: `Collected Due Tk ${amount.toLocaleString()} from ${customerName}`,
     details: `Payment Method: ${paymentMethod} • Date: ${format(new Date(), 'yyyy-MM-dd')}`,
     meta: { customerName, amount, paymentMethod },
+  });
+}
+
+export async function logDueClear(customerName: string, amount: number, paymentMethod: string, profit: number = 0, detailsExtra?: string) {
+  await recordActivityLog({
+    action: 'CLEAR',
+    module: 'Dues',
+    title: `Due Cleared: Tk ${amount.toLocaleString()} from ${customerName}`,
+    details: `Paid via ${paymentMethod} • Added to Sales & Profit (Tk ${profit.toLocaleString()})${detailsExtra ? ` • ${detailsExtra}` : ''}`,
+    meta: { customerName, amount, paymentMethod, profit },
   });
 }
 

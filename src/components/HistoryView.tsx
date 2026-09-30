@@ -27,7 +27,7 @@ import { format, subDays, startOfMonth } from 'date-fns';
 export function HistoryView() {
   const rawLogs = useLiveQuery(() => db.activityLogs.orderBy('id').reverse().toArray()) || [];
 
-  const [selectedActionFilter, setSelectedActionFilter] = useState<'all' | 'DELETE' | 'EDIT' | 'BULK_DELETE' | 'RESET'>('all');
+  const [selectedActionFilter, setSelectedActionFilter] = useState<'all' | 'DELETE' | 'EDIT' | 'CLEAR' | 'BULK_DELETE' | 'RESET'>('all');
   const [selectedModuleFilter, setSelectedModuleFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7days' | 'this_month' | 'custom'>('all');
@@ -53,10 +53,12 @@ export function HistoryView() {
     let totalDeletes = 0;
     let totalEdits = 0;
     let totalBulk = 0;
+    let totalCleared = 0;
 
     rawLogs.forEach(log => {
       if (log.action === 'DELETE') totalDeletes++;
       else if (log.action === 'EDIT') totalEdits++;
+      else if (log.action === 'CLEAR') totalCleared++;
       else if (log.action === 'BULK_DELETE' || log.action === 'RESET') totalBulk++;
     });
 
@@ -65,6 +67,7 @@ export function HistoryView() {
       totalDeletes,
       totalEdits,
       totalBulk,
+      totalCleared,
     };
   }, [rawLogs]);
 
@@ -123,7 +126,7 @@ export function HistoryView() {
   }, [filteredLogs, currentPage, pageSize]);
 
   // Reset to page 1 on filter changes
-  const handleActionFilterChange = (filter: 'all' | 'DELETE' | 'EDIT' | 'BULK_DELETE' | 'RESET') => {
+  const handleActionFilterChange = (filter: 'all' | 'DELETE' | 'EDIT' | 'CLEAR' | 'BULK_DELETE' | 'RESET') => {
     setSelectedActionFilter(filter);
     setCurrentPage(1);
   };
@@ -176,6 +179,12 @@ export function HistoryView() {
 
   const getActionBadge = (action: string) => {
     switch (action) {
+      case 'CLEAR':
+        return {
+          bg: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+          dot: 'bg-emerald-500',
+          label: 'Due Cleared',
+        };
       case 'DELETE':
         return {
           bg: 'bg-rose-50 text-rose-700 border-rose-100',
@@ -224,7 +233,7 @@ export function HistoryView() {
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Automatic audit trail for all edits, deletions, and database operations.
+            Automatic audit trail for all due clearances, edits, deletions, and database operations.
           </p>
         </div>
 
@@ -261,14 +270,23 @@ export function HistoryView() {
         </div>
       )}
 
-      {/* Minimal Stat Strip (3 sleek cards) */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Minimal Stat Strip (4 sleek cards) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white px-4 py-3 rounded-xl border border-gray-100 shadow-2xs">
           <span className="text-[11px] font-bold text-gray-400 block uppercase tracking-wider">
             Total Logged
           </span>
           <div className="text-xl sm:text-2xl font-black text-gray-900 mt-0.5">
             {stats.totalLogs.toLocaleString()}
+          </div>
+        </div>
+
+        <div className="bg-white px-4 py-3 rounded-xl border border-emerald-100 shadow-2xs bg-emerald-50/20">
+          <span className="text-[11px] font-bold text-emerald-700 block uppercase tracking-wider">
+            Due Cleared
+          </span>
+          <div className="text-xl sm:text-2xl font-black text-emerald-700 mt-0.5">
+            {stats.totalCleared.toLocaleString()}
           </div>
         </div>
 
@@ -315,18 +333,18 @@ export function HistoryView() {
 
           <button
             type="button"
-            onClick={() => handleActionFilterChange('DELETE')}
+            onClick={() => handleActionFilterChange('CLEAR')}
             className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              selectedActionFilter === 'DELETE'
-                ? 'bg-[#084b3e] text-white shadow-2xs'
+              selectedActionFilter === 'CLEAR'
+                ? 'bg-emerald-700 text-white shadow-2xs'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
             }`}
           >
-            <span>Deletions</span>
+            <span>Due Cleared</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-              selectedActionFilter === 'DELETE' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'
+              selectedActionFilter === 'CLEAR' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
             }`}>
-              {stats.totalDeletes + stats.totalBulk}
+              {stats.totalCleared}
             </span>
           </button>
 
@@ -344,6 +362,23 @@ export function HistoryView() {
               selectedActionFilter === 'EDIT' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'
             }`}>
               {stats.totalEdits}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleActionFilterChange('DELETE')}
+            className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              selectedActionFilter === 'DELETE'
+                ? 'bg-[#084b3e] text-white shadow-2xs'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
+            }`}
+          >
+            <span>Deletions</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+              selectedActionFilter === 'DELETE' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'
+            }`}>
+              {stats.totalDeletes + stats.totalBulk}
             </span>
           </button>
 

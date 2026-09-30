@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { db, Sale, getRecordMetadata } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from '../services/accountService';
-import { logSaleDelete } from '../services/activityLogService';
+import { logSaleDelete, recordActivityLog } from '../services/activityLogService';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { format } from 'date-fns';
 import { 
@@ -252,42 +252,148 @@ export function SalesEntry() {
     };
 
     try {
-      const saleId = await db.transaction('rw', db.sales, db.dues, db.accounts, db.balanceLogs, async () => {
-        const id = await db.sales.add(newSale);
+      const isPureDue = paymentMethod === 'Due' && calculatedPaidAmount === 0;
+      const isPartialDue = paymentMethod === 'Due' && calculatedPaidAmount > 0 && calculatedDueAmount > 0;
 
-        // Record Due if applicable
-        if (calculatedDueAmount > 0 && customerName.trim()) {
+      if (isPureDue) {
+        // Pure Due: ONLY add to db.dues! Do NOT add to db.sales, expenses, or profit!
+        const dueId = await db.dues.add({
+          date,
+          time,
+          customerName: customerName.trim(),
+          phone: customerPhone.trim(),
+          totalAmount: parsedAmount,
+          paidAmount: 0,
+          status: 'Unpaid',
+          serviceName: finalServiceName,
+          category: category || 'General',
+          cost: parseFloat(cost) || 0,
+          profit: currentProfit,
+          referenceType: 'sale',
+          note: note.trim(),
+          createdAt,
+          updatedAt
+        });
+
+        await recordActivityLog({
+          action: 'CREATE',
+          module: 'Dues',
+          title: `Due Entry: Tk ${parsedAmount.toLocaleString()} for ${customerName.trim()}`,
+          details: `Service: ${finalServiceName} • Recorded as Due. Will be added to Sales & Profit when cleared.`,
+          meta: { customerName: customerName.trim(), phone: customerPhone.trim(), amount: parsedAmount, serviceName: finalServiceName }
+        });
+
+        const savedSaleWithId: Sale = {
+          ...newSale,
+          id: dueId,
+          amount: parsedAmount,
+          paidAmount: 0,
+          dueAmount: parsedAmount
+        };
+        setReceiptSale(savedSaleWithId);
+        setSuccessMsg(`Recorded Due of Tk ${parsedAmount.toLocaleString()} for ${customerName.trim()}. (Will be added to sales when cleared).`);
+        setTimeout(() => setSuccessMsg(''), 4000);
+
+        resetForm();
+        return;
+      } else if (isPartialDue) {
+        // Partial Due: Add ONLY the paid portion to sales, due portion to dues!
+        const paidRatio = parsedAmount > 0 ? (calculatedPaidAmount / parsedAmount) : 1;
+        const paidProfit = Math.round(currentProfit * paidRatio * 100) / 100;
+        const paidCost = Math.max(0, Math.round((calculatedPaidAmount - paidProfit) * 100) / 100);
+
+        const remainingProfit = Math.max(0, currentProfit - paidProfit);
+        const remainingCost = Math.max(0, (parseFloat(cost) || 0) - paidCost);
+
+        const saleId = await db.transaction('rw', db.sales, db.dues, db.accounts, db.balanceLogs, async () => {
+          const id = await db.sales.add({
+            date,
+            time,
+            createdAt,
+            updatedAt,
+            category: category || 'General',
+            serviceName: finalServiceName,
+            amount: calculatedPaidAmount,
+            cost: paidCost,
+            profit: paidProfit,
+            paymentMethod: 'Cash',
+            note: note.trim() ? `${note.trim()} (Partial paid for Tk ${parsedAmount})` : `Partial payment for Tk ${parsedAmount}`,
+            customerName: customerName.trim() || undefined,
+            customerPhone: customerPhone.trim() || undefined,
+            paidAmount: calculatedPaidAmount,
+            dueAmount: 0,
+            quantity: parseInt(quantity) || 1,
+            unitPrice: unitPrice ? parseFloat(unitPrice) : undefined,
+            unitCost: unitCost ? parseFloat(unitCost) : undefined
+          });
+
           await db.dues.add({
             date,
             time,
             customerName: customerName.trim(),
             phone: customerPhone.trim(),
-            totalAmount: parsedAmount,
-            paidAmount: calculatedPaidAmount,
-            status: calculatedPaidAmount >= parsedAmount ? 'Paid' : (calculatedPaidAmount > 0 ? 'Partial' : 'Unpaid'),
+            totalAmount: calculatedDueAmount,
+            paidAmount: 0,
+            status: 'Unpaid',
+            serviceName: finalServiceName,
+            category: category || 'General',
+            cost: remainingCost,
+            profit: remainingProfit,
+            referenceType: 'sale',
+            note: note.trim() ? `${note.trim()} (Partial paid Tk ${calculatedPaidAmount})` : `Partial paid Tk ${calculatedPaidAmount}`,
             createdAt,
             updatedAt
           });
-        }
 
-        // Adjust Account Balance
-        if (calculatedPaidAmount > 0 && paymentMethod !== 'Due') {
-          const accountId = mapPaymentMethodToAccountId(paymentMethod);
-          await adjustAccountBalance(accountId, calculatedPaidAmount);
-        } else if (calculatedPaidAmount > 0 && paymentMethod === 'Due') {
-          // If partial cash payment on due sale
           await adjustAccountBalance('cash', calculatedPaidAmount);
-        }
+          return id;
+        });
 
-        return id;
-      });
+        await recordActivityLog({
+          action: 'CREATE',
+          module: 'Sales',
+          title: `Partial Sale Tk ${calculatedPaidAmount.toLocaleString()} & Due Tk ${calculatedDueAmount.toLocaleString()} for ${customerName.trim()}`,
+          details: `Service: ${finalServiceName}. Paid amount added to sales & cash.`,
+          meta: { customerName: customerName.trim(), paidAmount: calculatedPaidAmount, dueAmount: calculatedDueAmount }
+        });
 
-      const savedSaleWithId = { ...newSale, id: saleId as number };
-      setReceiptSale(savedSaleWithId);
-      setSuccessMsg(`Sale of Tk ${parsedAmount.toLocaleString()} saved successfully.`);
-      setTimeout(() => setSuccessMsg(''), 4000);
+        const savedSaleWithId: Sale = {
+          ...newSale,
+          id: saleId,
+          amount: parsedAmount,
+          paidAmount: calculatedPaidAmount,
+          dueAmount: calculatedDueAmount
+        };
+        setReceiptSale(savedSaleWithId);
+        setSuccessMsg(`Recorded payment Tk ${calculatedPaidAmount.toLocaleString()} & Due Tk ${calculatedDueAmount.toLocaleString()}.`);
+        setTimeout(() => setSuccessMsg(''), 4000);
 
-      resetForm();
+        resetForm();
+        return;
+      } else {
+        // Standard 100% paid sale
+        const saleId = await db.transaction('rw', db.sales, db.accounts, db.balanceLogs, async () => {
+          const id = await db.sales.add(newSale);
+          const accountId = mapPaymentMethodToAccountId(paymentMethod);
+          await adjustAccountBalance(accountId, parsedAmount);
+          return id;
+        });
+
+        await recordActivityLog({
+          action: 'CREATE',
+          module: 'Sales',
+          title: `Sale: ${finalServiceName} - Tk ${parsedAmount.toLocaleString()}`,
+          details: `Category: ${category} • Paid via ${paymentMethod}`,
+          meta: { saleId, amount: parsedAmount, paymentMethod }
+        });
+
+        const savedSaleWithId = { ...newSale, id: saleId as number };
+        setReceiptSale(savedSaleWithId);
+        setSuccessMsg(`Sale of Tk ${parsedAmount.toLocaleString()} saved successfully.`);
+        setTimeout(() => setSuccessMsg(''), 4000);
+
+        resetForm();
+      }
     } catch (err) {
       console.error('Failed to save sale', err);
     }

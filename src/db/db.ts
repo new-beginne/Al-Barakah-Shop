@@ -70,6 +70,10 @@ export interface Due {
   referenceType?: 'sale' | 'mfs' | 'other';
   referenceId?: number;
   note?: string;
+  serviceName?: string;
+  category?: string;
+  cost?: number;
+  profit?: number;
 }
 
 export interface Expense {
@@ -170,6 +174,7 @@ export interface Borrowing {
   dueDate: string;
   status: 'Unpaid' | 'Partial' | 'Paid';
   note?: string;
+  receiveAccount?: string;
 }
 
 export interface ActivityLog {
@@ -177,7 +182,7 @@ export interface ActivityLog {
   date: string; // 'yyyy-MM-dd'
   time: string; // 'hh:mm:ss a'
   timestamp: string; // ISO string
-  action: 'DELETE' | 'EDIT' | 'BULK_DELETE' | 'RESET' | 'CREATE';
+  action: 'DELETE' | 'EDIT' | 'BULK_DELETE' | 'RESET' | 'CREATE' | 'CLEAR';
   module: 'Sales' | 'Expenses' | 'MFS' | 'Dues' | 'Customers' | 'Borrowings' | 'Services' | 'Balance' | 'All Data' | 'System';
   entityId?: string | number;
   title: string;
@@ -437,6 +442,69 @@ export function clearAllPendingChanges() {
     } catch {
       // ignore
     }
+  }
+}
+
+/**
+ * Completely and silently clears local IndexedDB data tables for account isolation.
+ * Used when switching accounts, logging out, or logging in as a different user.
+ * Silently clears without creating deletion tombstones or triggering dirty sync events.
+ */
+export async function clearLocalDatabaseForAccountSwitch(resetAccounts: boolean = true): Promise<void> {
+  const previousSilent = isSyncSilent;
+  isSyncSilent = true;
+  try {
+    await db.transaction('rw', [
+      db.sales,
+      db.expenses,
+      db.mfs,
+      db.dues,
+      db.borrowings,
+      db.customers,
+      db.inventory,
+      db.mfsClosings,
+      db.balanceLogs,
+      db.activityLogs,
+      db.notifications,
+      db.deletedRecords,
+      db.accounts
+    ], async () => {
+      await db.sales.clear();
+      await db.expenses.clear();
+      await db.mfs.clear();
+      await db.dues.clear();
+      await db.borrowings.clear();
+      await db.customers.clear();
+      await db.inventory.clear();
+      await db.mfsClosings.clear();
+      await db.balanceLogs.clear();
+      await db.activityLogs.clear();
+      await db.notifications.clear();
+      await db.deletedRecords.clear();
+
+      if (resetAccounts) {
+        await db.accounts.clear();
+        const now = new Date().toISOString();
+        await db.accounts.bulkPut([
+          { id: 'cash', name: 'Cash', type: 'cash', balance: 0, note: 'Cash Drawer', createdAt: now, updatedAt: now },
+          { id: 'bkash', name: 'bKash', type: 'mfs', balance: 0, note: 'bKash Wallet', createdAt: now, updatedAt: now },
+          { id: 'nagad', name: 'Nagad', type: 'mfs', balance: 0, note: 'Nagad Wallet', createdAt: now, updatedAt: now },
+          { id: 'rocket', name: 'Rocket', type: 'mfs', balance: 0, note: 'Rocket Wallet', createdAt: now, updatedAt: now }
+        ]);
+      }
+    });
+
+    clearAllPendingChanges();
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('albarakah_last_synced');
+      localStorage.removeItem('albarakah_pending_tables');
+      localStorage.setItem('albarakah_db_dirty', 'false');
+    }
+  } catch (err) {
+    console.error('Failed to clear local database for account switch:', err);
+  } finally {
+    isSyncSilent = previousSilent;
   }
 }
 

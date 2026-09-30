@@ -5,12 +5,15 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut,
-  updatePassword
+  updatePassword,
+  deleteUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, firestore } from '../lib/firebase';
-import { fullSync, pushLocalToCloud, SyncResult, isQuotaExceededBlocked, markQuotaExceeded } from '../services/syncService';
-import { db, hasPendingLocalChanges } from '../db/db';
+import { pullCloudToLocal, fullSync, pushLocalToCloud, clearAllCloudData, SyncResult, isQuotaExceededBlocked, markQuotaExceeded } from '../services/syncService';
+import { db, hasPendingLocalChanges, clearLocalDatabaseForAccountSwitch } from '../db/db';
 
 import { sanitizeText, BruteForceGuard, calculateSha256 } from '../lib/security';
 
@@ -38,6 +41,7 @@ interface AuthContextType {
   updateStoreName: (newStoreName: string) => Promise<{ success: boolean; error?: string }>;
   updateStorePhoto: (photoURL: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  deleteAccount: (password: string) => Promise<{ success: boolean; error?: string }>;
   triggerSync: () => Promise<SyncResult>;
 }
 
@@ -144,13 +148,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Listen to Firebase Auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
+      const previousActiveUid = localStorage.getItem('albarakah_active_uid');
+
       if (currentUser) {
+        setUser(currentUser);
+        const isAccountSwitch = previousActiveUid && previousActiveUid !== currentUser.uid;
+
+        if (isAccountSwitch) {
+          console.info(`[Auth] Account switch detected: ${previousActiveUid} -> ${currentUser.uid}. Resetting local DB for new user.`);
+          // CRITICAL: A different user has signed in. Wipe previous user's local tables so no data leaks!
+          await clearLocalDatabaseForAccountSwitch(true);
+        }
+
+        localStorage.setItem('albarakah_active_uid', currentUser.uid);
+
         try {
           if (!isQuotaExceededBlocked()) {
             const cachedProfile = localStorage.getItem('albarakah_user_profile');
-            // Only fetch online profile if not already cached
-            if (!cachedProfile) {
+            // If account switched or no cached profile, fetch from firestore
+            if (isAccountSwitch || !cachedProfile) {
               const docRef = doc(firestore, 'users', currentUser.uid);
               const docSnap = await getDoc(docRef);
               if (docSnap.exists()) {
@@ -167,41 +183,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn('Could not fetch online profile, using cached profile:', err);
         }
 
-        // Check if local database is completely fresh/empty (e.g. brand new device with 0 sales and 0 expenses)
+        // Account synchronization:
         if (navigator.onLine && !isQuotaExceededBlocked()) {
           setTimeout(async () => {
             try {
               const salesCount = await db.sales.count();
               const expensesCount = await db.expenses.count();
               const duesCount = await db.dues.count();
-              const isFreshDevice = salesCount === 0 && expensesCount === 0 && duesCount === 0;
+              const isFreshOrSwitched = isAccountSwitch || (salesCount === 0 && expensesCount === 0 && duesCount === 0);
 
-              if (isFreshDevice) {
-                // Completely new device: pull cloud data once to restore shop data
-                const res = await fullSync(currentUser.uid, false);
-                if (res.success) {
-                  setSyncStatus('synced');
-                  setLastSynced(new Date().toISOString());
-                }
-              } else if (hasPendingLocalChanges()) {
-                // Has pending local changes: push them now
-                await pushLocalToCloud(currentUser.uid, false);
+              if (isFreshOrSwitched) {
+                // Pull cloud data for THIS user from Firestore
+                setSyncStatus('syncing');
+                await pullCloudToLocal(currentUser.uid);
                 setSyncStatus('synced');
                 setLastSynced(new Date().toISOString());
+              } else if (hasPendingLocalChanges()) {
+                // Has pending local changes: push them now
+                setSyncStatus('syncing');
+                const pushed = await pushLocalToCloud(currentUser.uid, false);
+                setSyncStatus('synced');
+                if (pushed > 0) {
+                  setLastSynced(new Date().toISOString());
+                }
               } else {
-                // Local DB already has data and nothing changed: DO NOT SEND ANY CLOUD REQUESTS!
                 setSyncStatus('synced');
               }
             } catch (err) {
               console.warn('Initial sync check error:', err);
+              setSyncStatus('synced');
             }
-          }, 1500);
+          }, 600);
         } else {
           setSyncStatus('synced');
         }
       } else {
+        // User logged out
+        setUser(null);
         setProfile(null);
         localStorage.removeItem('albarakah_user_profile');
+        if (previousActiveUid) {
+          localStorage.removeItem('albarakah_active_uid');
+          await clearLocalDatabaseForAccountSwitch(true);
+        }
       }
       setLoading(false);
     });
@@ -267,6 +291,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const email = phoneToEmail(cleanPhone);
       const userCred = await createUserWithEmailAndPassword(auth, email, password);
+      // STRICT ISOLATION: A brand new store account MUST start 100% fresh!
+      // Must NEVER inherit local data from a previous store/user!
+      await clearLocalDatabaseForAccountSwitch(true);
+      localStorage.setItem('albarakah_active_uid', userCred.user.uid);
+
       const newProfile: UserProfile = {
         uid: userCred.user.uid,
         storeName: storeName.trim(),
@@ -298,10 +327,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('Could not cache offline auth hash:', e);
       }
 
-      // Push existing local Dexie data to Cloud
-      setTimeout(() => {
-        triggerSync();
-      }, 1000);
+      setSyncStatus('synced');
+      setLastSynced(new Date().toISOString());
 
       return { success: true };
     } catch (err: any) {
@@ -342,6 +369,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Reset brute-force counter on success
       BruteForceGuard.clear(cleanPhone);
 
+      const previousActiveUid = localStorage.getItem('albarakah_active_uid');
+      if (previousActiveUid && previousActiveUid !== userCred.user.uid) {
+        console.info(`[Auth] User switched on login: ${previousActiveUid} -> ${userCred.user.uid}. Clearing local data.`);
+        await clearLocalDatabaseForAccountSwitch(true);
+      }
+      localStorage.setItem('albarakah_active_uid', userCred.user.uid);
+
       // Fetch Profile
       let activeProfile: UserProfile | null = null;
       try {
@@ -370,10 +404,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('Could not cache offline auth hash:', e);
       }
 
-      // Sync and pull all cloud records to local IndexedDB!
-      setTimeout(() => {
-        triggerSync();
-      }, 500);
+      // Pull only THIS user's data from Cloud into local IndexedDB
+      setSyncStatus('syncing');
+      try {
+        await pullCloudToLocal(userCred.user.uid);
+        setSyncStatus('synced');
+        setLastSynced(new Date().toISOString());
+      } catch (pullErr) {
+        console.warn('Could not pull cloud data on login:', pullErr);
+        setSyncStatus('idle');
+      }
 
       return { success: true };
     } catch (err: any) {
@@ -505,14 +545,103 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
+      // 1. If online and has pending local changes, quickly push to cloud for current user before logging out
+      if (user && navigator.onLine && !isQuotaExceededBlocked() && hasPendingLocalChanges()) {
+        try {
+          await pushLocalToCloud(user.uid, false);
+        } catch (syncErr) {
+          console.warn('Unsynced push before logout error:', syncErr);
+        }
+      }
+
       await signOut(auth);
       setUser(null);
       setProfile(null);
       localStorage.removeItem('albarakah_user_profile');
+      localStorage.removeItem('albarakah_active_uid');
+      localStorage.removeItem('albarakah_offline_auth');
+      localStorage.removeItem('albarakah_shop_photo');
+      window.dispatchEvent(new Event('albarakah-photo-changed'));
+
+      // 2. CRITICAL: Clear local database so no user financial data remains on the device!
+      await clearLocalDatabaseForAccountSwitch(true);
+      setSyncStatus('idle');
     } catch (err) {
       console.error('Logout error:', err);
       setUser(null);
       setProfile(null);
+      localStorage.removeItem('albarakah_user_profile');
+      localStorage.removeItem('albarakah_active_uid');
+      await clearLocalDatabaseForAccountSwitch(true);
+      setSyncStatus('idle');
+    }
+  };
+
+  // Permanently delete account: cloud subcollections, firestore profile doc, auth user, and local IndexedDB
+  const deleteAccount = async (password: string): Promise<{ success: boolean; error?: string }> => {
+    if (!password) {
+      return { success: false, error: 'Please enter your password to confirm account deletion.' };
+    }
+
+    const currentUser = auth.currentUser;
+
+    try {
+      if (currentUser && currentUser.email) {
+        // 1. Re-authenticate user to satisfy Firebase Auth recent-login requirement
+        const credential = EmailAuthProvider.credential(currentUser.email, password);
+        await reauthenticateWithCredential(currentUser, credential);
+
+        const uid = currentUser.uid;
+
+        // 2. Delete all cloud subcollections from Firestore
+        if (navigator.onLine) {
+          try {
+            await clearAllCloudData(uid);
+          } catch (cloudErr) {
+            console.warn('Error clearing cloud subcollections during account deletion:', cloudErr);
+          }
+
+          // 3. Delete the main user profile document in Firestore
+          try {
+            await deleteDoc(doc(firestore, 'users', uid));
+          } catch (docErr) {
+            console.warn('Error deleting user profile document:', docErr);
+          }
+        }
+
+        // 4. Delete the Firebase Auth User
+        await deleteUser(currentUser);
+      }
+
+      // 5. Completely wipe local IndexedDB data tables
+      await clearLocalDatabaseForAccountSwitch(true);
+
+      // 6. Clear all local storage keys
+      localStorage.removeItem('albarakah_user_profile');
+      localStorage.removeItem('albarakah_active_uid');
+      localStorage.removeItem('albarakah_offline_auth');
+      localStorage.removeItem('albarakah_shop_photo');
+      localStorage.removeItem('albarakah_last_synced');
+      localStorage.removeItem('albarakah_pending_tables');
+      localStorage.removeItem('albarakah_db_dirty');
+      localStorage.removeItem('albarakah_quota_blocked_until');
+      localStorage.removeItem('albarakah_quota_override');
+      window.dispatchEvent(new Event('albarakah-photo-changed'));
+
+      setUser(null);
+      setProfile(null);
+      setSyncStatus('idle');
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Delete account error:', err);
+      if (err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-credential') {
+        return { success: false, error: 'Incorrect password. Please enter your valid password.' };
+      }
+      if (err?.code === 'auth/too-many-requests') {
+        return { success: false, error: 'Too many attempts. Account is temporarily locked. Please try again later.' };
+      }
+      return { success: false, error: err?.message || 'Failed to delete account. Please try again.' };
     }
   };
 
@@ -532,6 +661,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateStoreName,
       updateStorePhoto,
       logout,
+      deleteAccount,
       triggerSync
     }}>
       {children}

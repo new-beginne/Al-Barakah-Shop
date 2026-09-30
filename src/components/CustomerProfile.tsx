@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, Customer, Sale, Due } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from '../services/accountService';
-import { logDueEdit } from '../services/activityLogService';
+import { logDueEdit, logDueClear } from '../services/activityLogService';
 import { 
   ArrowLeft, 
   Phone, 
@@ -314,7 +314,10 @@ export function CustomerProfile() {
       });
 
       let remainingToAllocate = amt;
+      let totalProfitEarned = 0;
       const nowIso = new Date().toISOString();
+      const todayDate = format(new Date(), 'yyyy-MM-dd');
+      const todayTime = format(new Date(), 'hh:mm:ss a');
 
       if (unsettledDues.length > 0) {
         for (const d of unsettledDues) {
@@ -340,11 +343,41 @@ export function CustomerProfile() {
             s.date === d.date &&
             Math.abs(s.amount - currentTotal) < 0.01
           );
+
+          const totalDueAmt = currentTotal || payment;
+          const ratio = totalDueAmt > 0 ? (payment / totalDueAmt) : 1;
+          const costPart = Math.round(((d.cost || 0) * ratio) * 100) / 100;
+          const profitPart = d.profit !== undefined 
+            ? Math.round(((d.profit) * ratio) * 100) / 100 
+            : Math.max(0, payment - costPart);
+
+          totalProfitEarned += profitPart;
+
           if (matchingSale && matchingSale.id) {
             await db.sales.update(matchingSale.id, {
               paidAmount: newPaid,
               dueAmount: Math.max(0, currentTotal - newPaid),
               updatedAt: nowIso
+            });
+          } else {
+            // CRITICAL: When due is cleared, record the collected sale & profit!
+            await db.sales.add({
+              date: todayDate,
+              time: todayTime,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+              category: d.category || 'Due Collection',
+              serviceName: d.serviceName ? `Due Clear: ${d.serviceName}` : `Due Cleared (${customer.name})`,
+              amount: payment,
+              cost: costPart,
+              profit: profitPart,
+              paymentMethod: collectMethod,
+              note: `Due cleared (${newStatus}): Tk ${payment.toLocaleString()} of Tk ${currentTotal.toLocaleString()} for ${d.serviceName || 'Service'}${collectNote.trim() ? ` - ${collectNote.trim()}` : ''}`,
+              customerName: customer.name,
+              customerPhone: customer.phone,
+              paidAmount: payment,
+              dueAmount: 0,
+              quantity: 1
             });
           }
 
@@ -352,7 +385,30 @@ export function CustomerProfile() {
         }
       }
 
-      setSuccessMsg(`Collected Tk ${amt.toLocaleString()} (${collectMethod}) from ${customer.name}.`);
+      // If any excess payment beyond dues, record as credit sale
+      if (remainingToAllocate > 0) {
+        totalProfitEarned += remainingToAllocate;
+        await db.sales.add({
+          date: todayDate,
+          time: todayTime,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          category: 'Due Collection',
+          serviceName: `Due Payment (${customer.name})`,
+          amount: remainingToAllocate,
+          cost: 0,
+          profit: remainingToAllocate,
+          paymentMethod: collectMethod,
+          note: `Due credit collected: Tk ${remainingToAllocate.toLocaleString()}${collectNote.trim() ? ` - ${collectNote.trim()}` : ''}`,
+          customerName: customer.name,
+          customerPhone: customer.phone,
+          paidAmount: remainingToAllocate,
+          dueAmount: 0,
+          quantity: 1
+        });
+      }
+
+      setSuccessMsg(`Collected Tk ${amt.toLocaleString()} (${collectMethod}) from ${customer.name}. Added to sales & profit.`);
       
       // Update account balance
       try {
@@ -364,7 +420,13 @@ export function CustomerProfile() {
 
       // Log activity
       try {
-        await logDueEdit(customer.name, amt, collectMethod);
+        await logDueClear(
+          customer.name, 
+          amt, 
+          collectMethod, 
+          totalProfitEarned,
+          collectNote.trim() ? `Note: ${collectNote.trim()}` : undefined
+        );
       } catch (logErr) {
         console.warn('Failed to log due collection activity:', logErr);
       }
