@@ -154,6 +154,34 @@
       },
       "required": ["action", "module", "title"]
     },
+    "InventoryRecord": {
+      "title": "InventoryRecord",
+      "description": "Shop inventory item",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "currentStock": { "type": "number" },
+        "unit": { "type": "string" },
+        "minAlertStock": { "type": "number" },
+        "unitCost": { "type": "number" }
+      },
+      "required": ["name", "currentStock"]
+    },
+    "MfsClosingRecord": {
+      "title": "MfsClosingRecord",
+      "description": "Daily MFS closing and SIM reconciliation record",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "operator": { "type": "string" },
+        "simClosingBalance": { "type": "number" },
+        "drawerCashCount": { "type": "number" },
+        "discrepancy": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["date", "operator", "status"]
+    },
     "TestConnection": {
       "title": "TestConnection",
       "description": "Probe for testing connection",
@@ -211,6 +239,14 @@
     "/users/{userId}/activityLogs/{logId}": {
       "schema": "ActivityLogRecord",
       "description": "Shop activity logs"
+    },
+    "/users/{userId}/inventory/{itemId}": {
+      "schema": "InventoryRecord",
+      "description": "Shop inventory items"
+    },
+    "/users/{userId}/mfsClosings/{closingId}": {
+      "schema": "MfsClosingRecord",
+      "description": "Daily MFS closing records"
     }
   }
 }

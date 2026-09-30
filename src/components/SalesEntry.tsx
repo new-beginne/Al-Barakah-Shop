@@ -445,7 +445,16 @@ export function SalesEntry() {
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form 
+          onSubmit={handleSubmit} 
+          onKeyDown={(e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+              e.preventDefault();
+              handleSubmit(e);
+            }
+          }}
+          className="space-y-5"
+        >
           {/* Customer Details Row */}
           <div className="relative" ref={customerSuggestionRef}>
             <div className="flex justify-between items-center mb-1.5">
@@ -673,7 +682,10 @@ export function SalesEntry() {
               className="w-full py-4 px-6 bg-[#084b3e] hover:bg-[#0c5e4e] active:scale-[0.99] text-white font-black rounded-xl text-lg tracking-wide transition-all shadow-md flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <CheckCircle2 size={24} />
-              Save Sale
+              <span>Save Sale</span>
+              <kbd className="hidden sm:inline-block px-2 py-0.5 bg-black/20 text-emerald-100 rounded text-xs font-mono font-normal">
+                Ctrl + Enter
+              </kbd>
             </button>
           </div>
         </form>

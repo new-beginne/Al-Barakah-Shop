@@ -38,6 +38,8 @@ export const DEFAULT_ACCOUNTS: Omit<Account, 'createdAt' | 'updatedAt'>[] = [
 
 export async function initDefaultAccounts(): Promise<void> {
   if (isInitialized) return;
+  // If an active Dexie transaction is already running, skip to avoid breaking or committing the transaction
+  if (Dexie.currentTransaction) return;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
@@ -144,7 +146,9 @@ export function mapPaymentMethodToAccountId(method?: string): string | null {
 export async function adjustAccountBalance(accountId: string, delta: number): Promise<number> {
   if (delta === 0) return 0;
   try {
-    await initDefaultAccounts();
+    if (!isInitialized && !Dexie.currentTransaction) {
+      await initDefaultAccounts();
+    }
     const cleanId = accountId.toLowerCase().trim();
     let acc = await db.accounts.get(cleanId);
     if (!acc) {
@@ -161,18 +165,20 @@ export async function adjustAccountBalance(accountId: string, delta: number): Pr
         id: cleanId,
         name: def ? def.name : cleanId.charAt(0).toUpperCase() + cleanId.slice(1),
         type: def ? def.type : 'other',
-        balance: delta,
+        balance: Math.round(delta * 100) / 100,
         createdAt: now,
         updatedAt: now
       };
       await db.accounts.put(newAcc);
     } else {
-      newBal = (acc.balance || 0) + delta;
+      newBal = Math.round(((acc.balance || 0) + delta) * 100) / 100;
       await db.accounts.update(acc.id, { balance: newBal, updatedAt: now });
     }
 
-    // Immediately push to cloud so refreshing does not lose the update
-    syncSingleAccountToCloud(cleanId).catch(console.warn);
+    // Push cloud sync asynchronously so it never interferes with active IndexedDB transaction
+    setTimeout(() => {
+      syncSingleAccountToCloud(cleanId).catch(console.warn);
+    }, 0);
     return newBal;
   } catch (err) {
     console.error(`Error adjusting balance for account ${accountId}:`, err);
@@ -185,7 +191,9 @@ export async function adjustAccountBalance(accountId: string, delta: number): Pr
  */
 export async function setAccountBalance(accountId: string, newBalance: number, note?: string): Promise<void> {
   try {
-    await initDefaultAccounts();
+    if (!isInitialized && !Dexie.currentTransaction) {
+      await initDefaultAccounts();
+    }
     const cleanId = accountId.toLowerCase().trim();
     const now = new Date().toISOString();
     let acc = await db.accounts.get(cleanId);
@@ -240,8 +248,10 @@ export async function setAccountBalance(accountId: string, newBalance: number, n
       await db.mfs.add(mfsEntry);
     }
 
-    // Immediately push to cloud
-    syncSingleAccountToCloud(targetId).catch(console.warn);
+    // Immediately push to cloud in next tick
+    setTimeout(() => {
+      syncSingleAccountToCloud(targetId).catch(console.warn);
+    }, 0);
   } catch (err) {
     console.error(`Error setting balance for account ${accountId}:`, err);
     throw err;
@@ -255,7 +265,9 @@ export async function addBalanceToAccount(accountId: string, amountToAdd: number
   if (isNaN(amountToAdd)) {
     throw new Error('Invalid amount');
   }
-  await initDefaultAccounts();
+  if (!isInitialized && !Dexie.currentTransaction) {
+    await initDefaultAccounts();
+  }
   const acc = await db.accounts.get(accountId);
   const currentBal = acc?.balance || 0;
   const newBal = currentBal + amountToAdd;
@@ -311,7 +323,9 @@ export async function addBalanceWithLog(
   if (isNaN(amount) || amount <= 0) {
     throw new Error('Invalid amount to add');
   }
-  await initDefaultAccounts();
+  if (!isInitialized && !Dexie.currentTransaction) {
+    await initDefaultAccounts();
+  }
   const acc = await db.accounts.get(accountId);
   if (!acc) throw new Error(`Account not found: ${accountId}`);
 
@@ -353,7 +367,9 @@ export async function editBalanceWithLog(
   if (isNaN(newBalance)) {
     throw new Error('Invalid new balance');
   }
-  await initDefaultAccounts();
+  if (!isInitialized && !Dexie.currentTransaction) {
+    await initDefaultAccounts();
+  }
   const cleanId = accountId.toLowerCase().trim();
   let acc = await db.accounts.get(cleanId);
   if (!acc) {
@@ -398,8 +414,10 @@ export async function editBalanceWithLog(
     note: note?.trim() || `Balance calibrated from Tk ${prevBal.toLocaleString()} to Tk ${newBalance.toLocaleString()}`
   });
 
-  // Immediately sync to cloud so refresh never reverts it
-  syncSingleAccountToCloud(targetId).catch(console.warn);
+  // Immediately sync to cloud in next tick so refresh never reverts it
+  setTimeout(() => {
+    syncSingleAccountToCloud(targetId).catch(console.warn);
+  }, 0);
 
   return { newBalance, logId: Number(logId) };
 }

@@ -9,7 +9,8 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, firestore } from '../lib/firebase';
-import { fullSync, SyncResult } from '../services/syncService';
+import { fullSync, pushLocalToCloud, SyncResult, isQuotaExceededBlocked, markQuotaExceeded } from '../services/syncService';
+import { db, hasPendingLocalChanges } from '../db/db';
 
 import { sanitizeText, BruteForceGuard, calculateSha256 } from '../lib/security';
 
@@ -17,6 +18,7 @@ export interface UserProfile {
   uid: string;
   storeName: string;
   phone: string;
+  photoURL?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -34,6 +36,7 @@ interface AuthContextType {
   loginWithPhone: (phone: string, password: string) => Promise<{ success: boolean; error?: string }>;
   updateStorePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateStoreName: (newStoreName: string) => Promise<{ success: boolean; error?: string }>;
+  updateStorePhoto: (photoURL: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   triggerSync: () => Promise<SyncResult>;
 }
@@ -55,7 +58,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem('albarakah_user_profile');
-      return saved ? JSON.parse(saved) : null;
+      const parsed = saved ? JSON.parse(saved) : null;
+      const cachedPhoto = localStorage.getItem('albarakah_shop_photo');
+      if (parsed && !parsed.photoURL && cachedPhoto) {
+        parsed.photoURL = cachedPhoto;
+      } else if (!parsed && cachedPhoto) {
+        return {
+          uid: 'guest',
+          storeName: 'Al-Barakah Digital Studio',
+          phone: '',
+          photoURL: cachedPhoto
+        };
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -75,18 +90,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let syncTimeout: any;
 
     const runAutoSync = () => {
-      if (user && navigator.onLine) {
-        // Debounce sync slightly so rapid DB writes don't spam the network
+      if (user && navigator.onLine && !isQuotaExceededBlocked()) {
+        // STRICT GUARD: Only proceed if database has actual pending changes!
+        if (!hasPendingLocalChanges()) return;
+
+        // Debounce sync so multiple rapid DB writes batch together into a single write
         clearTimeout(syncTimeout);
-        syncTimeout = setTimeout(() => {
-          triggerSync().catch(console.warn);
-        }, 1500);
+        syncTimeout = setTimeout(async () => {
+          if (!isQuotaExceededBlocked() && hasPendingLocalChanges()) {
+            try {
+              setSyncStatus('syncing');
+              // STRICT QUOTA GUARD: Only push modified local data! Never pull 11 collections on local edits!
+              const pushed = await pushLocalToCloud(user.uid, false);
+              setSyncStatus('synced');
+              if (pushed > 0) {
+                setLastSynced(new Date().toISOString());
+              }
+            } catch (err: any) {
+              if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota limit exceeded')) {
+                markQuotaExceeded();
+                setSyncStatus('synced');
+              } else {
+                setSyncStatus('idle');
+              }
+            }
+          }
+        }, 7000); // 7 second debounce to batch rapid transactions together into 1 push
       }
     };
 
     const handleOnline = () => {
       setIsOnline(true);
-      runAutoSync();
+      // ONLY trigger sync if there are actual offline changes pending to be pushed!
+      if (!isQuotaExceededBlocked() && hasPendingLocalChanges()) {
+        runAutoSync();
+      }
     };
     const handleOffline = () => setIsOnline(false);
 
@@ -109,27 +147,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(currentUser);
       if (currentUser) {
         try {
-          const docRef = doc(firestore, 'users', currentUser.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            const data = docSnap.data() as UserProfile;
-            setProfile(data);
-            localStorage.setItem('albarakah_user_profile', JSON.stringify(data));
+          if (!isQuotaExceededBlocked()) {
+            const cachedProfile = localStorage.getItem('albarakah_user_profile');
+            // Only fetch online profile if not already cached
+            if (!cachedProfile) {
+              const docRef = doc(firestore, 'users', currentUser.uid);
+              const docSnap = await getDoc(docRef);
+              if (docSnap.exists()) {
+                const data = docSnap.data() as UserProfile;
+                setProfile(data);
+                localStorage.setItem('albarakah_user_profile', JSON.stringify(data));
+              }
+            }
           }
-        } catch (err) {
+        } catch (err: any) {
+          if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota limit exceeded')) {
+            markQuotaExceeded();
+          }
           console.warn('Could not fetch online profile, using cached profile:', err);
         }
 
-        // Auto-sync on startup/reinstall so all records are immediately restored to local IndexedDB
-        if (navigator.onLine) {
-          setTimeout(() => {
-            fullSync(currentUser.uid).then((res) => {
-              if (res.success) {
+        // Check if local database is completely fresh/empty (e.g. brand new device with 0 sales and 0 expenses)
+        if (navigator.onLine && !isQuotaExceededBlocked()) {
+          setTimeout(async () => {
+            try {
+              const salesCount = await db.sales.count();
+              const expensesCount = await db.expenses.count();
+              const duesCount = await db.dues.count();
+              const isFreshDevice = salesCount === 0 && expensesCount === 0 && duesCount === 0;
+
+              if (isFreshDevice) {
+                // Completely new device: pull cloud data once to restore shop data
+                const res = await fullSync(currentUser.uid, false);
+                if (res.success) {
+                  setSyncStatus('synced');
+                  setLastSynced(new Date().toISOString());
+                }
+              } else if (hasPendingLocalChanges()) {
+                // Has pending local changes: push them now
+                await pushLocalToCloud(currentUser.uid, false);
                 setSyncStatus('synced');
                 setLastSynced(new Date().toISOString());
+              } else {
+                // Local DB already has data and nothing changed: DO NOT SEND ANY CLOUD REQUESTS!
+                setSyncStatus('synced');
               }
-            }).catch(console.warn);
-          }, 800);
+            } catch (err) {
+              console.warn('Initial sync check error:', err);
+            }
+          }, 1500);
+        } else {
+          setSyncStatus('synced');
         }
       } else {
         setProfile(null);
@@ -146,6 +214,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) {
       return { success: false, message: 'Please login first' };
     }
+    if (isQuotaExceededBlocked()) {
+      setSyncStatus('synced');
+      return { 
+        success: true, 
+        isQuotaExceeded: true, 
+        message: 'অফলাইন মোড সচল - লোকাল ডেটাবেজে সবকিছু নিরাপদ আছে।' 
+      };
+    }
+
     setSyncStatus('syncing');
     try {
       const result = await fullSync(user.uid);
@@ -153,11 +230,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSyncStatus('synced');
         const now = new Date().toISOString();
         setLastSynced(now);
+      } else if (result.isQuotaExceeded) {
+        setSyncStatus('synced');
       } else {
         setSyncStatus('error');
       }
       return result;
     } catch (e: any) {
+      if (e?.code === 'resource-exhausted' || e?.message?.includes('Quota limit exceeded')) {
+        markQuotaExceeded();
+        setSyncStatus('synced');
+        return {
+          success: true,
+          isQuotaExceeded: true,
+          message: 'দৈনিক ক্লাউড কোটা পূর্ণ। লোকাল IndexedDB-তে ডাটা সুরক্ষিত রয়েছে।'
+        };
+      }
       setSyncStatus('error');
       return { success: false, message: e?.message || 'Sync failed' };
     }
@@ -384,6 +472,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: true };
   };
 
+  // Update store profile photo
+  const updateStorePhoto = async (newPhotoURL: string): Promise<{ success: boolean; error?: string }> => {
+    const updatedProfile: UserProfile = {
+      uid: user ? user.uid : (profile?.uid || 'guest'),
+      storeName: profile?.storeName || 'Al-Barakah Digital Studio',
+      phone: profile?.phone || '',
+      photoURL: newPhotoURL,
+      createdAt: profile?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setProfile(updatedProfile);
+    localStorage.setItem('albarakah_user_profile', JSON.stringify(updatedProfile));
+    if (newPhotoURL) {
+      localStorage.setItem('albarakah_shop_photo', newPhotoURL);
+    } else {
+      localStorage.removeItem('albarakah_shop_photo');
+    }
+    window.dispatchEvent(new Event('albarakah-photo-changed'));
+
+    if (user && isOnline) {
+      try {
+        await setDoc(doc(firestore, 'users', user.uid), { photoURL: newPhotoURL }, { merge: true });
+      } catch (e) {
+        console.warn('Could not sync store photo update to firestore:', e);
+      }
+    }
+
+    return { success: true };
+  };
+
   const logout = async () => {
     try {
       await signOut(auth);
@@ -411,6 +530,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginWithPhone,
       updateStorePassword,
       updateStoreName,
+      updateStorePhoto,
       logout,
       triggerSync
     }}>

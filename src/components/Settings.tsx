@@ -470,68 +470,52 @@ export function Settings() {
     return <Smartphone size={18} className="text-[#084b3e]" />;
   };
 
+  const settingsNavItems = [
+    {
+      id: 'services' as const,
+      label: 'Preset Services',
+      desc: 'Sales & expense services',
+      icon: SlidersHorizontal,
+      badge: `${services.length + expenseServices.length}`
+    },
+    {
+      id: 'balance' as const,
+      label: 'Account Balances',
+      desc: 'Cash, MFS wallets & history',
+      icon: Wallet,
+      badge: `Tk ${totalCapital.toLocaleString()}`
+    },
+    {
+      id: 'backup' as const,
+      label: 'Backup & Cloud',
+      desc: 'Offline JSON & auto-sync',
+      icon: Cloud,
+      badge: isOnline ? 'Online' : 'Offline'
+    },
+    {
+      id: 'data' as const,
+      label: 'Data Cleanup',
+      desc: 'Storage & record cleanup',
+      icon: Trash2,
+      badge: undefined
+    }
+  ];
+
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-12">
-      {/* Header & Quick Action Buttons */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="max-w-7xl mx-auto space-y-6 pb-12 animate-fadeIn">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gray-100 pb-4">
         <div>
-          <h1 className="text-2xl font-black text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-500 font-medium">Manage preset services, account balances, backups and data cleanup</p>
-        </div>
-
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
-          {activeSettingsTab === 'services' && (
-            <button
-              onClick={() => openAddServiceModal(serviceSubTab)}
-              className="w-full sm:w-auto bg-[#084b3e] text-white px-5 py-2.5 rounded-xl font-bold hover:bg-[#0c5e4e] transition-colors flex items-center justify-center gap-2 shadow-sm text-sm cursor-pointer"
-            >
-              <Plus size={18} />
-              Add {serviceSubTab === 'sell' ? 'Sales' : 'Expense'} Service
-            </button>
-          )}
-
-          {activeSettingsTab === 'balance' && (
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button
-                onClick={() => {
-                  setSelectedAccountOption('cash');
-                  setIsAddBalanceModalOpen(true);
-                }}
-                className="flex-1 sm:flex-initial bg-[#084b3e] text-white px-4 py-2.5 rounded-xl font-bold hover:bg-[#0c5e4e] transition-colors flex items-center justify-center gap-2 shadow-sm text-xs sm:text-sm cursor-pointer"
-              >
-                <Plus size={16} />
-                Add Balance
-              </button>
-              <button
-                onClick={() => {
-                  setCalibrateAccountId('cash');
-                  const acc = accounts.find(a => a.id === 'cash');
-                  setCalibrateNewBalance(acc ? String(acc.balance) : '0');
-                  setIsCalibrateModalOpen(true);
-                }}
-                className="flex-1 sm:flex-initial bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-xl font-bold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 shadow-sm text-xs sm:text-sm cursor-pointer"
-              >
-                <Edit2 size={16} />
-                Calibrate
-              </button>
-            </div>
-          )}
-
-          {activeSettingsTab === 'backup' && (
-            <button
-              onClick={handleExport}
-              className="w-full sm:w-auto bg-[#084b3e] text-white px-5 py-2.5 rounded-xl font-bold hover:bg-[#0c5e4e] transition-colors flex items-center justify-center gap-2 shadow-sm text-sm cursor-pointer"
-            >
-              <Download size={18} />
-              Download Backup
-            </button>
-          )}
+          <h1 className="text-2xl font-black text-gray-900 tracking-tight">Settings & Preferences</h1>
+          <p className="text-xs sm:text-sm text-gray-500 font-medium mt-0.5">
+            Configure preset services, account balances, backups and database settings
+          </p>
         </div>
       </div>
 
       {/* Success Notification */}
       {successMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-sm">
+        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-sm animate-fadeIn">
           <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
           <span>{successMsg}</span>
         </div>
@@ -539,108 +523,57 @@ export function Settings() {
 
       {/* Error Notification */}
       {errorMsg && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-800 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-sm">
+        <div className="p-4 bg-red-50 border border-red-200 text-red-800 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-sm animate-fadeIn">
           <AlertCircle size={18} className="shrink-0 text-red-600" />
           <span>{errorMsg}</span>
         </div>
       )}
 
-      {/* 4 Summary Stat Cards (Exact same design language as Borrowings.tsx) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
-          <div className="text-sm font-bold text-gray-500 mb-1">Total Balance</div>
-          <div className="text-2xl font-black text-gray-900">Tk {totalCapital.toLocaleString()}</div>
-          <div className="text-xs text-gray-400 font-medium mt-1">Across 4 store accounts</div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
-          <div className="text-sm font-bold text-emerald-600 mb-1">Preset Services</div>
-          <div className="text-2xl font-black text-emerald-700">{services.length + expenseServices.length} items</div>
-          <div className="text-xs text-emerald-600/80 font-medium mt-1">
-            {services.length} Sales • {expenseServices.length} Expenses
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
-          <div className="text-sm font-bold text-blue-600 mb-1">Cloud Sync Status</div>
-          <div className="text-lg font-black text-blue-900 truncate">
-            {user ? (user.displayName || user.email) : 'Local Storage Mode'}
-          </div>
-          <div className="text-xs text-gray-400 font-medium mt-1">
-            {user ? 'Cloud account connected' : '100% Offline & Private'}
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
-          <div className="text-sm font-bold text-gray-500 mb-1">Balance Logs</div>
-          <div className="text-2xl font-black text-gray-900">{rawBalanceLogs.length} Records</div>
-          <div className="text-xs text-gray-400 font-medium mt-1">Audited history entries</div>
-        </div>
+      {/* Top Horizontal Subtabs Navigation */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-gray-200 scrollbar-none">
+        {settingsNavItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeSettingsTab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveSettingsTab(item.id)}
+              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer shrink-0 ${
+                isActive
+                  ? 'bg-[#084b3e] text-white shadow-sm'
+                  : 'bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-gray-200'
+              }`}
+            >
+              <Icon size={16} className={isActive ? 'text-white' : 'text-gray-500'} />
+              <span>{item.label}</span>
+              {item.badge && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ml-1 ${
+                  isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {item.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Settings Navigation Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-gray-100 pb-3">
-        <button
-          onClick={() => setActiveSettingsTab('services')}
-          className={`px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer ${
-            activeSettingsTab === 'services'
-              ? 'bg-[#084b3e] text-white shadow-sm'
-              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-          }`}
-        >
-          <SlidersHorizontal size={16} />
-          <span>Preset Services ({services.length + expenseServices.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSettingsTab('balance')}
-          className={`px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer ${
-            activeSettingsTab === 'balance'
-              ? 'bg-[#084b3e] text-white shadow-sm'
-              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-          }`}
-        >
-          <Wallet size={16} />
-          <span>Account Balances (Tk {totalCapital.toLocaleString()})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSettingsTab('backup')}
-          className={`px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer ${
-            activeSettingsTab === 'backup'
-              ? 'bg-[#084b3e] text-white shadow-sm'
-              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-          }`}
-        >
-          <Cloud size={16} />
-          <span>Backup & Cloud</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSettingsTab('data')}
-          className={`px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer ${
-            activeSettingsTab === 'data'
-              ? 'bg-rose-700 text-white shadow-sm'
-              : 'bg-white text-rose-700 border border-rose-200 hover:bg-rose-50'
-          }`}
-        >
-          <Trash2 size={16} />
-          <span>Data Cleanup</span>
-        </button>
-      </div>
+      {/* Content Area */}
+      <div className="space-y-6">
 
       {/* TAB 1: PRESET SERVICES */}
       {activeSettingsTab === 'services' && (
         <div className="space-y-4">
-          {/* Sub-tabs: Sales vs Expense */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div className="inline-flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+          {/* Services Action Bar with Sub-tabs, Search & Add Button */}
+          <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="inline-flex bg-gray-100 p-1 rounded-xl border border-gray-200 shrink-0">
               <button
                 type="button"
                 onClick={() => setServiceSubTab('sell')}
-                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                   serviceSubTab === 'sell'
-                    ? 'bg-white text-[#084b3e] shadow-sm'
+                    ? 'bg-white text-[#084b3e] shadow-xs'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -649,28 +582,38 @@ export function Settings() {
               <button
                 type="button"
                 onClick={() => setServiceSubTab('expense')}
-                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                   serviceSubTab === 'expense'
-                    ? 'bg-white text-[#084b3e] shadow-sm'
+                    ? 'bg-white text-[#084b3e] shadow-xs'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                Expense Services ({expenseServices.length})
+                Expense Categories ({expenseServices.length})
               </button>
             </div>
 
-            {/* Search Input */}
-            <div className="relative flex-1 sm:max-w-xs">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-gray-400" />
+            {/* Search Input & Add Button side-by-side */}
+            <div className="flex items-center gap-2 flex-1 justify-end">
+              <div className="relative flex-1 sm:max-w-xs">
+                <Search className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder={`Search ${serviceSubTab === 'sell' ? 'sales' : 'expense'} services...`}
+                  value={serviceSearchQuery}
+                  onChange={(e) => setServiceSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none text-xs font-semibold transition-all shadow-xs"
+                />
               </div>
-              <input
-                type="text"
-                placeholder={`Search ${serviceSubTab === 'sell' ? 'sales' : 'expense'} services...`}
-                value={serviceSearchQuery}
-                onChange={(e) => setServiceSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none text-xs sm:text-sm transition-all shadow-sm font-medium"
-              />
+
+              <button
+                type="button"
+                onClick={() => openAddServiceModal(serviceSubTab)}
+                className="bg-[#084b3e] hover:bg-[#0c5e4e] text-white px-4 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition-all shrink-0 cursor-pointer"
+              >
+                <Plus size={16} />
+                <span className="hidden sm:inline">Add {serviceSubTab === 'sell' ? 'Sales Service' : 'Expense Category'}</span>
+                <span className="sm:hidden">Add</span>
+              </button>
             </div>
           </div>
 
@@ -790,6 +733,46 @@ export function Settings() {
       {/* TAB 2: ACCOUNT BALANCES */}
       {activeSettingsTab === 'balance' && (
         <div className="space-y-6">
+          {/* Top Balance Summary Card with Direct Action Buttons */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total Store Balance</span>
+              <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mt-0.5">
+                Tk {totalCapital.toLocaleString()}
+              </h2>
+              <p className="text-xs text-gray-500 font-medium mt-0.5">
+                Combined balance across Cash, bKash, Nagad, and Rocket
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAccountOption('cash');
+                  setIsAddBalanceModalOpen(true);
+                }}
+                className="flex-1 sm:flex-initial bg-[#084b3e] hover:bg-[#0c5e4e] text-white px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+              >
+                <Plus size={16} />
+                <span>+ Add Balance</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCalibrateAccountId('cash');
+                  const acc = accounts.find(a => a.id === 'cash');
+                  setCalibrateNewBalance(acc ? String(acc.balance) : '0');
+                  setIsCalibrateModalOpen(true);
+                }}
+                className="flex-1 sm:flex-initial bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <Edit2 size={15} />
+                <span>Calibrate</span>
+              </button>
+            </div>
+          </div>
+
           {/* 4 Accounts Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {accounts.filter(a => a.id !== 'upay' && a.id !== 'bank').map((acc) => (
@@ -1120,7 +1103,7 @@ export function Settings() {
               </div>
               <div>
                 <h2 className="text-lg font-black text-gray-900">PC & Mobile Storage Protection</h2>
-                <p className="text-xs text-gray-500 font-medium">Guaranteed persistence across updates and reinstallation</p>
+                <p className="text-xs text-gray-500 font-medium">Safe local persistence across updates and reinstallation</p>
               </div>
             </div>
 
@@ -1134,7 +1117,7 @@ export function Settings() {
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-600 font-medium">Permanent Browser Storage:</span>
                 <span className="font-bold text-purple-700 flex items-center gap-1.5">
-                  <ShieldCheck size={14} /> {storagePersisted ? 'Guaranteed (Cannot be evicted)' : 'Protected'}
+                  <ShieldCheck size={14} /> {storagePersisted ? 'Permanent (Cannot be evicted)' : 'Protected'}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs">
@@ -1168,6 +1151,8 @@ export function Settings() {
       {activeSettingsTab === 'data' && (
         <DataManagementSettings />
       )}
+
+      </div> {/* Close Content Area */}
 
       {/* ========================================================================= */}
       {/* MODAL 1: ADD / EDIT PRESET SERVICE */}

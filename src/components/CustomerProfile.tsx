@@ -8,7 +8,6 @@ import {
   ArrowLeft, 
   Phone, 
   MapPin, 
-  FileText, 
   Calendar, 
   Edit2, 
   DollarSign, 
@@ -17,21 +16,16 @@ import {
   Printer, 
   Download, 
   CheckCircle2, 
-  ArrowUpRight, 
-  UserCheck, 
+  Plus, 
   AlertCircle, 
   AlertTriangle,
   Clock, 
   Search, 
-  Filter, 
-  Save, 
   X, 
-  Layers, 
-  TrendingUp, 
   ShoppingBag,
   Check,
   Loader2,
-  Share2
+  Receipt
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { generateCustomerStatementPdf, CustomerTransactionItem } from '../utils/customerStatementPdf';
@@ -72,7 +66,7 @@ export function CustomerProfile() {
   const [editAddress, setEditAddress] = useState('');
   const [editNotes, setEditNotes] = useState('');
 
-  // Match transactions for this customer (by Phone or exact Name)
+  // Match raw sales for this customer
   const customerSales = useMemo(() => {
     if (!customer) return [];
     const custName = customer.name.trim().toLowerCase();
@@ -90,6 +84,7 @@ export function CustomerProfile() {
     });
   }, [customer, allSales]);
 
+  // Match raw dues for this customer
   const customerDues = useMemo(() => {
     if (!customer) return [];
     const custName = customer.name.trim().toLowerCase();
@@ -108,64 +103,45 @@ export function CustomerProfile() {
     });
   }, [customer, allDues]);
 
-  // Financial Metrics Calculation
-  const totalSalesAmount = useMemo(() => {
-    return customerSales.reduce((sum, s) => sum + (s.amount || 0), 0);
-  }, [customerSales]);
-
-  const totalSalesProfit = useMemo(() => {
-    return customerSales.reduce((sum, s) => sum + (s.profit || 0), 0);
-  }, [customerSales]);
-
-  const duesMetrics = useMemo(() => {
-    let totalDueGiven = 0;
-    let totalPaid = 0;
-    let pendingDue = 0;
-
-    customerDues.forEach(d => {
-      const tot = d.totalAmount || 0;
-      const paid = d.paidAmount || 0;
-      totalDueGiven += tot;
-      totalPaid += paid;
-      pendingDue += Math.max(0, tot - paid);
-    });
-
-    return { totalDueGiven, totalPaid, pendingDue };
-  }, [customerDues]);
-
-  // Unified Chronological Transaction Ledger
+  // UNIFIED & STRICTLY DEDUPLICATED TRANSACTIONS
+  // Solves duplicate display issue where a credit sale was listed twice (as both sale and due)
   const unifiedTransactions = useMemo<CustomerTransactionItem[]>(() => {
     if (!customer) return [];
     const items: CustomerTransactionItem[] = [];
+    const matchedDueIds = new Set<number>();
 
-    // Track matched dues to avoid pairing multiple sales to the same due
-    const matchedDueIds = new Set<string>();
-
-    // Add Sales
+    // 1. Process customer sales first
     customerSales.forEach(s => {
-      const isDue = s.paymentMethod === 'Due';
-      // Find matching due record for this sale (same date, same amount, not yet matched)
-      let matchingDue: typeof customerDues[0] | undefined;
-      if (isDue) {
-        matchingDue = customerDues.find(d => 
-          !matchedDueIds.has(`due-${d.id}`) &&
-          d.date === s.date &&
-          Math.abs((d.totalAmount || 0) - s.amount) < 0.01
-        );
-        if (matchingDue) {
-          matchedDueIds.add(`due-${matchingDue.id}`);
+      const isCreditSale = s.paymentMethod === 'Due' || (s.dueAmount !== undefined && s.dueAmount > 0);
+      
+      // Look for a corresponding due record in customerDues
+      let matchingDue: Due | undefined;
+      if (isCreditSale) {
+        matchingDue = customerDues.find(d => {
+          if (!d.id || matchedDueIds.has(d.id)) return false;
+          // Match by referenceId if available
+          if (d.referenceId && d.referenceId === s.id) return true;
+          // Match by date and amount
+          const sameDate = (d.date || '').slice(0, 10) === (s.date || '').slice(0, 10);
+          const sameAmt = Math.abs((d.totalAmount || 0) - s.amount) < 0.01;
+          return sameDate && sameAmt;
+        });
+
+        if (matchingDue && matchingDue.id) {
+          matchedDueIds.add(matchingDue.id);
         }
       }
 
-      const livePaid = matchingDue 
-        ? (matchingDue.paidAmount || 0) 
-        : (s.paidAmount !== undefined ? s.paidAmount : (isDue ? 0 : s.amount));
-      const liveDue = matchingDue 
-        ? Math.max(0, (matchingDue.totalAmount || 0) - (matchingDue.paidAmount || 0))
-        : (s.dueAmount !== undefined ? s.dueAmount : (isDue ? Math.max(0, s.amount - livePaid) : 0));
-      const liveStatus = isDue 
-        ? (matchingDue ? matchingDue.status : (liveDue <= 0 ? 'Paid' : (livePaid > 0 ? 'Partial' : 'Unpaid'))) 
-        : 'Paid';
+      // Determine actual live paid and due amounts
+      let livePaid = s.paidAmount !== undefined ? s.paidAmount : (isCreditSale ? 0 : s.amount);
+      let liveDue = s.dueAmount !== undefined ? s.dueAmount : (isCreditSale ? s.amount : 0);
+      let liveStatus = isCreditSale ? (liveDue <= 0 ? 'Paid' : (livePaid > 0 ? 'Partial' : 'Unpaid')) : 'Paid';
+
+      if (matchingDue) {
+        livePaid = matchingDue.paidAmount || 0;
+        liveDue = Math.max(0, (matchingDue.totalAmount || 0) - (matchingDue.paidAmount || 0));
+        liveStatus = matchingDue.status || (liveDue <= 0 ? 'Paid' : (livePaid > 0 ? 'Partial' : 'Unpaid'));
+      }
 
       items.push({
         id: `sale-${s.id}`,
@@ -173,43 +149,87 @@ export function CustomerProfile() {
         time: s.time,
         type: 'sale',
         title: s.serviceName,
-        category: s.category,
-        paymentMethod: s.paymentMethod,
+        category: s.category || 'Digital Studio',
+        paymentMethod: s.paymentMethod || 'Cash',
         amount: s.amount || 0,
         paidAmount: livePaid,
         dueAmount: liveDue,
-        profit: s.profit,
+        profit: s.profit || 0,
         status: liveStatus,
       });
     });
 
-    // Add standalone Dues (that did not originate from one of the sales above)
+    // 2. Process standalone dues (such as MFS credit dues or manual dues) not already covered
     customerDues.forEach(d => {
-      if (!matchedDueIds.has(`due-${d.id}`)) {
-        const rem = Math.max(0, (d.totalAmount || 0) - (d.paidAmount || 0));
-        items.push({
-          id: `due-${d.id}`,
-          date: d.date || '—',
-          time: d.time,
-          type: 'due',
-          title: 'Due Account Record',
-          amount: d.totalAmount || 0,
-          paidAmount: d.paidAmount || 0,
-          dueAmount: rem,
-          status: d.status,
-        });
+      if (!d.id || matchedDueIds.has(d.id)) return;
+      
+      // If marked as referenceType === 'sale', it belongs to a sale; do not duplicate
+      if (d.referenceType === 'sale') return;
+
+      // Check if already represented in items with same date and amount
+      const alreadyHandledInSales = items.some(it => 
+        it.type === 'sale' && 
+        (it.date || '').slice(0, 10) === (d.date || '').slice(0, 10) && 
+        Math.abs(it.amount - (d.totalAmount || 0)) < 0.01
+      );
+      if (alreadyHandledInSales) {
+        matchedDueIds.add(d.id);
+        return;
       }
+
+      matchedDueIds.add(d.id);
+      const rem = Math.max(0, (d.totalAmount || 0) - (d.paidAmount || 0));
+      const isMfs = d.referenceType === 'mfs' || (d.note && d.note.toLowerCase().includes('mfs'));
+
+      items.push({
+        id: `due-${d.id}`,
+        date: d.date || '',
+        time: d.time,
+        type: 'due',
+        title: d.note ? d.note : (isMfs ? 'MFS Service Credit' : 'Customer Credit / Due'),
+        category: isMfs ? 'MFS Service' : 'Due Ledger',
+        paymentMethod: isMfs ? 'MFS Due' : 'Due',
+        amount: d.totalAmount || 0,
+        paidAmount: d.paidAmount || 0,
+        dueAmount: rem,
+        status: d.status || (rem <= 0 ? 'Paid' : ((d.paidAmount || 0) > 0 ? 'Partial' : 'Unpaid')),
+      });
+    });
+
+    // Deduplicate any exact duplicate items by id
+    const uniqueMap = new Map<string, CustomerTransactionItem>();
+    items.forEach(it => {
+      uniqueMap.set(String(it.id), it);
     });
 
     // Sort descending by date & time
-    items.sort((a, b) => {
-      const timeA = `${a.date} ${a.time || ''}`;
-      const timeB = `${b.date} ${b.time || ''}`;
-      return timeB.localeCompare(timeA);
+    return Array.from(uniqueMap.values()).sort((a, b) => {
+      const dateA = `${a.date || ''} ${a.time || ''}`;
+      const dateB = `${b.date || ''} ${b.time || ''}`;
+      return dateB.localeCompare(dateA);
+    });
+  }, [customer, customerSales, customerDues]);
+
+  // Derived financial metrics from deduplicated list
+  const metrics = useMemo(() => {
+    let totalPurchases = 0;
+    let totalPaid = 0;
+    let currentDue = 0;
+
+    unifiedTransactions.forEach(t => {
+      totalPurchases += t.amount;
+      totalPaid += t.paidAmount;
+      currentDue += t.dueAmount;
     });
 
-    return items;
-  }, [customer, customerSales, customerDues]);
+    return {
+      totalPurchases,
+      totalPaid,
+      currentDue,
+      salesCount: unifiedTransactions.filter(t => t.type === 'sale').length,
+      duesCount: unifiedTransactions.filter(t => t.dueAmount > 0).length,
+    };
+  }, [unifiedTransactions]);
 
   // Filtered by active tab and search query
   const displayedTransactions = useMemo(() => {
@@ -218,7 +238,7 @@ export function CustomerProfile() {
     if (activeTab === 'sales') {
       list = list.filter(t => t.type === 'sale');
     } else if (activeTab === 'dues') {
-      list = list.filter(t => t.type === 'due' || t.dueAmount > 0);
+      list = list.filter(t => t.dueAmount > 0 || t.type === 'due');
     }
 
     if (searchQuery.trim()) {
@@ -242,10 +262,10 @@ export function CustomerProfile() {
       generateCustomerStatementPdf({
         customer,
         transactions: unifiedTransactions,
-        totalPurchases: totalSalesAmount,
-        totalPaid: duesMetrics.totalPaid,
-        totalDueGiven: duesMetrics.totalDueGiven,
-        currentBalanceDue: duesMetrics.pendingDue,
+        totalPurchases: metrics.totalPurchases,
+        totalPaid: metrics.totalPaid,
+        totalDueGiven: metrics.totalPurchases,
+        currentBalanceDue: metrics.currentDue,
         periodLabel: 'All Records',
       });
       setPdfSuccess(true);
@@ -271,14 +291,13 @@ export function CustomerProfile() {
 
     const amt = parseFloat(collectAmount);
     if (isNaN(amt) || amt <= 0) {
-      setErrorMsg('Please enter a valid collection amount');
+      setErrorMsg('Please enter a valid amount');
       setTimeout(() => setErrorMsg(''), 4000);
       return;
     }
 
     setIsSubmittingCollection(true);
     try {
-      // Find unsettled dues for this customer
       const custName = customer.name.trim().toLowerCase();
       const custPhone = customer.phone?.trim();
 
@@ -315,11 +334,25 @@ export function CustomerProfile() {
             updatedAt: nowIso,
           });
 
+          // Sync matching sale if available
+          const matchingSale = allSales.find(s => 
+            ((s.customerPhone && custPhone && s.customerPhone === custPhone) || s.customerName?.toLowerCase() === custName) &&
+            s.date === d.date &&
+            Math.abs(s.amount - currentTotal) < 0.01
+          );
+          if (matchingSale && matchingSale.id) {
+            await db.sales.update(matchingSale.id, {
+              paidAmount: newPaid,
+              dueAmount: Math.max(0, currentTotal - newPaid),
+              updatedAt: nowIso
+            });
+          }
+
           remainingToAllocate -= payment;
         }
       }
 
-      setSuccessMsg(`Successfully collected Tk ${amt.toLocaleString()} (${collectMethod}) from ${customer.name}.`);
+      setSuccessMsg(`Collected Tk ${amt.toLocaleString()} (${collectMethod}) from ${customer.name}.`);
       
       // Update account balance
       try {
@@ -384,20 +417,21 @@ export function CustomerProfile() {
 
   // Clean phone for WhatsApp
   const cleanPhone = customer?.phone ? customer.phone.replace(/[^0-9]/g, '') : '';
+  const hasDue = metrics.currentDue > 0;
 
   if (!customer && customerId) {
     return (
-      <div className="p-6 max-w-4xl mx-auto text-center py-20">
-        <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-gray-400">
-          <AlertCircle size={32} />
+      <div className="p-6 max-w-xl mx-auto text-center py-20">
+        <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-3 text-gray-400">
+          <AlertCircle size={28} />
         </div>
-        <h2 className="text-xl font-black text-gray-900 mb-2">Customer Not Found</h2>
-        <p className="text-sm text-gray-500 mb-6">The requested customer record does not exist or has been deleted.</p>
+        <h2 className="text-lg font-bold text-gray-900 mb-1">Customer Not Found</h2>
+        <p className="text-xs text-gray-500 mb-4">The customer record could not be found.</p>
         <Link
           to="/customers"
-          className="inline-flex items-center gap-2 bg-[#084b3e] text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#126b55] transition-colors"
+          className="inline-flex items-center gap-1.5 bg-[#084b3e] text-white px-4 py-2 rounded-xl font-bold text-xs"
         >
-          <ArrowLeft size={16} />
+          <ArrowLeft size={14} />
           <span>Back to Customers</span>
         </Link>
       </div>
@@ -408,349 +442,295 @@ export function CustomerProfile() {
     return null;
   }
 
-  const hasDue = duesMetrics.pendingDue > 0;
-
   return (
-    <div className="p-3 sm:p-4 md:p-6 max-w-7xl mx-auto mb-16 md:mb-0 space-y-5 print:p-0 print:m-0 print:max-w-none">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto mb-16 md:mb-0 space-y-4 print:p-0 print:m-0 print:max-w-none">
       
-      {/* Top Breadcrumb & Action Bar (Hidden on Print) */}
+      {/* Top Bar (Breadcrumb & Action Buttons) */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 print:hidden">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => navigate('/customers')}
-            className="p-2 bg-white border border-gray-100 hover:bg-gray-50 rounded-xl text-gray-700 transition-colors cursor-pointer shadow-xs flex items-center gap-1.5 text-xs font-bold"
-            title="Back to Customers List"
+            className="p-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-600 transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5 shadow-xs"
           >
-            <ArrowLeft size={16} />
-            <span className="hidden sm:inline">Customers</span>
+            <ArrowLeft size={15} />
+            <span>Customers</span>
           </button>
-          <span className="text-gray-300 font-normal">/</span>
-          <h1 className="text-lg sm:text-xl font-black text-gray-900 tracking-tight truncate max-w-[200px] sm:max-w-md">
+          <span className="text-gray-300">/</span>
+          <h1 className="text-lg font-black text-gray-900 tracking-tight truncate">
             {customer.name}
           </h1>
-          <span className="text-[10px] font-black uppercase tracking-wider bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md border border-gray-100">
+          <span className="text-[11px] font-mono font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
             #CUS-{customer.id}
           </span>
         </div>
 
-        {/* Global Action Buttons */}
-        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap justify-end">
-          {/* Print Statement */}
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-[#084b3e] hover:bg-[#126b55] text-white px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-xs cursor-pointer"
-            title="Print Official Statement"
-          >
-            <Printer size={14} />
-            <span>Print Statement</span>
-          </button>
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {hasDue && (
+            <button
+              type="button"
+              onClick={() => {
+                setCollectAmount(metrics.currentDue.toString());
+                setIsCollectModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              <DollarSign size={14} strokeWidth={2.5} />
+              <span>Collect Due</span>
+            </button>
+          )}
 
-          {/* Export PDF */}
+          <Link
+            to={`/sales?customer=${encodeURIComponent(customer.name)}&phone=${encodeURIComponent(customer.phone || '')}`}
+            className="flex items-center gap-1.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs"
+          >
+            <Plus size={14} strokeWidth={2.5} />
+            <span>New Sale</span>
+          </Link>
+
           <button
             type="button"
             onClick={handleExportPdf}
             disabled={isExportingPdf}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-xs cursor-pointer disabled:cursor-not-allowed"
-            title="Download PDF Ledger"
+            className="p-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-700 transition-colors cursor-pointer shadow-xs"
+            title="Download PDF Statement"
           >
-            {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : pdfSuccess ? <Check size={14} /> : <Download size={14} />}
-            <span>{isExportingPdf ? 'Exporting...' : pdfSuccess ? 'Downloaded' : 'Export PDF'}</span>
+            {isExportingPdf ? <Loader2 size={15} className="animate-spin text-gray-500" /> : <Download size={15} />}
           </button>
 
-          {/* New Sale Button */}
-          <Link
-            to={`/sales?customer=${encodeURIComponent(customer.name)}&phone=${encodeURIComponent(customer.phone || '')}`}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-xs"
-            title="Create New Sale for this Customer"
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="p-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-700 transition-colors cursor-pointer shadow-xs"
+            title="Print Statement"
           >
-            <span>New Sale</span>
-            <ArrowUpRight size={13} />
-          </Link>
+            <Printer size={15} />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenEdit}
+            className="p-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-700 transition-colors cursor-pointer shadow-xs"
+            title="Edit Profile"
+          >
+            <Edit2 size={15} />
+          </button>
         </div>
       </div>
 
-      {/* Success Banner */}
+      {/* Notifications */}
       {successMsg && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center text-emerald-900 font-bold text-xs sm:text-sm tracking-wider uppercase shadow-xs print:hidden">
-          <CheckCircle2 className="mr-2 shrink-0 text-emerald-700" size={18} />
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center text-emerald-900 font-bold text-xs tracking-wide shadow-xs print:hidden">
+          <CheckCircle2 className="mr-2 shrink-0 text-emerald-600" size={16} />
           {successMsg}
         </div>
       )}
-
-      {/* Error Banner */}
       {errorMsg && (
-        <div className="p-3.5 bg-red-50 border border-red-300 rounded-xl flex items-center text-red-900 font-bold text-xs sm:text-sm tracking-wider uppercase shadow-xs print:hidden">
-          <AlertTriangle className="mr-2 shrink-0 text-red-700" size={18} />
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center text-rose-900 font-bold text-xs tracking-wide shadow-xs print:hidden">
+          <AlertTriangle className="mr-2 shrink-0 text-rose-600" size={16} />
           {errorMsg}
         </div>
       )}
 
-      {/* PRINT-ONLY OFFICIAL HEADER */}
-      <div className="hidden print:block text-center border-b-2 border-[#084b3e] pb-4 mb-5">
-        <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+      {/* PRINT-ONLY HEADER */}
+      <div className="hidden print:block text-center border-b pb-4 mb-4">
+        <h1 className="text-xl font-black text-gray-900 uppercase">
           Al-Barakah Digital Studio & Online Service
         </h1>
-        <p className="text-xs text-gray-700 font-bold uppercase tracking-wider mt-0.5">
-          Official Customer Account Statement & Ledger
-        </p>
-        <div className="flex justify-between items-end mt-4 pt-2 border-t border-gray-300 text-left text-xs">
+        <p className="text-xs text-gray-600 font-medium">Customer Statement & Ledger</p>
+        <div className="flex justify-between items-end mt-3 text-left text-xs">
           <div>
-            <p className="font-black text-sm text-gray-900">{customer.name}</p>
-            <p className="text-gray-700">Phone: {customer.phone || 'N/A'}</p>
-            {customer.address && <p className="text-gray-700">Address: {customer.address}</p>}
+            <p className="font-bold text-gray-900">{customer.name}</p>
+            <p className="text-gray-600">Phone: {customer.phone || 'N/A'}</p>
+            {customer.address && <p className="text-gray-600">Address: {customer.address}</p>}
           </div>
           <div className="text-right">
-            <p className="font-bold text-gray-900">Customer ID: #CUS-{customer.id}</p>
-            <p className="text-gray-600">Date: {format(new Date(), 'dd/MM/yy, hh:mm a')}</p>
+            <p className="font-bold text-gray-900">#CUS-{customer.id}</p>
+            <p className="text-gray-500">{format(new Date(), 'dd/MM/yyyy, hh:mm a')}</p>
           </div>
         </div>
       </div>
 
-      {/* CUSTOMER PROFILE CARD (HERO) */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6 shadow-xs relative overflow-hidden print:border-none print:shadow-none print:p-0">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* Avatar and Identity */}
-          <div className="flex items-start sm:items-center gap-3.5">
-            <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center font-black text-lg sm:text-xl uppercase shrink-0 shadow-xs ${
-              hasDue ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-[#084b3e] text-white'
-            }`}>
-              {customer.name.slice(0, 2)}
+      {/* MINIMALIST HERO & STATS CARD */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs space-y-4 print:border-none print:shadow-none print:p-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-black text-gray-900">{customer.name}</h2>
+              {hasDue ? (
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
+                  Tk {metrics.currentDue.toLocaleString()} Due
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Clear
+                </span>
+              )}
             </div>
-
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-lg sm:text-2xl font-black text-gray-900 tracking-tight truncate">
-                  {customer.name}
-                </h2>
-                {hasDue ? (
-                  <span className="text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-700 px-2 py-0.5 rounded-full border border-red-200">
-                    Tk {duesMetrics.pendingDue.toLocaleString()} Due
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                    <UserCheck size={11} /> Clear Account
-                  </span>
-                )}
-              </div>
-
-              {/* Contact and Meta details */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-500 mt-1.5">
-                {customer.phone && (
-                  <span className="font-semibold text-gray-800 flex items-center gap-1">
-                    <Phone size={12} className="text-gray-400" />
-                    <span>{customer.phone}</span>
-                  </span>
-                )}
-                {customer.address && (
-                  <span className="flex items-center gap-1 truncate text-gray-600">
-                    <MapPin size={12} className="text-gray-400 shrink-0" />
-                    <span className="truncate">{customer.address}</span>
-                  </span>
-                )}
-                {customer.createdAt && (
-                  <span className="flex items-center gap-1 text-[11px] text-gray-400">
-                    <Calendar size={11} />
-                    <span>Since {format(new Date(customer.createdAt), 'dd/MM/yy')}</span>
-                  </span>
-                )}
-              </div>
-
-              {customer.notes && (
-                <p className="text-xs text-gray-500 mt-2 bg-gray-50 p-2 rounded-xl border border-dashed border-gray-100 max-w-xl">
-                  <span className="font-bold text-gray-600">Notes:</span> {customer.notes}
-                </p>
+            
+            {/* Quick contact and info strip */}
+            <div className="flex items-center gap-3 text-xs text-gray-500 mt-1 flex-wrap">
+              {customer.phone && (
+                <span className="flex items-center gap-1 font-medium text-gray-700">
+                  <Phone size={13} className="text-gray-400" />
+                  {customer.phone}
+                </span>
+              )}
+              {customer.address && (
+                <span className="flex items-center gap-1 text-gray-600">
+                  <MapPin size={13} className="text-gray-400" />
+                  {customer.address}
+                </span>
+              )}
+              {customer.createdAt && (
+                <span className="flex items-center gap-1 text-[11px] text-gray-400">
+                  <Calendar size={12} />
+                  Since {format(new Date(customer.createdAt), 'dd/MM/yy')}
+                </span>
               )}
             </div>
           </div>
 
-          {/* Quick Communication & Edit Actions (Hidden on Print) */}
-          <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-gray-100 print:hidden flex-wrap">
-            {customer.phone && (
-              <>
-                <a
-                  href={`tel:${customer.phone}`}
-                  className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 transition-colors flex items-center gap-1.5 text-xs font-bold"
-                  title="Call Customer"
-                >
-                  <PhoneCall size={14} />
-                  <span>Call</span>
-                </a>
-                {cleanPhone && (
-                  <a
-                    href={`https://wa.me/88${cleanPhone}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-colors flex items-center gap-1.5 text-xs font-bold"
-                    title="Send WhatsApp Message"
-                  >
-                    <MessageSquare size={14} />
-                    <span>WhatsApp</span>
-                  </a>
-                )}
-              </>
-            )}
-
-            {/* Collect Due Quick Trigger */}
-            {hasDue && (
-              <button
-                type="button"
-                onClick={() => {
-                  setCollectAmount(duesMetrics.pendingDue.toString());
-                  setIsCollectModalOpen(true);
-                }}
-                className="p-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider cursor-pointer shadow-xs"
-                title="Collect Outstanding Balance"
+          {/* Contact Triggers */}
+          {customer.phone && (
+            <div className="flex items-center gap-2 print:hidden">
+              <a
+                href={`tel:${customer.phone}`}
+                className="px-2.5 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors flex items-center gap-1 text-xs font-semibold"
+                title="Call"
               >
-                <DollarSign size={14} strokeWidth={2.5} />
-                <span>Collect Due</span>
-              </button>
-            )}
-
-            {/* Edit Customer Profile */}
-            <button
-              type="button"
-              onClick={handleOpenEdit}
-              className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors flex items-center gap-1.5 text-xs font-bold"
-              title="Edit Profile"
-            >
-              <Edit2 size={14} />
-              <span>Edit</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* FINANCIAL SUMMARY METRICS */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:grid-cols-4 print:gap-2">
-        {/* Total Purchases */}
-        <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-xs print:border-[#084b3e]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Total Purchases</span>
-            <div className="p-1.5 bg-gray-100 rounded-xl text-gray-600 print:hidden">
-              <ShoppingBag size={14} />
+                <PhoneCall size={13} />
+                <span>Call</span>
+              </a>
+              {cleanPhone && (
+                <a
+                  href={`https://wa.me/88${cleanPhone}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-colors flex items-center gap-1 text-xs font-semibold"
+                  title="WhatsApp"
+                >
+                  <MessageSquare size={13} />
+                  <span>WhatsApp</span>
+                </a>
+              )}
             </div>
-          </div>
-          <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
-            Tk {totalSalesAmount.toLocaleString()}
-          </p>
-          <p className="text-[11px] text-gray-500 font-medium mt-0.5">
-            {customerSales.length} {customerSales.length === 1 ? 'sale record' : 'sale records'}
-          </p>
+          )}
         </div>
 
-        {/* Total Dues Incurred */}
-        <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-xs print:border-[#084b3e]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Total Dues Given</span>
-            <div className="p-1.5 bg-gray-100 rounded-xl text-gray-600 print:hidden">
-              <Layers size={14} />
-            </div>
-          </div>
-          <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
-            Tk {duesMetrics.totalDueGiven.toLocaleString()}
-          </p>
-          <p className="text-[11px] text-gray-500 font-medium mt-0.5">
-            Historical due charges
-          </p>
-        </div>
-
-        {/* Total Paid / Cleared */}
-        <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-xs print:border-[#084b3e]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">Total Paid</span>
-            <div className="p-1.5 bg-emerald-50 rounded-xl text-emerald-700 print:hidden">
-              <Check size={14} strokeWidth={2.5} />
-            </div>
-          </div>
-          <p className="text-xl sm:text-2xl font-black text-emerald-700 mt-1">
-            Tk {duesMetrics.totalPaid.toLocaleString()}
-          </p>
-          <p className="text-[11px] text-gray-500 font-medium mt-0.5">
-            Collections & payments
-          </p>
-        </div>
-
-        {/* Outstanding Due Balance */}
-        <div className={`p-4 rounded-xl border shadow-xs ${
-          hasDue 
-            ? 'bg-red-50/60 border-red-200 text-red-900 print:border-[#084b3e] print:bg-white' 
-            : 'bg-white border-gray-100 text-gray-900 print:border-[#084b3e]'
-        }`}>
-          <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-black uppercase tracking-wider ${hasDue ? 'text-red-600' : 'text-gray-400'}`}>
-              Current Due Balance
+        {/* Minimal 3-Metric Clean Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Total Purchases */}
+          <div className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-100">
+            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">
+              Total Purchases
             </span>
-            <div className={`p-1.5 rounded-xl ${hasDue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'} print:hidden`}>
-              <DollarSign size={14} strokeWidth={2.5} />
+            <div className="text-lg font-black text-gray-900 mt-0.5">
+              Tk {metrics.totalPurchases.toLocaleString()}
             </div>
+            <span className="text-[11px] text-gray-400">
+              {metrics.salesCount} {metrics.salesCount === 1 ? 'order' : 'orders'}
+            </span>
           </div>
-          <p className={`text-xl sm:text-2xl font-black mt-1 ${hasDue ? 'text-red-600' : 'text-emerald-600'}`}>
-            Tk {duesMetrics.pendingDue.toLocaleString()}
-          </p>
-          <p className="text-[11px] text-gray-500 font-medium mt-0.5">
-            {hasDue ? 'Requires settlement' : 'Account in good standing'}
-          </p>
+
+          {/* Total Paid */}
+          <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-100">
+            <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">
+              Total Paid
+            </span>
+            <div className="text-lg font-black text-emerald-800 mt-0.5">
+              Tk {metrics.totalPaid.toLocaleString()}
+            </div>
+            <span className="text-[11px] text-emerald-600/70">
+              Cash & digital cleared
+            </span>
+          </div>
+
+          {/* Current Due Balance */}
+          <div className={`p-3.5 rounded-xl border ${
+            hasDue 
+              ? 'bg-rose-50/70 border-rose-200 text-rose-900' 
+              : 'bg-gray-50/70 border-gray-100 text-gray-900'
+          }`}>
+            <span className={`text-[11px] font-semibold uppercase tracking-wider block ${hasDue ? 'text-rose-600' : 'text-gray-500'}`}>
+              Due Balance
+            </span>
+            <div className={`text-lg font-black mt-0.5 ${hasDue ? 'text-rose-600' : 'text-gray-900'}`}>
+              Tk {metrics.currentDue.toLocaleString()}
+            </div>
+            <span className="text-[11px] text-gray-400">
+              {hasDue ? 'Unsettled balance' : 'Zero balance'}
+            </span>
+          </div>
         </div>
+
+        {/* Customer Notes if available */}
+        {customer.notes && (
+          <div className="p-2.5 bg-gray-50 rounded-xl text-xs text-gray-600 border border-gray-100">
+            <span className="font-bold text-gray-700 mr-1.5">Note:</span>
+            {customer.notes}
+          </div>
+        )}
       </div>
 
       {/* TRANSACTIONS SECTION */}
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xs print:border-[#084b3e] print:rounded-none">
-        {/* Tabs & Search Bar (Hidden on Print) */}
-        <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 print:hidden">
-          {/* Tab Selector */}
-          <div className="flex space-x-1.5 bg-gray-100 p-1 rounded-xl w-full sm:w-auto">
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xs print:border-none print:shadow-none">
+        
+        {/* Controls Bar: Tabs & Search */}
+        <div className="p-3 sm:p-4 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 print:hidden">
+          {/* Tabs */}
+          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setActiveTab('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'all'
-                  ? 'bg-[#084b3e] text-white shadow-xs'
+                  ? 'bg-white text-gray-900 shadow-xs'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              All Records ({unifiedTransactions.length})
+              All ({unifiedTransactions.length})
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('sales')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'sales'
-                  ? 'bg-[#084b3e] text-white shadow-xs'
+                  ? 'bg-white text-gray-900 shadow-xs'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              Sales ({customerSales.length})
+              Sales ({metrics.salesCount})
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('dues')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'dues'
-                  ? 'bg-[#084b3e] text-white shadow-xs'
+                  ? 'bg-white text-gray-900 shadow-xs'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              Dues Ledger ({customerDues.length})
+              Dues ({metrics.duesCount})
             </button>
           </div>
 
-          {/* Search box inside customer transactions */}
-          <div className="relative w-full sm:w-64">
+          {/* Quick Search */}
+          <div className="relative w-full sm:w-60">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search items, date..."
-              className="w-full pl-9 pr-3 py-1.5 bg-gray-50 border border-gray-100 rounded-xl text-xs font-medium focus:border-[#084b3e] outline-none"
+              className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-[#084b3e] outline-none"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-900"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
               >
                 <X size={12} />
               </button>
@@ -758,294 +738,249 @@ export function CustomerProfile() {
           </div>
         </div>
 
-        {/* Print-only Table Title */}
-        <div className="hidden print:block px-4 py-2 bg-gray-100 border-b border-[#084b3e] font-black text-xs uppercase tracking-wider">
-          Transaction Ledger & Itemized History
-        </div>
-
-        {/* Transactions Table */}
+        {/* Minimal Table */}
         {displayedTransactions.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 text-[10px] sm:text-xs font-black text-gray-500 uppercase tracking-wider border-b border-gray-100 print:bg-[#084b3e] print:text-white">
-                  <th className="py-3 px-3 sm:px-4 w-[24%] md:w-[18%]">Date & Time</th>
-                  <th className="py-3 px-3 sm:px-4 w-[38%] md:w-[32%]">Description / Service</th>
-                  <th className="py-3 px-3 sm:px-4 w-[18%] md:w-[15%]">Type</th>
-                  <th className="py-3 px-3 sm:px-4 text-right w-[20%] md:w-[15%]">Amount</th>
-                  <th className="hidden md:table-cell py-3 px-3 sm:px-4 text-right md:w-[10%]">Paid</th>
-                  <th className="hidden md:table-cell py-3 px-3 sm:px-4 text-right md:w-[10%]">Balance</th>
+            <table className="w-full text-left text-xs whitespace-nowrap">
+              <thead className="bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                <tr>
+                  <th className="py-3 px-4">Date</th>
+                  <th className="py-3 px-4">Description</th>
+                  <th className="py-3 px-4">Method</th>
+                  <th className="py-3 px-4 text-right">Total</th>
+                  <th className="py-3 px-4 text-right">Paid</th>
+                  <th className="py-3 px-4 text-right">Due</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-center print:hidden">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 text-xs">
+              <tbody className="divide-y divide-gray-100">
                 {displayedTransactions.map(t => {
-                  const isDue = t.dueAmount > 0;
+                  const hasRowDue = t.dueAmount > 0;
                   return (
                     <tr 
                       key={t.id} 
-                      className={`hover:bg-gray-50/80 transition-colors ${isDue ? 'bg-red-50/10' : ''}`}
+                      className={`hover:bg-gray-50/60 transition-colors ${hasRowDue ? 'bg-amber-50/20' : ''}`}
                     >
-                      {/* Date & Time */}
-                      <td className="py-3 px-3 sm:px-4 whitespace-nowrap">
-                        <div className="font-bold text-gray-900">{formatDateStr(t.date)}</div>
-                        {t.time && <div className="text-[10px] text-gray-400 font-mono">{t.time}</div>}
+                      {/* Date */}
+                      <td className="py-3 px-4 text-gray-600">
+                        <span className="font-bold text-gray-900">{formatDateStr(t.date)}</span>
+                        {t.time && <span className="text-[10px] text-gray-400 ml-1.5 font-mono">{t.time}</span>}
                       </td>
 
                       {/* Description */}
-                      <td className="py-3 px-3 sm:px-4">
-                        <div className="font-bold text-gray-900 text-xs sm:text-sm">
-                          {t.title}
-                        </div>
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-gray-900">{t.title}</div>
                         {t.category && (
-                          <span className="text-[10px] text-gray-400">
-                            {t.category}
-                          </span>
+                          <span className="text-[10px] text-gray-400">{t.category}</span>
                         )}
                       </td>
 
-                      {/* Type Badge */}
-                      <td className="py-3 px-3 sm:px-4">
-                        {t.type === 'due' ? (
-                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-700 border border-red-200">
-                            Due Record
-                          </span>
-                        ) : (
-                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-100 text-gray-800 border border-gray-100">
-                            Sale ({t.paymentMethod || 'Cash'})
-                          </span>
-                        )}
+                      {/* Payment Method */}
+                      <td className="py-3 px-4">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-gray-100 text-gray-700">
+                          {t.paymentMethod || 'Cash'}
+                        </span>
                       </td>
 
-                      {/* Amount */}
-                      <td className="py-3 px-3 sm:px-4 text-right font-black text-gray-900">
+                      {/* Total Amount */}
+                      <td className="py-3 px-4 text-right font-black text-gray-900">
                         Tk {t.amount.toLocaleString()}
-                        {/* Mobile view sub-breakdown */}
-                        <div className="md:hidden text-[10px] font-normal text-gray-400">
-                          Paid: Tk {t.paidAmount.toLocaleString()}
-                          {t.dueAmount > 0 && <span className="text-red-600 font-bold ml-1">Due: {t.dueAmount}</span>}
-                        </div>
                       </td>
 
-                      {/* Paid (Desktop) */}
-                      <td className="hidden md:table-cell py-3 px-3 sm:px-4 text-right font-bold text-emerald-700">
+                      {/* Paid Amount */}
+                      <td className="py-3 px-4 text-right font-bold text-emerald-700">
                         Tk {t.paidAmount.toLocaleString()}
                       </td>
 
-                      {/* Balance / Due (Desktop) */}
-                      <td className="hidden md:table-cell py-3 px-3 sm:px-4 text-right">
+                      {/* Due Amount */}
+                      <td className="py-3 px-4 text-right font-bold">
                         {t.dueAmount > 0 ? (
-                          <span className="font-black text-red-600">
+                          <span className="text-rose-600 font-black">
                             Tk {t.dueAmount.toLocaleString()}
                           </span>
                         ) : (
-                          <span className="text-gray-400 font-medium">—</span>
+                          <span className="text-gray-300 font-normal">—</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3 px-4 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          t.status === 'Paid'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : t.status === 'Partial'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {t.status}
+                        </span>
+                      </td>
+
+                      {/* Quick Pay Action */}
+                      <td className="py-3 px-4 text-center print:hidden">
+                        {t.dueAmount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCollectAmount(t.dueAmount.toString());
+                              setIsCollectModalOpen(true);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold border border-rose-200 transition-colors cursor-pointer"
+                          >
+                            Pay
+                          </button>
+                        ) : (
+                          <span className="text-gray-300 text-[11px]">—</span>
                         )}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
-              {/* Table Footer with Summary */}
+
+              {/* Unique Totals Footer */}
               <tfoot>
-                <tr className="bg-gray-100 text-gray-900 font-black text-xs border-t-2 border-gray-300 print:border-[#084b3e] print:bg-white">
-                  <td colSpan={3} className="py-3 px-3 sm:px-4 uppercase">
+                <tr className="bg-gray-50/80 font-bold text-gray-900 border-t border-gray-200">
+                  <td colSpan={3} className="py-3 px-4 uppercase text-[11px] text-gray-500">
                     Total ({displayedTransactions.length} records)
                   </td>
-                  <td className="py-3 px-3 sm:px-4 text-right font-black text-gray-900">
+                  <td className="py-3 px-4 text-right font-black">
                     Tk {displayedTransactions.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()}
                   </td>
-                  <td className="hidden md:table-cell py-3 px-3 sm:px-4 text-right text-emerald-700 font-black">
+                  <td className="py-3 px-4 text-right font-black text-emerald-700">
                     Tk {displayedTransactions.reduce((acc, curr) => acc + curr.paidAmount, 0).toLocaleString()}
                   </td>
-                  <td className="hidden md:table-cell py-3 px-3 sm:px-4 text-right text-red-600 font-black">
+                  <td className="py-3 px-4 text-right font-black text-rose-600">
                     Tk {displayedTransactions.reduce((acc, curr) => acc + curr.dueAmount, 0).toLocaleString()}
                   </td>
+                  <td colSpan={2}></td>
                 </tr>
               </tfoot>
             </table>
           </div>
         ) : (
-          <div className="p-8 text-center">
-            <p className="text-xs text-gray-400">No transactions match your criteria.</p>
+          <div className="p-8 text-center text-gray-400 text-xs">
+            No transactions found.
           </div>
         )}
       </div>
 
-      {/* PRINT-ONLY SIGNATURE SECTION */}
-      <div className="hidden print:flex justify-between items-end pt-14 mt-8 border-t border-gray-300 text-xs font-bold text-gray-800">
-        <div>
-          <div className="w-48 border-b border-gray-500 mb-1.5"></div>
-          <p className="font-black text-gray-900">Customer Signature</p>
-          <p className="text-[10px] text-gray-500 font-normal">{customer.name}</p>
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] text-gray-400 font-normal">System Generated Ledger</p>
-          <p className="text-[10px] text-gray-500">{format(new Date(), 'yyyy-MM-dd HH:mm:ss')}</p>
-        </div>
-        <div className="text-right">
-          <div className="w-48 border-b border-gray-500 mb-1.5 ml-auto"></div>
-          <p className="font-black text-gray-900">Authorized Signature & Seal</p>
-          <p className="text-[10px] text-gray-500 font-normal">Al-Barakah Digital Studio</p>
-        </div>
-      </div>
-
-      {/* COLLECT DUE MODAL */}
+      {/* COLLECT DUE MODAL (MINIMAL & FAST) */}
       {isCollectModalOpen && (
         <div 
-          className="fixed inset-0 bg-[#084b3e]/20 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
+          className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn"
           onClick={() => setIsCollectModalOpen(false)}
         >
           <div 
-            className="bg-white rounded-[24px] shadow-[0_8px_32px_-8px_rgba(0,0,0,0.12)] w-full max-w-lg overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]"
+            className="bg-white rounded-2xl w-full max-w-sm overflow-hidden border border-gray-100 shadow-xl"
             onClick={e => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="p-5 sm:p-6 border-b border-gray-100 flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 border border-red-100 flex items-center justify-center shrink-0">
-                  <DollarSign size={24} strokeWidth={2.5} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-gray-900 text-base">
-                    Collect Due
-                  </h3>
-                  <p className="text-[12px] text-gray-500 font-medium flex items-center gap-2 mt-0.5">
-                    <span>{customer.name}</span>
-                    <span className="flex items-center gap-1.5"><DollarSign size={12} className="text-gray-400" /> Tk {duesMetrics.pendingDue.toLocaleString()}</span>
-                  </p>
-                </div>
+            {/* Modal Header */}
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <div>
+                <h3 className="font-bold text-gray-900 text-sm">Collect Due Payment</h3>
+                <p className="text-[11px] text-gray-500">{customer.name}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCollectModalOpen(false)}
-                className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+                className="text-gray-400 hover:text-gray-700 p-1 rounded-lg"
               >
-                <X size={16} strokeWidth={2.5} />
+                <X size={16} />
               </button>
             </div>
 
-            <form onSubmit={handleConfirmCollect} className="p-5 sm:p-6 overflow-y-auto space-y-6">
-              {/* Due Amount Highlight Card */}
-              <div className="bg-red-50 border border-red-100 rounded-[16px] p-5 flex items-center justify-between">
+            <form onSubmit={handleConfirmCollect} className="p-4 space-y-3.5">
+              {/* Outstanding Due Highlight */}
+              <div className="flex items-center justify-between p-3 bg-rose-50/70 border border-rose-100 rounded-xl">
                 <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-red-600">
-                    Outstanding Due
-                  </span>
-                  <div className="text-2xl font-bold text-red-600 mt-1">
-                    Tk {duesMetrics.pendingDue.toLocaleString()}
+                  <span className="text-[10px] font-bold text-rose-600 uppercase">Outstanding Due</span>
+                  <div className="text-base font-black text-rose-700">
+                    Tk {metrics.currentDue.toLocaleString()}
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setCollectAmount(duesMetrics.pendingDue.toString())}
-                  className="bg-white border border-red-200 hover:bg-red-50 text-red-700 font-bold text-[12px] px-4 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-colors cursor-pointer"
+                  onClick={() => setCollectAmount(metrics.currentDue.toString())}
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 cursor-pointer"
                 >
                   Pay Full
                 </button>
               </div>
 
-              {/* Amount Input */}
+              {/* Amount */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-[12px] font-bold text-gray-700">
-                    Amount (Tk) <span className="text-red-500">*</span>
-                  </label>
-                  {(parseFloat(collectAmount) || 0) > 0 && (
-                    <span className="text-[11px] font-medium text-gray-500">
-                      Remaining: <span className="text-gray-900 font-bold">Tk {Math.max(0, duesMetrics.pendingDue - (parseFloat(collectAmount) || 0)).toLocaleString()}</span>
-                    </span>
-                  )}
-                </div>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">TK</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="any"
-                    required
-                    value={collectAmount}
-                    onChange={e => setCollectAmount(e.target.value)}
-                    placeholder="Enter amount..."
-                    className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-[14px] bg-gray-50 focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-base font-bold transition-all"
-                    autoFocus
-                  />
-                </div>
-                
-                {/* Preset quick buttons if due is larger */}
-                {duesMetrics.pendingDue > 50 && (
-                  <div className="flex flex-wrap items-center gap-2 mt-3">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Quick:</span>
-                    {[100, 200, 500, 1000, 2000]
-                      .filter(amt => amt < duesMetrics.pendingDue)
-                      .map(amt => (
-                        <button
-                          key={amt}
-                          type="button"
-                          onClick={() => setCollectAmount(amt.toString())}
-                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors cursor-pointer"
-                        >
-                          Tk {amt}
-                        </button>
-                      ))}
-                  </div>
-                )}
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Amount (Tk) *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  required
+                  value={collectAmount}
+                  onChange={e => setCollectAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-900 outline-none focus:border-[#084b3e]"
+                  autoFocus
+                />
               </div>
 
+              {/* Method */}
               <div>
-                <label className="block text-[12px] font-bold text-gray-700 mb-2">
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
                   Payment Method
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(['Cash', 'bKash', 'Nagad', 'Rocket'] as const).map(method => (
+                <div className="grid grid-cols-4 gap-1.5">
+                  {(['Cash', 'bKash', 'Nagad', 'Rocket'] as const).map(m => (
                     <button
-                      key={method}
+                      key={m}
                       type="button"
-                      onClick={() => setCollectMethod(method)}
-                      className={`py-2 px-1 text-center rounded-[10px] text-[12px] font-bold border transition-all cursor-pointer ${
-                        collectMethod === method
-                          ? 'bg-[#084b3e] text-white border-[#084b3e] shadow-[0_1px_3px_rgba(8,75,62,0.3)]'
+                      onClick={() => setCollectMethod(m)}
+                      className={`py-1.5 text-center rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        collectMethod === m
+                          ? 'bg-[#084b3e] text-white border-[#084b3e]'
                           : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
                       }`}
                     >
-                      {method}
+                      {m}
                     </button>
                   ))}
                 </div>
               </div>
 
+              {/* Note */}
               <div>
-                <label className="block text-[12px] font-bold text-gray-700 mb-2">
-                  Note (Optional)
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Remarks / Note
                 </label>
                 <input
                   type="text"
                   value={collectNote}
                   onChange={e => setCollectNote(e.target.value)}
-                  placeholder="e.g. Receipt #123, Paid at counter"
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
+                  placeholder="Optional note..."
+                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700 outline-none focus:bg-white focus:border-[#084b3e]"
                 />
               </div>
 
-              <div className="flex gap-3 pt-4 border-t border-gray-100">
+              {/* Buttons */}
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsCollectModalOpen(false)}
                   disabled={isSubmittingCollection}
-                  className="flex-1 py-3 rounded-[14px] border border-gray-200 text-gray-700 font-bold text-[13px] hover:bg-gray-50 transition-colors"
+                  className="flex-1 py-2 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingCollection || !collectAmount || parseFloat(collectAmount) <= 0}
-                  className="flex-1 py-3 rounded-[14px] bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-[13px] flex items-center justify-center gap-2 shadow-[0_2px_8px_-2px_rgba(220,38,38,0.4)] transition-all cursor-pointer"
+                  className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
                 >
-                  {isSubmittingCollection ? (
-                    <Loader2 size={16} className="animate-spin" strokeWidth={2.5} />
-                  ) : (
-                    <Check size={16} strokeWidth={2.5} />
-                  )}
-                  <span>{isSubmittingCollection ? 'Processing...' : 'Confirm Payment'}</span>
+                  {isSubmittingCollection ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  <span>Confirm</span>
                 </button>
               </div>
             </form>
@@ -1056,29 +991,27 @@ export function CustomerProfile() {
       {/* EDIT CUSTOMER MODAL */}
       {isEditModalOpen && (
         <div 
-          className="fixed inset-0 bg-[#084b3e]/20 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
+          className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn"
           onClick={() => setIsEditModalOpen(false)}
         >
           <div 
-            className="bg-white rounded-[24px] shadow-[0_8px_32px_-8px_rgba(0,0,0,0.12)] w-full max-w-md overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150"
+            className="bg-white rounded-2xl w-full max-w-sm overflow-hidden border border-gray-100 shadow-xl"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex justify-between items-center p-5 sm:p-6 border-b border-gray-100">
-              <h3 className="text-sm sm:text-base font-bold text-gray-900">
-                Edit Customer Profile
-              </h3>
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h3 className="font-bold text-gray-900 text-sm">Edit Profile</h3>
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(false)}
-                className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+                className="text-gray-400 hover:text-gray-700 p-1 rounded-lg"
               >
-                <X size={16} strokeWidth={2.5} />
+                <X size={16} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="p-5 sm:p-6 space-y-4">
+            <form onSubmit={handleSaveEdit} className="p-4 space-y-3">
               <div>
-                <label className="block text-[12px] font-bold text-gray-700 mb-1.5">
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
                   Customer Name *
                 </label>
                 <input
@@ -1086,58 +1019,58 @@ export function CustomerProfile() {
                   required
                   value={editName}
                   onChange={e => setEditName(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
+                  className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-900 outline-none focus:border-[#084b3e]"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-[12px] font-bold text-gray-700 mb-1.5">
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
                   Phone Number
                 </label>
                 <input
                   type="tel"
                   value={editPhone}
                   onChange={e => setEditPhone(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
+                  className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-xs text-gray-900 outline-none focus:border-[#084b3e]"
                 />
               </div>
 
               <div>
-                <label className="block text-[12px] font-bold text-gray-700 mb-1.5">
-                  Address / Location
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Address
                 </label>
                 <input
                   type="text"
                   value={editAddress}
                   onChange={e => setEditAddress(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
+                  className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-xs text-gray-900 outline-none focus:border-[#084b3e]"
                 />
               </div>
 
               <div>
-                <label className="block text-[12px] font-bold text-gray-700 mb-1.5">
-                  Notes (Optional)
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Notes
                 </label>
                 <input
                   type="text"
                   value={editNotes}
                   onChange={e => setEditNotes(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-[14px] focus:bg-white focus:border-[#084b3e] focus:ring-1 focus:ring-[#084b3e] outline-none text-sm transition-all"
+                  className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-xs text-gray-900 outline-none focus:border-[#084b3e]"
                 />
               </div>
 
-              <div className="flex gap-3 pt-4 border-t border-gray-100">
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="flex-1 py-3 rounded-[14px] border border-gray-200 text-gray-700 font-bold text-[13px] hover:bg-gray-50 transition-colors cursor-pointer"
+                  className="flex-1 py-2 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 rounded-[14px] bg-[#084b3e] hover:bg-[#126b55] text-white font-bold text-[13px] shadow-[0_2px_8px_-2px_rgba(8,75,62,0.3)] transition-all cursor-pointer"
+                  className="flex-1 py-2 text-xs font-bold text-white bg-[#084b3e] hover:bg-[#0c5e4e] rounded-xl cursor-pointer shadow-xs"
                 >
                   Save Changes
                 </button>
@@ -1149,4 +1082,3 @@ export function CustomerProfile() {
     </div>
   );
 }
-

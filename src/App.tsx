@@ -12,70 +12,56 @@ import { Borrowings } from './components/Borrowings';
 import { HistoryView } from './components/HistoryView';
 import { StoreProfile } from './components/StoreProfile';
 import { LoginScreen } from './components/LoginScreen';
-import { Menu, User, Calendar as CalendarIcon, Clock, WifiOff, Cloud, RefreshCw, Store, Eye, EyeOff, LogOut } from 'lucide-react';
-import { format } from 'date-fns';
+import { ShortcutsModal } from './components/ShortcutsModal';
+import { Inventory } from './components/Inventory';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { WifiOff, Cloud, RefreshCw, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { NotificationCenter } from './components/NotificationCenter';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 import { useAppNotifications } from './hooks/useAppNotifications';
 import { initDefaultAccounts } from './services/accountService';
+import { initDefaultInventory } from './services/inventoryService';
+import { isQuotaExceededBlocked } from './services/syncService';
 
-function TopHeader() {
-  const [time, setTime] = useState(new Date());
+interface TopHeaderProps {
+  onOpenShortcuts?: () => void;
+}
+
+function TopHeader({ onOpenShortcuts }: TopHeaderProps) {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const { user, profile, isOnline, syncStatus, triggerSync, isBalanceVisible, toggleBalanceVisibility, logout } = useAuth();
+  const { user, profile, isOnline, syncStatus, triggerSync, isBalanceVisible, toggleBalanceVisibility } = useAuth();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const updateTime = () => setTime(new Date());
-    updateTime();
-    const timer = setInterval(updateTime, 1000);
-
-    // Sync immediately when tab gains focus or user returns
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        updateTime();
-      }
-    };
-
-    window.addEventListener('focus', updateTime);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', updateTime);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
 
   return (
     <>
       <header className="bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 sm:px-6 py-3.5 flex justify-between items-center z-10 shrink-0 sticky top-0 print:hidden">
-        <div className="flex items-center gap-3 sm:gap-4">
+        <div className="flex items-center gap-3">
           <div className="md:hidden flex items-center shrink-0">
             <img 
-              src="/logo.png?v=2" 
-              alt="Al-Barakah Logo" 
-              className="w-9 h-9 rounded-full border border-emerald-100 object-contain shadow-xs bg-white p-0.5"
+              src={profile?.photoURL || '/logo.png?v=2'} 
+              alt="Logo" 
+              className="w-9 h-9 rounded-full border border-emerald-100 object-cover shadow-xs bg-white p-0.5"
               referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/logo.png?v=2';
+              }}
             />
           </div>
-          <div className="flex items-center gap-2.5">
-            <div className="text-2xl sm:text-3xl hidden sm:block">👋</div>
-            <div className="flex flex-col">
-              <h2 className="text-base sm:text-lg font-extrabold text-gray-900 leading-tight">
-                {profile?.storeName ? profile.storeName : 'Al-Barakah Digital'}
-              </h2>
-              <p className="text-[11px] font-medium text-gray-500 hidden sm:block">
-                {user ? `Phone: ${profile?.phone || ''} • Cloud Sync Enabled` : 'Manage your sales, stock and accounts with ease.'}
-              </p>
-            </div>
+          <div className="flex flex-col">
+            <h1 className="text-base sm:text-xl font-black text-gray-900 tracking-tight leading-tight">
+              {profile?.storeName || 'Al-Barakah Digital Studio'}
+            </h1>
+            <span className="text-[11px] font-semibold text-emerald-800 tracking-wide">
+              Digital Studio & Online Service
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 sm:gap-4">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           
           {/* Offline badge */}
           {!isOnline && (
@@ -90,13 +76,18 @@ function TopHeader() {
             <button
               type="button"
               onClick={() => triggerSync()}
-              title="Click to sync cloud backup"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"
+              title={isQuotaExceededBlocked() ? "Local storage is 100% active and safe" : "Click to sync cloud backup"}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100 cursor-pointer"
             >
               {syncStatus === 'syncing' ? (
                 <>
                   <RefreshCw size={13} className="animate-spin text-emerald-700" />
                   <span className="hidden sm:inline">Syncing...</span>
+                </>
+              ) : isQuotaExceededBlocked() ? (
+                <>
+                  <ShieldCheck size={14} className="text-emerald-700" />
+                  <span className="hidden sm:inline">Local Safe</span>
                 </>
               ) : (
                 <>
@@ -107,57 +98,34 @@ function TopHeader() {
             </button>
           )}
 
+          {/* Balance Visibility Toggle */}
+          <button 
+            type="button"
+            onClick={toggleBalanceVisibility}
+            title={isBalanceVisible ? 'Hide sensitive data' : 'Show sensitive data'}
+            className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200 shadow-xs transition-colors cursor-pointer"
+          >
+            {isBalanceVisible ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+
           {/* Notifications */}
           <NotificationCenter />
 
-          {/* Date, Time & Balance Visibility Toggle */}
-          <div className="hidden xl:flex items-center gap-2">
-            <button 
-              onClick={toggleBalanceVisibility}
-              title={isBalanceVisible ? 'Hide sensitive data' : 'Show sensitive data'}
-              className="flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-600 px-2.5 py-1 rounded-full border border-gray-200 shadow-sm transition-colors"
-            >
-              {isBalanceVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-full border border-gray-200 text-xs font-bold text-gray-700 shadow-sm">
-              <CalendarIcon size={14} className="text-gray-400"/> 
-              {format(time, 'dd/MM/yy')}
-            </div>
-            <div 
-              className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-full border border-gray-200 text-xs font-bold text-gray-700 shadow-sm"
-              title={format(time, 'hh:mm:ss a')}
-            >
-              <Clock size={14} className="text-gray-400"/> 
-              {format(time, 'hh:mm a')}
-            </div>
-          </div>
-
-          {/* User profile button */}
+          {/* Shop Circular Profile Icon */}
           <button
             type="button"
             onClick={() => navigate('/profile')}
-            title="Store Profile"
-            className="flex items-center gap-2 bg-[#084b3e] text-white pl-2 pr-3 py-1 rounded-full shadow-sm hover:bg-[#0c5e4e] transition-colors"
+            title={`Store Profile: ${profile?.storeName || 'Al-Barakah Digital Studio'}`}
+            className="w-9 h-9 rounded-full overflow-hidden bg-white border-2 border-emerald-400/80 shadow-xs hover:border-[#084b3e] hover:shadow-md hover:scale-105 transition-all cursor-pointer flex items-center justify-center p-0.5 shrink-0"
           >
-            <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-white">
-              <Store size={14} />
-            </div>
-            <span className="text-xs font-bold max-w-[100px] truncate hidden sm:inline">
-              {profile?.storeName || 'Profile'}
-            </span>
-          </button>
-
-          {/* Quick Lock / Logout Button */}
-          <button
-            type="button"
-            onClick={async () => {
-              await logout();
-            }}
-            title="Lock & Logout"
-            className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold border border-red-200 shadow-xs transition-all cursor-pointer"
-          >
-            <LogOut size={13} />
-            <span className="hidden sm:inline">Lock / Logout</span>
+            <img 
+              src={profile?.photoURL || '/logo.png?v=2'} 
+              alt="Shop Profile" 
+              className="w-full h-full object-cover rounded-full"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/logo.png?v=2';
+              }}
+            />
           </button>
 
         </div>
@@ -166,6 +134,56 @@ function TopHeader() {
       {/* Auth & Sync Modal */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
     </>
+  );
+}
+
+function ShopContent() {
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+
+  useKeyboardShortcuts({
+    onOpenShortcuts: () => setIsShortcutsOpen(true),
+    onCloseModals: () => setIsShortcutsOpen(false),
+  });
+
+  return (
+    <div className="flex min-h-screen bg-[#f4f8f7] font-sans print:block print:min-h-0 print:bg-white">
+      {/* Desktop Sidebar */}
+      <Sidebar onOpenShortcuts={() => setIsShortcutsOpen(true)} />
+      
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col w-full min-w-0 h-screen overflow-hidden print:h-auto print:overflow-visible print:w-full print:p-0 print:m-0">
+        <TopHeader onOpenShortcuts={() => setIsShortcutsOpen(true)} />
+        <main className="flex-1 overflow-y-auto w-full p-0 sm:p-4 md:p-6 pb-24 sm:pb-4 md:pb-6 print:p-0">
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/sales" element={<SalesEntry />} />
+              <Route path="/customers" element={<Customers />} />
+              <Route path="/customers/:id" element={<CustomerProfile />} />
+              <Route path="/mfs" element={<MfsLedger />} />
+              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/borrowings" element={<Borrowings />} />
+              <Route path="/dues" element={<Navigate to="/customers" replace />} />
+              <Route path="/expenses" element={<Expenses />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/history" element={<HistoryView />} />
+              <Route path="/profile" element={<StoreProfile />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </ErrorBoundary>
+        </main>
+      </div>
+
+      {/* Mobile Bottom Navigation */}
+      <BottomNav />
+
+      {/* Keyboard Shortcuts Cheatsheet Modal */}
+      <ShortcutsModal 
+        isOpen={isShortcutsOpen} 
+        onClose={() => setIsShortcutsOpen(false)} 
+      />
+    </div>
   );
 }
 
@@ -196,35 +214,7 @@ function AuthenticatedApp() {
 
   return (
     <Router>
-      <div className="flex min-h-screen bg-[#f4f8f7] font-sans print:block print:min-h-0 print:bg-white">
-        {/* Desktop Sidebar */}
-        <Sidebar />
-        
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col w-full min-w-0 h-screen overflow-hidden print:h-auto print:overflow-visible print:w-full print:p-0 print:m-0">
-          <TopHeader />
-          <main className="flex-1 overflow-y-auto w-full p-0 sm:p-4 md:p-6 print:p-0">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/sales" element={<SalesEntry />} />
-              <Route path="/customers" element={<Customers />} />
-              <Route path="/customers/:id" element={<CustomerProfile />} />
-              <Route path="/mfs" element={<MfsLedger />} />
-              <Route path="/borrowings" element={<Borrowings />} />
-              <Route path="/dues" element={<Navigate to="/customers" replace />} />
-              <Route path="/expenses" element={<Expenses />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/history" element={<HistoryView />} />
-              <Route path="/profile" element={<StoreProfile />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-        </div>
-
-        {/* Mobile Bottom Navigation */}
-        <BottomNav />
-      </div>
+      <ShopContent />
     </Router>
   );
 }
@@ -234,6 +224,7 @@ export default function App() {
 
   useEffect(() => {
     initDefaultAccounts();
+    initDefaultInventory();
   }, []);
   
   return (

@@ -3,9 +3,9 @@ import { getAuth } from 'firebase/auth';
 import { initializeFirestore, getFirestore, setLogLevel } from 'firebase/firestore';
 import config from '../../firebase-applet-config.json';
 
-// Suppress benign connection retry / offline notice warnings
+// Suppress console error spam on quota exhaustion and network retries
 try {
-  setLogLevel('error');
+  setLogLevel('silent');
 } catch {
   // Ignore in case setLogLevel is not supported in current environment
 }

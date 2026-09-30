@@ -7,18 +7,16 @@ import {
   startOfYear, endOfYear, parseISO, eachDayOfInterval, startOfDay, endOfDay 
 } from 'date-fns';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Plus, Minus, ArrowUpRight, ArrowDownRight, Wallet, Activity, ArrowRight, CircleDollarSign, AlertCircle, ShoppingCart, Smartphone, FileText, TrendingUp, BarChart2 } from 'lucide-react';
-import { SalesEntry } from './SalesEntry';
-import { Expenses } from './Expenses';
-import { MfsLedger } from './MfsLedger';
-import { Reports } from './Reports';
+import { 
+  ArrowUpRight, Wallet, Activity, ArrowRight, CircleDollarSign, 
+  ShoppingCart, TrendingUp, BarChart2, Package 
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export function Dashboard() {
   const [filterType, setFilterType] = useState('today');
   const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [activeTab, setActiveTab] = useState('overview');
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
   const { isBalanceVisible } = useAuth();
 
@@ -35,6 +33,10 @@ export function Dashboard() {
   const allExpenses = useLiveQuery(() => db.expenses.orderBy('id').reverse().toArray()) || [];
   const allDues = useLiveQuery(() => db.dues.toArray()) || [];
   const allAccounts = useLiveQuery(() => db.accounts.toArray()) || [];
+  const allInventory = useLiveQuery(() => db.inventory.toArray()) || [];
+  const lowStockItems = useMemo(() => {
+    return allInventory.filter(item => item.currentStock <= item.minAlertStock);
+  }, [allInventory]);
 
   // Calculate Date Range
   let startDate = startOfDay(new Date());
@@ -333,68 +335,91 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* High Contrast Metric Cards */}
+      {/* High Contrast Metric Cards - Clickable Navigation to Respective Pages */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
         
-        {/* Total Sales */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
+        {/* Total Sales -> /sales */}
+        <Link 
+          to="/sales"
+          title="Click to open Sales Entry"
+          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+        >
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:scale-110 group-hover:bg-emerald-100 transition-all duration-300">
-              <Wallet size={20} />
+              <ShoppingCart size={20} />
             </div>
             <div className="flex-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">Total Sales</span>
             </div>
-            <ArrowUpRight size={16} className="text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ArrowUpRight size={16} className="text-emerald-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
           </div>
           <div>
             <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-[#084b3e] transition-colors">Tk {formatCurrency(totalSalesRange)}</h2>
-            <p className="text-[10px] mt-1 text-gray-400 font-medium">Selected Range</p>
+            <p className="text-[10px] mt-1 text-emerald-700 font-semibold flex items-center gap-1">
+              <span>Open Sales</span>
+              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
+            </p>
           </div>
-        </div>
+        </Link>
 
-        {/* Total Expenses */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
+        {/* Total Expenses -> /expenses */}
+        <Link 
+          to="/expenses"
+          title="Click to open Expenses Entry"
+          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-rose-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+        >
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-emerald-50 text-[#084b3e] group-hover:scale-110 group-hover:bg-emerald-100 transition-all duration-300">
-              <Activity size={20} />
+            <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 group-hover:scale-110 group-hover:bg-rose-100 transition-all duration-300">
+              <Wallet size={20} />
             </div>
             <div className="flex-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">Total Expenses</span>
             </div>
-            <ArrowUpRight size={16} className="text-[#084b3e] opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ArrowUpRight size={16} className="text-rose-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-[#084b3e] transition-colors">Tk {formatCurrency(totalExpensesRange)}</h2>
-            <p className="text-[10px] mt-1 text-gray-400 font-medium">Selected Range</p>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-rose-700 transition-colors">Tk {formatCurrency(totalExpensesRange)}</h2>
+            <p className="text-[10px] mt-1 text-rose-600 font-semibold flex items-center gap-1">
+              <span>Open Expenses</span>
+              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
+            </p>
           </div>
-        </div>
+        </Link>
 
-        {/* Profit Card */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-purple-200 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
+        {/* Profit Card -> /reports */}
+        <Link 
+          to="/reports"
+          title="Click to view Profit & Analytics Reports"
+          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-purple-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+        >
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600 group-hover:scale-110 group-hover:bg-purple-100 transition-all duration-300">
-              <Activity size={20} />
+              <TrendingUp size={20} />
             </div>
             <div className="flex-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">
                 {filterType === 'today' ? "Today's Profit" : "Total Profit"}
               </span>
             </div>
-            <ArrowUpRight size={16} className="text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ArrowUpRight size={16} className="text-purple-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
           </div>
           <div>
             <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-purple-700 transition-colors">
               Tk {formatCurrency(filterType === 'today' ? netProfitToday : totalProfitRange)}
             </h2>
-            <p className="text-[10px] mt-1 text-gray-400 font-medium">
-              {filterType === 'today' ? 'Net Profit (Today)' : 'Selected Range'}
+            <p className="text-[10px] mt-1 text-purple-600 font-semibold flex items-center gap-1">
+              <span>View Reports</span>
+              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
             </p>
           </div>
-        </div>
+        </Link>
 
-        {/* Cash On Hand */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-sky-200 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
+        {/* Cash On Hand -> /mfs */}
+        <Link 
+          to="/mfs"
+          title="Click to view MFS & Cash Transactions"
+          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-sky-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+        >
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2.5 rounded-xl bg-sky-50 text-sky-500 group-hover:scale-110 group-hover:bg-sky-100 transition-all duration-300">
               <CircleDollarSign size={20} />
@@ -402,18 +427,22 @@ export function Dashboard() {
             <div className="flex-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">Cash On Hand</span>
             </div>
-            <ArrowUpRight size={16} className="text-sky-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ArrowUpRight size={16} className="text-sky-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
           </div>
           <div>
             <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-sky-600 transition-colors">Tk {formatCurrency(cashOnHand)}</h2>
-            <p className="text-[10px] mt-1 text-gray-400 font-medium">Excluding dues</p>
+            <p className="text-[10px] mt-1 text-sky-600 font-semibold flex items-center gap-1">
+              <span>Open MFS</span>
+              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
+            </p>
           </div>
-        </div>
+        </Link>
 
-        {/* Total Due */}
+        {/* Total Due -> /customers */}
         <Link 
           to="/customers"
-          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-rose-200 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+          title="Click to view Customers & Due Management"
+          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-rose-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
         >
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2.5 rounded-xl bg-rose-50 text-rose-500 group-hover:scale-110 group-hover:bg-rose-100 transition-all duration-300">
@@ -422,17 +451,20 @@ export function Dashboard() {
             <div className="flex-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">Total Due</span>
             </div>
-            <ArrowUpRight size={16} className="text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ArrowUpRight size={16} className="text-rose-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
           </div>
           <div>
             <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-rose-600 transition-colors">Tk {formatCurrency(totalDues)}</h2>
-            <p className="text-[10px] mt-1 text-gray-400 font-medium">Pending Balance</p>
+            <p className="text-[10px] mt-1 text-rose-600 font-semibold flex items-center gap-1">
+              <span>View Customers</span>
+              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
+            </p>
           </div>
         </Link>
       </div>
 
       {/* Account Balances Quick Strip (4 Accounts: Cash, bKash, Nagad, Rocket) */}
-      <div className="bg-white p-3 sm:p-4 rounded-2xl border border-gray-100 shadow-xs mb-2">
+      <div className="bg-white p-3 sm:p-4 rounded-2xl border border-gray-100 shadow-xs mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <Wallet size={16} className="text-[#084b3e]" />
@@ -461,259 +493,243 @@ export function Dashboard() {
             const isNagad = acc.id === 'nagad';
             const isRocket = acc.id === 'rocket';
 
-            let badgeColor = 'text-gray-700 bg-gray-50';
-            if (isCash) badgeColor = 'text-[#084b3e] bg-emerald-50 border-emerald-100';
-            else if (isBkash) badgeColor = 'text-[#e2136e] bg-pink-50 border-pink-100';
-            else if (isNagad) badgeColor = 'text-[#d97706] bg-orange-50 border-orange-100';
-            else if (isRocket) badgeColor = 'text-purple-700 bg-purple-50 border-purple-100';
+            let badgeColor = 'text-gray-700 bg-gray-50 hover:border-gray-300';
+            if (isCash) badgeColor = 'text-[#084b3e] bg-emerald-50 border-emerald-100 hover:border-[#084b3e]/40';
+            else if (isBkash) badgeColor = 'text-[#e2136e] bg-pink-50 border-pink-100 hover:border-[#e2136e]/40';
+            else if (isNagad) badgeColor = 'text-[#d97706] bg-orange-50 border-orange-100 hover:border-[#d97706]/40';
+            else if (isRocket) badgeColor = 'text-purple-700 bg-purple-50 border-purple-100 hover:border-purple-300';
+
+            const destination = isCash ? '/expenses' : '/mfs';
 
             return (
-              <div key={acc.id} className={`p-2.5 rounded-xl border ${badgeColor} flex flex-col justify-between`}>
-                <span className="text-[10px] font-bold uppercase truncate">
-                  {acc.id === 'cash' ? 'Cash' : acc.name}
-                </span>
+              <Link 
+                key={acc.id} 
+                to={destination}
+                title={`Open ${acc.name} transactions`}
+                className={`p-2.5 rounded-xl border ${badgeColor} flex flex-col justify-between transition-all hover:shadow-xs cursor-pointer group`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase truncate">
+                    {acc.id === 'cash' ? 'Cash' : acc.name}
+                  </span>
+                  <ArrowUpRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
                 <span className="text-xs sm:text-sm font-black mt-1 truncate">
                   Tk {isBalanceVisible ? (acc.balance || 0).toLocaleString() : '****'}
                 </span>
-              </div>
+              </Link>
             );
           })}
         </div>
       </div>
 
-      {/* Main Content: Chart & Quick Actions (Full Width) */}
-      <div className="w-full flex flex-col gap-8">
-        
-        {/* Quick Action Tabs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 bg-white p-2.5 rounded-2xl border border-gray-100 shadow-sm relative z-10">
-          {[
-            { id: 'sales', label: 'Sell', icon: ShoppingCart, color: 'emerald' },
-            { id: 'expenses', label: 'Expense', icon: Wallet, color: 'rose' },
-            { id: 'mfs', label: 'MFS', icon: Smartphone, color: 'purple' },
-            { id: 'reports', label: 'Reports', icon: FileText, color: 'sky' }
-          ].map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button 
-                key={tab.id}
-                onClick={() => setActiveTab(isActive ? 'overview' : tab.id as any)}
-                className={`flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-xl font-bold text-[13px] uppercase tracking-wider transition-all duration-300 ${
-                  isActive 
-                    ? 'bg-[#084b3e] text-white shadow-md shadow-[#084b3e]/20 scale-[1.02]' 
-                    : 'bg-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-50 hover:shadow-sm border border-transparent hover:border-gray-100'
-                }`}
-              >
-                <tab.icon 
-                  size={18} 
-                  className={`transition-transform duration-300 ${isActive ? 'opacity-100 scale-110' : 'opacity-70'}`} 
-                />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
+      {/* Main Content: Pure Analytics & Charts */}
+      <div className="w-full flex flex-col gap-6">
 
-        {/* Dynamic Content Area */}
-        {activeTab === 'overview' && (
-          <div className="border border-gray-100 rounded-md p-5 sm:p-6 bg-white shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
+        {/* Low Stock Warning Banner if any items low */}
+        {lowStockItems.length > 0 && (
+          <Link
+            to="/inventory"
+            className="bg-amber-50 hover:bg-amber-100/90 border border-amber-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 transition-all shadow-xs group"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                <Package size={20} />
+              </div>
               <div>
-                <h2 className="text-sm font-bold uppercase tracking-widest text-gray-900 flex items-center gap-2">
-                  <TrendingUp size={18} className="text-[#084b3e]" />
-                  Cashflow Overview
-                </h2>
-                <p className="text-xs text-gray-500 mt-0.5 font-medium">
-                  {filterType === 'today' ? "Today's Timeline" : "Daily Trends"}
+                <p className="text-sm font-bold flex items-center gap-2 flex-wrap">
+                  <span>Stock Alert: {lowStockItems.length} item(s) low on stock!</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-200/80 font-bold text-amber-900">
+                    {lowStockItems.slice(0, 3).map(i => i.name).join(', ')}{lowStockItems.length > 3 ? '...' : ''}
+                  </span>
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Restock paper, ink or studio materials from the Inventory page.
                 </p>
               </div>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-extrabold text-[#084b3e] bg-white px-3 py-1.5 rounded-lg border border-amber-200 self-start sm:self-auto group-hover:bg-amber-50 transition-colors shrink-0">
+              <span>Open Inventory</span>
+              <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+            </div>
+          </Link>
+        )}
 
-              {/* Chart Type Toggle */}
-              <div className="flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 text-xs self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setChartType('line')}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
-                    chartType === 'line'
-                      ? 'bg-white text-[#084b3e] shadow-xs'
-                      : 'text-gray-500 hover:text-gray-900'
-                  }`}
-                  title="Smooth Line Chart"
+        {/* Pure Analytics: Cashflow Overview Chart */}
+        <div className="border border-gray-100 rounded-2xl p-5 sm:p-6 bg-white shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-widest text-gray-900 flex items-center gap-2">
+                <TrendingUp size={18} className="text-[#084b3e]" />
+                Cashflow Overview
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5 font-medium">
+                {filterType === 'today' ? "Today's Timeline" : "Daily Trends"}
+              </p>
+            </div>
+
+            {/* Chart Type Toggle */}
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 text-xs self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setChartType('line')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
+                  chartType === 'line'
+                    ? 'bg-white text-[#084b3e] shadow-xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+                title="Smooth Line Chart"
+              >
+                <TrendingUp size={13} />
+                Line
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartType('bar')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
+                  chartType === 'bar'
+                    ? 'bg-white text-[#084b3e] shadow-xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+                title="Bar Chart"
+              >
+                <BarChart2 size={13} />
+                Bar
+              </button>
+            </div>
+          </div>
+
+          <div className="h-80 sm:h-96 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              {chartType === 'line' ? (
+                <LineChart 
+                  data={chartData} 
+                  margin={{ top: 15, right: 15, left: 0, bottom: 10 }}
                 >
-                  <TrendingUp size={13} />
-                  Line
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setChartType('bar')}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
-                    chartType === 'bar'
-                      ? 'bg-white text-[#084b3e] shadow-xs'
-                      : 'text-gray-500 hover:text-gray-900'
-                  }`}
-                  title="Bar Chart"
+                  <CartesianGrid vertical={false} stroke="#e2e8f0" />
+                  
+                  <XAxis 
+                    dataKey="name" 
+                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
+                    tickLine={{ stroke: '#cbd5e1' }} 
+                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
+                    padding={{ left: 16, right: 16 }}
+                    angle={-35}
+                    textAnchor="end"
+                    height={50}
+                    interval={filterType === 'last30' ? 2 : 0}
+                  />
+                  
+                  <YAxis 
+                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
+                    tickLine={{ stroke: '#cbd5e1' }} 
+                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
+                  />
+                  
+                  <Tooltip 
+                    cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} 
+                    contentStyle={{
+                      borderRadius: '8px', 
+                      border: '1px solid #e2e8f0', 
+                      backgroundColor: '#ffffff', 
+                      boxShadow: '0 4px 14px -2px rgba(0, 0, 0, 0.08)', 
+                      fontWeight: 'bold',
+                      fontSize: '12px'
+                    }} 
+                    formatter={(value: any, name: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, name]}
+                    labelFormatter={(label: any, payload: any) => {
+                      const fullDate = payload?.[0]?.payload?.fullDate;
+                      return fullDate || label;
+                    }}
+                  />
+
+                  {/* 1. Sell */}
+                  <Line 
+                    type="natural" 
+                    dataKey="Sell" 
+                    name="Sell" 
+                    stroke="#2563eb" 
+                    strokeWidth={2.5} 
+                    dot={false} 
+                    activeDot={{ r: 6, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 2 }} 
+                  />
+
+                  {/* 2. Expense */}
+                  <Line 
+                    type="natural" 
+                    dataKey="Expense" 
+                    name="Expense" 
+                    stroke="#ef4444" 
+                    strokeWidth={2.5} 
+                    dot={false} 
+                    activeDot={{ r: 6, fill: '#ef4444', stroke: '#ffffff', strokeWidth: 2 }} 
+                  />
+
+                  {/* 3. Profit */}
+                  <Line 
+                    type="natural" 
+                    dataKey="Profit" 
+                    name="Profit" 
+                    stroke="#10b981" 
+                    strokeWidth={2.5} 
+                    dot={false} 
+                    activeDot={{ r: 6, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }} 
+                  />
+                </LineChart>
+              ) : (
+                <BarChart 
+                  data={chartData} 
+                  margin={{ top: 15, right: 15, left: 0, bottom: 10 }}
                 >
-                  <BarChart2 size={13} />
-                  Bar
-                </button>
-              </div>
+                  <CartesianGrid vertical={false} stroke="#e2e8f0" />
+                  <XAxis 
+                    dataKey="name" 
+                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
+                    tickLine={{ stroke: '#cbd5e1' }} 
+                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
+                    angle={-35}
+                    textAnchor="end"
+                    height={50}
+                    interval={filterType === 'last30' ? 2 : 0}
+                  />
+                  <YAxis 
+                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
+                    tickLine={{ stroke: '#cbd5e1' }} 
+                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
+                  />
+                  <Tooltip 
+                    cursor={{ fill: '#f8fafc' }} 
+                    contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', boxShadow: '0 4px 12px -2px rgba(0, 0, 0, 0.08)', fontWeight: 'bold' }} 
+                    formatter={(value: any, name: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, name]}
+                    labelFormatter={(label: any, payload: any) => {
+                      const fullDate = payload?.[0]?.payload?.fullDate;
+                      return fullDate || label;
+                    }}
+                  />
+                  <Bar dataKey="Sell" name="Sell" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="Expense" name="Expense" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="Profit" name="Profit" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+
+          {/* Bottom Color Indicator */}
+          <div className="flex items-center justify-center gap-6 pt-4 mt-2 border-t border-gray-100 text-xs font-bold">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-[#2563eb] inline-block shadow-xs" />
+              <span className="text-gray-700 font-semibold">Sell</span>
             </div>
-
-            <div className="h-80 sm:h-96 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                {chartType === 'line' ? (
-                  <LineChart 
-                    data={chartData} 
-                    margin={{ top: 15, right: 15, left: 0, bottom: 10 }}
-                  >
-                    {/* Clean solid horizontal grid lines */}
-                    <CartesianGrid vertical={false} stroke="#e2e8f0" />
-                    
-                    {/* X-Axis */}
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                      tickLine={{ stroke: '#cbd5e1' }} 
-                      tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                      padding={{ left: 16, right: 16 }}
-                      angle={-35}
-                      textAnchor="end"
-                      height={50}
-                      interval={filterType === 'last30' ? 2 : 0}
-                    />
-                    
-                    {/* Y-Axis */}
-                    <YAxis 
-                      axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                      tickLine={{ stroke: '#cbd5e1' }} 
-                      tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                    />
-                    
-                    <Tooltip 
-                      cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} 
-                      contentStyle={{
-                        borderRadius: '8px', 
-                        border: '1px solid #e2e8f0', 
-                        backgroundColor: '#ffffff', 
-                        boxShadow: '0 4px 14px -2px rgba(0, 0, 0, 0.08)', 
-                        fontWeight: 'bold',
-                        fontSize: '12px'
-                      }} 
-                      formatter={(value: any, name: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, name]}
-                      labelFormatter={(label: any, payload: any) => {
-                        const fullDate = payload?.[0]?.payload?.fullDate;
-                        return fullDate || label;
-                      }}
-                    />
-
-                    {/* 1. Sell: Smooth Blue Spline Curve rising and falling like wave */}
-                    <Line 
-                      type="natural" 
-                      dataKey="Sell" 
-                      name="Sell" 
-                      stroke="#2563eb" 
-                      strokeWidth={2.5} 
-                      dot={false} 
-                      activeDot={{ r: 6, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 2 }} 
-                    />
-
-                    {/* 2. Expense: Smooth Red Spline Curve */}
-                    <Line 
-                      type="natural" 
-                      dataKey="Expense" 
-                      name="Expense" 
-                      stroke="#ef4444" 
-                      strokeWidth={2.5} 
-                      dot={false} 
-                      activeDot={{ r: 6, fill: '#ef4444', stroke: '#ffffff', strokeWidth: 2 }} 
-                    />
-
-                    {/* 3. Profit: Smooth Green Spline Curve */}
-                    <Line 
-                      type="natural" 
-                      dataKey="Profit" 
-                      name="Profit" 
-                      stroke="#10b981" 
-                      strokeWidth={2.5} 
-                      dot={false} 
-                      activeDot={{ r: 6, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }} 
-                    />
-                  </LineChart>
-                ) : (
-                  <BarChart 
-                    data={chartData} 
-                    margin={{ top: 15, right: 15, left: 0, bottom: 10 }}
-                  >
-                    <CartesianGrid vertical={false} stroke="#e2e8f0" />
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                      tickLine={{ stroke: '#cbd5e1' }} 
-                      tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                      angle={-35}
-                      textAnchor="end"
-                      height={50}
-                      interval={filterType === 'last30' ? 2 : 0}
-                    />
-                    <YAxis 
-                      axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                      tickLine={{ stroke: '#cbd5e1' }} 
-                      tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                    />
-                    <Tooltip 
-                      cursor={{ fill: '#f8fafc' }} 
-                      contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', boxShadow: '0 4px 12px -2px rgba(0, 0, 0, 0.08)', fontWeight: 'bold' }} 
-                      formatter={(value: any, name: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, name]}
-                      labelFormatter={(label: any, payload: any) => {
-                        const fullDate = payload?.[0]?.payload?.fullDate;
-                        return fullDate || label;
-                      }}
-                    />
-                    <Bar dataKey="Sell" name="Sell" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={20} />
-                    <Bar dataKey="Expense" name="Expense" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20} />
-                    <Bar dataKey="Profit" name="Profit" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
-                  </BarChart>
-                )}
-              </ResponsiveContainer>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-[#ef4444] inline-block shadow-xs" />
+              <span className="text-gray-700 font-semibold">Expense</span>
             </div>
-
-            {/* Bottom Color Indicator */}
-            <div className="flex items-center justify-center gap-6 pt-4 mt-2 border-t border-gray-100 text-xs font-bold">
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-[#2563eb] inline-block shadow-xs" />
-                <span className="text-gray-700 font-semibold">Sell</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-[#ef4444] inline-block shadow-xs" />
-                <span className="text-gray-700 font-semibold">Expense</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-[#10b981] inline-block shadow-xs" />
-                <span className="text-gray-700 font-semibold">Profit</span>
-              </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-[#10b981] inline-block shadow-xs" />
+              <span className="text-gray-700 font-semibold">Profit</span>
             </div>
           </div>
-        )}
-
-        {activeTab === 'sales' && (
-          <div className="border border-gray-100 rounded-md bg-white overflow-hidden shadow-sm">
-            <SalesEntry />
-          </div>
-        )}
-        {activeTab === 'expenses' && (
-          <div className="border border-gray-100 rounded-md bg-white overflow-hidden shadow-sm">
-            <Expenses />
-          </div>
-        )}
-        {activeTab === 'mfs' && (
-          <div className="border border-gray-100 rounded-md bg-white overflow-hidden shadow-sm">
-            <MfsLedger />
-          </div>
-        )}
-        {activeTab === 'reports' && (
-          <div className="border border-gray-100 rounded-md bg-white overflow-hidden shadow-sm">
-            <Reports />
-          </div>
-        )}
+        </div>
 
       </div>
     </div>

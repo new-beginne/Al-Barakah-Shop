@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, MfsTransaction, getRecordMetadata } from '../db/db';
+import { db, MfsTransaction, Customer, getRecordMetadata } from '../db/db';
 import { adjustAccountBalance, editBalanceWithLog } from '../services/accountService';
 import { recordActivityLog, logMfsDelete } from '../services/activityLogService';
 import {
@@ -14,8 +15,15 @@ import {
   FileText,
   Eye,
   Clock,
-  User
+  User,
+  Calculator,
+  Banknote,
+  Users,
+  CreditCard,
+  ArrowRight,
+  ChevronDown
 } from 'lucide-react';
+import { MfsClosingModal } from './MfsClosingModal';
 
 const OPERATORS = ['bKash', 'Nagad', 'Rocket'] as const;
 type OperatorType = typeof OPERATORS[number];
@@ -32,6 +40,7 @@ type CashoutPreset = 'rate_20' | 'rate_185' | 'rate_15' | 'custom';
 export function MfsLedger() {
   // Modal states
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MfsTransaction | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<MfsTransaction | null>(null);
 
@@ -54,6 +63,13 @@ export function MfsLedger() {
   const [historyOperatorFilter, setHistoryOperatorFilter] = useState<string>('all');
   const [historyTypeFilter, setHistoryTypeFilter] = useState<string>('all');
 
+  // Due / Credit Tracking States
+  const [isDue, setIsDue] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [paidAmountInput, setPaidAmountInput] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+
   // Adjust Balance Modal State
   const [adjustOperator, setAdjustOperator] = useState<OperatorType>('bKash');
   const [adjustNewBalance, setAdjustNewBalance] = useState('');
@@ -63,6 +79,24 @@ export function MfsLedger() {
   const allAccounts = useLiveQuery(() => db.accounts.toArray()) || [];
   const allMfs = useLiveQuery(() => db.mfs.toArray()) || [];
   const customers = useLiveQuery(() => db.customers.toArray()) || [];
+
+  // Filter existing customer suggestions
+  const filteredCustomerSuggestions = useMemo(() => {
+    if (!customerName.trim() && !customerPhone.trim()) return [];
+    const qName = customerName.toLowerCase().trim();
+    const qPhone = customerPhone.trim();
+    return customers.filter(c => {
+      const matchName = qName && c.name?.toLowerCase().includes(qName);
+      const matchPhone = qPhone && c.phone?.includes(qPhone);
+      return matchName || matchPhone;
+    }).slice(0, 6);
+  }, [customers, customerName, customerPhone]);
+
+  const selectCustomer = (c: Customer) => {
+    setCustomerName(c.name);
+    setCustomerPhone(c.phone || '');
+    setShowCustomerDropdown(false);
+  };
 
   const formatDateStr = (dStr: string) => {
     if (!dStr) return '';
@@ -174,18 +208,31 @@ export function MfsLedger() {
     setProfit('');
     setRecipientNumber('');
     setNote('');
+    setIsDue(false);
+    setCustomerName('');
+    setCustomerPhone('');
+    setPaidAmountInput('');
+    setShowCustomerDropdown(false);
   };
 
   const parsedAmt = parseFloat(amount) || 0;
   const parsedChg = parseFloat(charge) || 0;
   const parsedPrf = parseFloat(profit) || 0;
 
+  // Paid cash now (if due: what was paid, default 0; if not due: full amount)
+  const parsedPaidAmt = isDue ? (parseFloat(paidAmountInput) || 0) : parsedAmt;
+  const calculatedDueAmount = isDue ? Math.max(0, parsedAmt - parsedPaidAmt) : 0;
+
   const { walletChange, cashChange, effectDescription } = useMemo(() => {
     if (parsedAmt <= 0) {
       if (type === 'Cash-Out') {
         return { walletChange: 0, cashChange: 0, effectDescription: 'Cash decreases • Wallet increases' };
       }
-      return { walletChange: 0, cashChange: 0, effectDescription: 'Cash increases • Wallet decreases' };
+      return { 
+        walletChange: 0, 
+        cashChange: 0, 
+        effectDescription: isDue ? 'SIM balance decreases • Customer Due' : 'Cash increases • Wallet decreases' 
+      };
     }
 
     if (type === 'Cash-Out') {
@@ -198,13 +245,19 @@ export function MfsLedger() {
 
     // For Cash-In, Recharge, Send Money:
     // Any charge entered is cut from the wallet account: -(amount + charge)
-    // Cash drawer receives +amount
+    // If not due: Cash drawer receives +amount
+    // If due: Cash drawer receives ONLY +paidAmount (e.g. 0 if full due)
+    const effectiveCashChange = isDue ? parsedPaidAmt : parsedAmt;
+    const dueDesc = isDue
+      ? `SIM: -Tk ${(parsedAmt + parsedChg).toLocaleString()} • Cash Drawer: +Tk ${parsedPaidAmt.toLocaleString()} • Due Added: Tk ${calculatedDueAmount.toLocaleString()}`
+      : 'Cash increases • Wallet decreases';
+
     return { 
       walletChange: -(parsedAmt + parsedChg), 
-      cashChange: parsedAmt,
-      effectDescription: 'Cash increases • Wallet decreases'
+      cashChange: effectiveCashChange,
+      effectDescription: dueDesc
     };
-  }, [type, parsedAmt, parsedChg]);
+  }, [type, parsedAmt, parsedChg, isDue, parsedPaidAmt, calculatedDueAmount]);
 
   const sortedDescending = useMemo(() => {
     return [...allMfs].sort((a, b) => {
@@ -216,12 +269,23 @@ export function MfsLedger() {
 
   const displayHistory = useMemo(() => {
     return sortedDescending.filter(tx => {
+      const q = searchQuery.toLowerCase().trim();
       const matchesSearch = 
-        (tx.recipientNumber && tx.recipientNumber.includes(searchQuery)) || 
-        (tx.note && tx.note.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (tx.operator && tx.operator.toLowerCase().includes(searchQuery.toLowerCase()));
+        !q ||
+        (tx.recipientNumber && tx.recipientNumber.includes(q)) || 
+        (tx.customerName && tx.customerName.toLowerCase().includes(q)) ||
+        (tx.customerPhone && tx.customerPhone.includes(q)) ||
+        (tx.note && tx.note.toLowerCase().includes(q)) ||
+        (tx.operator && tx.operator.toLowerCase().includes(q));
+
       const matchesOp = historyOperatorFilter === 'all' || tx.operator === historyOperatorFilter;
-      const matchesType = historyTypeFilter === 'all' || tx.type === historyTypeFilter;
+      const matchesType = 
+        historyTypeFilter === 'all' 
+          ? true 
+          : historyTypeFilter === 'due_only' 
+            ? Boolean(tx.isDue) 
+            : tx.type === historyTypeFilter;
+
       return matchesSearch && matchesOp && matchesType;
     });
   }, [sortedDescending, searchQuery, historyOperatorFilter, historyTypeFilter]);
@@ -234,13 +298,55 @@ export function MfsLedger() {
       return;
     }
 
+    if (isDue && calculatedDueAmount > 0 && !customerName.trim() && !customerPhone.trim() && !recipientNumber.trim()) {
+      setErrorMsg('Please enter customer name or phone for due transaction.');
+      setTimeout(() => setErrorMsg(''), 4000);
+      return;
+    }
+
     const currentWalletBal = getOperatorBalance(operator);
     const newWalletBalance = currentWalletBal + walletChange;
     const meta = getRecordMetadata();
     const finalProfit = type === 'Cash-Out' ? parsedChg : parsedPrf;
 
+    const finalCustomerName = customerName.trim() || (recipientNumber.trim() ? `Customer (${recipientNumber.trim()})` : 'MFS Customer');
+    const finalCustomerPhone = customerPhone.trim() || recipientNumber.trim() || '';
+
     try {
-      await db.transaction('rw', db.mfs, db.accounts, db.balanceLogs, db.activityLogs, async () => {
+      await db.transaction('rw', [db.mfs, db.accounts, db.balanceLogs, db.dues, db.customers, db.activityLogs], async () => {
+        let dueId: number | undefined = undefined;
+
+        if (isDue && calculatedDueAmount > 0) {
+          dueId = await db.dues.add({
+            date: meta.date,
+            time: meta.time,
+            createdAt: meta.createdAt,
+            updatedAt: meta.updatedAt,
+            customerName: finalCustomerName,
+            phone: finalCustomerPhone,
+            totalAmount: parsedAmt,
+            paidAmount: parsedPaidAmt,
+            status: parsedPaidAmt >= parsedAmt ? 'Paid' : (parsedPaidAmt > 0 ? 'Partial' : 'Unpaid'),
+            referenceType: 'mfs',
+            note: `MFS ${operator} ${type} to ${recipientNumber.trim() || 'N/A'}${note.trim() ? ` (${note.trim()})` : ''}`
+          });
+
+          // Ensure customer exists in db.customers
+          const existingCustomer = customers.find(c => 
+            (finalCustomerPhone && c.phone === finalCustomerPhone) || 
+            c.name.toLowerCase() === finalCustomerName.toLowerCase()
+          );
+          if (!existingCustomer) {
+            await db.customers.add({
+              name: finalCustomerName,
+              phone: finalCustomerPhone,
+              createdAt: meta.createdAt,
+              updatedAt: meta.updatedAt,
+              notes: `Auto-registered from MFS ${operator} ${type}`
+            });
+          }
+        }
+
         const mfsId = await db.mfs.add({
           date: meta.date,
           time: meta.time,
@@ -253,7 +359,13 @@ export function MfsLedger() {
           profit: finalProfit,
           balanceAfter: newWalletBalance,
           recipientNumber: recipientNumber.trim() || undefined,
-          note: note.trim() || undefined
+          note: note.trim() || undefined,
+          isDue,
+          dueAmount: isDue ? calculatedDueAmount : undefined,
+          paidAmount: isDue ? parsedPaidAmt : undefined,
+          customerName: isDue ? finalCustomerName : undefined,
+          customerPhone: isDue ? finalCustomerPhone : undefined,
+          dueId
         });
 
         await adjustAccountBalance(operator.toLowerCase(), walletChange);
@@ -266,13 +378,13 @@ export function MfsLedger() {
           action: 'CREATE',
           module: 'MFS',
           entityId: Number(mfsId),
-          title: `New MFS: ${operator} ${type} (Tk ${parsedAmt.toLocaleString()})`,
-          details: `Recipient: ${recipientNumber.trim() || 'N/A'} • Charge: Tk ${parsedChg} • Profit: Tk ${finalProfit} • Wallet: ${walletChange >= 0 ? `+${walletChange}` : walletChange} • Cash: ${cashChange >= 0 ? `+${cashChange}` : cashChange}`,
-          meta: { operator, type, amount: parsedAmt, charge: parsedChg, profit: finalProfit, walletChange, cashChange }
+          title: `New MFS: ${operator} ${type} (Tk ${parsedAmt.toLocaleString()})${isDue ? ` [Due: Tk ${calculatedDueAmount.toLocaleString()}]` : ''}`,
+          details: `Recipient: ${recipientNumber.trim() || 'N/A'} • Charge: Tk ${parsedChg} • Profit: Tk ${finalProfit} • Wallet: ${walletChange >= 0 ? `+${walletChange}` : walletChange} • Cash: ${cashChange >= 0 ? `+${cashChange}` : cashChange}${isDue ? ` • Customer: ${finalCustomerName} (Due: Tk ${calculatedDueAmount})` : ''}`,
+          meta: { operator, type, amount: parsedAmt, charge: parsedChg, profit: finalProfit, walletChange, cashChange, isDue, dueAmount: calculatedDueAmount }
         });
       });
 
-      setSuccessMsg(`Transaction of Tk ${parsedAmt.toLocaleString()} saved successfully.`);
+      setSuccessMsg(`Transaction of Tk ${parsedAmt.toLocaleString()} saved successfully.${isDue && calculatedDueAmount > 0 ? ` (Tk ${calculatedDueAmount.toLocaleString()} added to Customer Due list)` : ''}`);
       setTimeout(() => setSuccessMsg(''), 4000);
 
       resetForm();
@@ -340,7 +452,7 @@ export function MfsLedger() {
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget || !deleteTarget.id) return;
-    const { id, operator: delOp, amount: delAmt, charge: delChg, type: delType } = deleteTarget;
+    const { id, operator: delOp, amount: delAmt, charge: delChg, type: delType, isDue: delIsDue, paidAmount: delPaidAmt, dueId: delDueId, customerName: delCustName } = deleteTarget;
 
     let reverseWalletDelta = 0;
     let reverseCashDelta = 0;
@@ -358,14 +470,29 @@ export function MfsLedger() {
       reverseCashDelta = 0;
     } else {
       // Cash-In, Recharge, Send Money:
-      // Originally: wallet = -(delAmt + delChg), cash = +delAmt
+      // Originally: wallet = -(delAmt + delChg), cash = +(delIsDue ? delPaidAmt : delAmt)
       reverseWalletDelta = delAmt + (delChg || 0);
-      reverseCashDelta = -delAmt;
+      const originalCashInflow = delIsDue ? (delPaidAmt || 0) : delAmt;
+      reverseCashDelta = -originalCashInflow;
     }
 
     try {
-      await db.transaction('rw', db.mfs, db.accounts, db.balanceLogs, db.activityLogs, async () => {
+      await db.transaction('rw', [db.mfs, db.accounts, db.balanceLogs, db.dues, db.activityLogs], async () => {
         await db.mfs.delete(id);
+
+        // Delete linked due record if exists
+        if (delDueId) {
+          await db.dues.delete(delDueId);
+        } else if (delIsDue && delCustName) {
+          const matchingDue = await db.dues
+            .where('customerName')
+            .equals(delCustName)
+            .filter(d => d.date === deleteTarget.date && Math.abs(d.totalAmount - delAmt) < 0.01)
+            .first();
+          if (matchingDue?.id) {
+            await db.dues.delete(matchingDue.id);
+          }
+        }
 
         if (reverseWalletDelta !== 0) {
           await adjustAccountBalance(delOp.toLowerCase(), reverseWalletDelta);
@@ -413,21 +540,37 @@ export function MfsLedger() {
       )}
 
       {/* MAIN NEW MFS ENTRY CARD (Matching User Provided Design Exactly) */}
-      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 sm:p-8 space-y-6">
+      <div 
+        onKeyDown={(e) => {
+          if (e.ctrlKey && e.key === 'Enter') {
+            e.preventDefault();
+            handleSubmit(e);
+          }
+        }}
+        className="bg-white rounded-2xl shadow-xs border border-gray-100 p-5 sm:p-6 space-y-5"
+      >
         
-        {/* Card Header */}
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 bg-[#084b3e] rounded-2xl flex items-center justify-center text-white shrink-0 shadow-xs">
-            <Smartphone size={22} />
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 bg-[#084b3e] rounded-xl flex items-center justify-center text-white shrink-0">
+              <Smartphone size={18} />
+            </div>
+            <h1 className="text-lg sm:text-xl font-black text-gray-900 tracking-tight">MFS Entry</h1>
           </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">New MFS Entry</h1>
-            <p className="text-xs sm:text-sm text-gray-500 font-medium">Record mobile financial services quickly</p>
-          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsClosingModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#084b3e] rounded-xl text-xs font-bold border border-emerald-200 transition-all cursor-pointer"
+          >
+            <Calculator size={14} />
+            <span>Daily Closing</span>
+          </button>
         </div>
 
         {/* Operator Balances Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           {OPERATORS.map(op => {
             const isSelected = operator === op;
             const bal = balances[op];
@@ -435,20 +578,20 @@ export function MfsLedger() {
               <div
                 key={op}
                 onClick={() => handleOperatorSelect(op)}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer relative ${
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer relative ${
                   isSelected
                     ? 'bg-white border-[#084b3e] ring-2 ring-[#084b3e]/20 shadow-xs'
-                    : 'bg-white border-gray-200 hover:border-gray-300'
+                    : 'bg-gray-50/50 border-gray-200 hover:border-gray-300'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${
                       op === 'bKash' ? 'bg-pink-600' :
                       op === 'Nagad' ? 'bg-orange-500' :
                       'bg-purple-600'
                     }`} />
-                    <span className={`text-sm font-extrabold ${
+                    <span className={`text-xs font-extrabold ${
                       op === 'bKash' ? 'text-pink-600' :
                       op === 'Nagad' ? 'text-orange-500' :
                       'text-purple-700'
@@ -459,12 +602,12 @@ export function MfsLedger() {
                   <button
                     type="button"
                     onClick={(e) => openAdjustFor(op, e)}
-                    className="text-[11px] text-gray-400 hover:text-gray-700 underline font-medium cursor-pointer"
+                    className="text-[10px] text-gray-400 hover:text-gray-700 underline font-medium cursor-pointer"
                   >
                     Adjust
                   </button>
                 </div>
-                <div className="text-xl font-black text-gray-900">
+                <div className="text-lg font-black text-gray-900">
                   Tk {bal.toLocaleString()}
                 </div>
               </div>
@@ -472,12 +615,9 @@ export function MfsLedger() {
           })}
         </div>
 
-        {/* TRANSACTION TYPE Section */}
-        <div className="space-y-3">
-          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-            TRANSACTION TYPE
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Transaction Type Buttons */}
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {TRANSACTION_TYPES.map(t => {
               const isSelected = type === t.id;
               return (
@@ -485,162 +625,278 @@ export function MfsLedger() {
                   key={t.id}
                   type="button"
                   onClick={() => handleTypeSelect(t.id)}
-                  className={`py-3 px-4 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  className={`py-2 px-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                     isSelected
                       ? 'bg-[#084b3e] text-white border-[#084b3e] shadow-xs'
                       : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
                   }`}
                 >
-                  <span className={`w-4 h-4 rounded-full flex items-center justify-center border ${
-                    isSelected ? 'border-white bg-[#084b3e]' : 'border-gray-300 bg-white'
-                  }`}>
-                    {isSelected && <span className="w-2 h-2 rounded-full bg-white" />}
-                  </span>
                   <span>{t.label}</span>
                 </button>
               );
             })}
           </div>
 
-          {/* Account Effect Indicator Row */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 text-xs">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-gray-500">Account Effect:</span>
-              <span className={`px-2.5 py-1 rounded-md font-bold text-xs ${
+          {/* Quick Balance Effect (Minimal) */}
+          {parsedAmt > 0 && (
+            <div className="flex items-center gap-2 text-xs pt-0.5 text-gray-500 flex-wrap">
+              <span className="font-semibold text-[11px] text-gray-400">Effect:</span>
+              <span className={`px-2 py-0.5 rounded font-bold text-[11px] ${
                 cashChange <= 0 
                   ? 'bg-rose-50 text-rose-600 border border-rose-200' 
                   : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
               }`}>
                 Cash: {cashChange >= 0 ? `+${cashChange}` : cashChange} Tk
               </span>
-              <span className={`px-2.5 py-1 rounded-md font-bold text-xs ${
+              <span className={`px-2 py-0.5 rounded font-bold text-[11px] ${
                 walletChange >= 0 
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                   : 'bg-rose-50 text-rose-600 border border-rose-200'
               }`}>
-                {operator} Wallet: {walletChange >= 0 ? `+${walletChange}` : walletChange} Tk
+                {operator}: {walletChange >= 0 ? `+${walletChange}` : walletChange} Tk
               </span>
+              {isDue && calculatedDueAmount > 0 && (
+                <span className="px-2 py-0.5 rounded font-bold text-[11px] bg-amber-50 text-amber-800 border border-amber-200">
+                  Due: Tk {calculatedDueAmount.toLocaleString()}
+                </span>
+              )}
             </div>
-            <div className="text-gray-400 font-medium text-xs">
-              {effectDescription}
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* TRANSACTION DETAILS Gray Inner Box */}
-        <div className="bg-gray-50/70 border border-gray-200/80 rounded-2xl p-5 sm:p-6 space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold text-gray-700 uppercase tracking-wider">
-            <FileText size={16} className="text-gray-500" />
-            <span>TRANSACTION DETAILS</span>
-          </div>
-
-          {/* Number Field */}
+        {/* Input Fields Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Phone Number */}
           <div>
-            <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1.5">
-              NUMBER (OPTIONAL)
+            <label className="block text-xs font-semibold text-gray-600 mb-1">
+              Phone / Number
             </label>
             <input
               type="tel"
-              placeholder="e.g. 017XXXXXXXX"
+              placeholder="017XXXXXXXX"
               value={recipientNumber}
               onChange={(e) => setRecipientNumber(e.target.value)}
-              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-900 outline-none focus:border-[#084b3e]"
+              className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 outline-none focus:bg-white focus:border-[#084b3e] transition-all"
             />
           </div>
 
-          {/* Amount, Charge, Profit 3-Column Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1.5">
-                AMOUNT (TK) *
-              </label>
-              <input
-                type="number"
-                step="any"
-                required
-                placeholder="TK 0.00"
-                value={amount}
-                onChange={(e) => handleAmountChange(e.target.value)}
-                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-900 outline-none focus:border-[#084b3e]"
-              />
-            </div>
+          {/* Amount */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">
+              Amount (Tk) *
+            </label>
+            <input
+              type="number"
+              step="any"
+              required
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => handleAmountChange(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-900 outline-none focus:bg-white focus:border-[#084b3e] transition-all"
+            />
+          </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider">
-                  CHARGE (TK)
+          {/* Charge */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-gray-600">
+                Charge (Tk)
+              </label>
+              {type === 'Cash-Out' && (
+                <div className="flex items-center gap-1">
+                  {[
+                    { id: 'rate_20', label: '20' },
+                    { id: 'rate_185', label: '18.5' },
+                  ].map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleCashoutPresetSelect(p.id as CashoutPreset)}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                        cashoutPreset === p.id
+                          ? 'bg-[#084b3e] text-white border-[#084b3e]'
+                          : 'bg-white text-gray-500 border-gray-200'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input
+              type="number"
+              step="any"
+              placeholder="0.00"
+              value={charge}
+              onChange={(e) => handleChargeChange(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-rose-50/40 border border-rose-200 rounded-xl text-sm font-bold text-rose-700 outline-none focus:bg-white focus:border-rose-400 transition-all"
+            />
+          </div>
+
+          {/* Profit */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">
+              Profit (Tk)
+            </label>
+            <input
+              type="number"
+              step="any"
+              placeholder="0.00"
+              value={profit}
+              onChange={(e) => setProfit(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-emerald-50/40 border border-emerald-200 rounded-xl text-sm font-bold text-emerald-800 outline-none focus:bg-white focus:border-emerald-400 transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Note field */}
+        <div>
+          <input
+            type="text"
+            placeholder="Add note or remarks (optional)..."
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700 outline-none focus:bg-white focus:border-[#084b3e] transition-all"
+          />
+        </div>
+
+        {/* Customer Due Section (Simple & Clean) */}
+        <div className={`p-3.5 rounded-xl border transition-all ${
+          isDue 
+            ? 'bg-amber-50/60 border-amber-300 ring-2 ring-amber-400/20 shadow-xs' 
+            : 'bg-gray-50/40 border-gray-200 hover:border-gray-300'
+        }`}>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isDue}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setIsDue(checked);
+                  if (checked && !paidAmountInput) {
+                    setPaidAmountInput('0');
+                  }
+                }}
+                className="w-4 h-4 rounded text-[#084b3e] focus:ring-[#084b3e] border-gray-300 accent-[#084b3e] cursor-pointer"
+              />
+              <span className="font-bold text-xs sm:text-sm text-gray-900">
+                Customer Due (Credit)
+              </span>
+            </label>
+
+            {isDue && (
+              <span className="text-xs font-black text-amber-900 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                Due: Tk {calculatedDueAmount.toLocaleString()}
+              </span>
+            )}
+          </div>
+
+          {isDue && (
+            <div className="mt-3 pt-3 border-t border-amber-200/70 grid grid-cols-1 sm:grid-cols-3 gap-3 animate-fadeIn">
+              {/* Customer Name */}
+              <div className="relative">
+                <label className="block text-[11px] font-medium text-gray-700 mb-1">
+                  Customer Name *
                 </label>
-                {type === 'Cash-Out' && (
-                  <div className="flex items-center gap-1">
-                    {[
-                      { id: 'rate_20', label: '20' },
-                      { id: 'rate_185', label: '18.5' },
-                    ].map(p => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => handleCashoutPresetSelect(p.id as CashoutPreset)}
-                        className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                          cashoutPreset === p.id
-                            ? 'bg-[#084b3e] text-white border-[#084b3e]'
-                            : 'bg-white text-gray-500 border-gray-200'
-                        }`}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Enter or select customer..."
+                    value={customerName}
+                    onFocus={() => setShowCustomerDropdown(true)}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      setShowCustomerDropdown(true);
+                    }}
+                    className="w-full pl-8 pr-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-bold text-gray-900 outline-none focus:border-[#084b3e]"
+                  />
+                  <User size={14} className="absolute left-2.5 top-2.5 text-amber-700 pointer-events-none" />
+                </div>
+
+                {showCustomerDropdown && filteredCustomerSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 max-h-44 overflow-y-auto divide-y divide-gray-100">
+                    {filteredCustomerSuggestions.map(cust => (
+                      <div
+                        key={cust.id}
+                        onClick={() => selectCustomer(cust)}
+                        className="p-2 hover:bg-emerald-50 cursor-pointer flex items-center justify-between text-xs"
                       >
-                        {p.label}
-                      </button>
+                        <span className="font-semibold text-gray-900">{cust.name}</span>
+                        <span className="text-gray-400 font-mono text-[11px]">{cust.phone || 'No phone'}</span>
+                      </div>
                     ))}
                   </div>
                 )}
               </div>
-              <input
-                type="number"
-                step="any"
-                placeholder="0.00"
-                value={charge}
-                onChange={(e) => handleChargeChange(e.target.value)}
-                className="w-full px-4 py-3 bg-rose-50/50 border border-rose-200/80 rounded-xl text-sm font-bold text-rose-700 outline-none focus:border-rose-400"
-              />
-            </div>
 
-            <div>
-              <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1.5">
-                PROFIT (TK)
-              </label>
-              <input
-                type="number"
-                step="any"
-                placeholder="0.00"
-                value={profit}
-                onChange={(e) => setProfit(e.target.value)}
-                className="w-full px-4 py-3 bg-emerald-50/50 border border-emerald-200/80 rounded-xl text-sm font-bold text-emerald-800 outline-none focus:border-emerald-400"
-              />
-            </div>
-          </div>
+              {/* Customer Phone */}
+              <div>
+                <label className="block text-[11px] font-medium text-gray-700 mb-1">
+                  Customer Phone
+                </label>
+                <input
+                  type="tel"
+                  placeholder="01XXXXXXXXX"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-medium text-gray-900 outline-none focus:border-[#084b3e]"
+                />
+              </div>
 
-          {/* Note Field */}
-          <div>
-            <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1.5">
-              NOTE (OPTIONAL)
-            </label>
-            <input
-              type="text"
-              placeholder="Any remarks..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-900 outline-none focus:border-[#084b3e]"
-            />
-          </div>
+              {/* Paid Cash Now with Quick Options */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-medium text-gray-700">
+                    Paid Cash Now (Tk)
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPaidAmountInput('0')}
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 cursor-pointer"
+                    >
+                      All Due
+                    </button>
+                    {parsedAmt > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setPaidAmountInput(String(Math.floor(parsedAmt / 2)))}
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 cursor-pointer"
+                      >
+                        Half
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  max={amount || '0'}
+                  placeholder="0.00"
+                  value={paidAmountInput}
+                  onChange={(e) => setPaidAmountInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-bold text-gray-900 outline-none focus:border-[#084b3e]"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Save Record Button at bottom right */}
-        <div className="flex justify-end pt-2">
+        {/* Submit Button */}
+        <div className="flex justify-end pt-1">
           <button
             type="button"
             onClick={handleSubmit}
-            className="w-full sm:w-auto bg-[#084b3e] hover:bg-[#0c5e4e] text-white px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition-colors text-sm cursor-pointer"
+            className="w-full sm:w-auto bg-[#084b3e] hover:bg-[#0c5e4e] text-white px-6 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-xs transition-colors text-sm cursor-pointer"
           >
-            <CheckCircle2 size={18} />
-            <span>Save Record</span>
+            <CheckCircle2 size={16} />
+            <span>Save Transaction</span>
+            <kbd className="hidden sm:inline-block px-1.5 py-0.5 bg-black/20 text-emerald-100 rounded text-[11px] font-mono font-normal">
+              Ctrl + Enter
+            </kbd>
           </button>
         </div>
       </div>
@@ -676,6 +932,7 @@ export function MfsLedger() {
             className="px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none shadow-xs cursor-pointer text-xs sm:text-sm"
           >
             <option value="all">All Types</option>
+            <option value="due_only">Dues Only</option>
             <option value="Cash-Out">Cash-Out</option>
             <option value="Cash-In">Cash-In</option>
             <option value="Recharge">Recharge</option>
@@ -741,10 +998,20 @@ export function MfsLedger() {
                               <Smartphone size={16} />
                             </div>
                             <div className="min-w-0">
-                              <div className="font-bold text-gray-900 group-hover:text-[#084b3e] transition-colors">
-                                {tx.operator} {tx.type}
+                              <div className="font-bold text-gray-900 group-hover:text-[#084b3e] transition-colors flex items-center gap-2">
+                                <span>{tx.operator} {tx.type}</span>
+                                {tx.isDue && (
+                                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                    Due: Tk {(tx.dueAmount || 0).toLocaleString()}
+                                  </span>
+                                )}
                               </div>
-                              <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-0.5">
+                              <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-0.5 flex-wrap">
+                                {tx.customerName && (
+                                  <span className="font-semibold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded text-[11px]">
+                                    {tx.customerName}
+                                  </span>
+                                )}
                                 {tx.recipientNumber && (
                                   <span className="font-semibold text-gray-600 font-mono">
                                     {tx.recipientNumber}
@@ -771,7 +1038,7 @@ export function MfsLedger() {
 
                         {/* Type & Method */}
                         <td className="py-4 px-4">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
                               isCashOut ? 'bg-emerald-100 text-emerald-800' :
                               isCashIn ? 'bg-sky-100 text-sky-800' :
@@ -1083,6 +1350,31 @@ export function MfsLedger() {
                   <span className="font-bold text-gray-400 uppercase">Charge / Fee</span>
                   <span className="font-extrabold text-gray-900 font-mono">Tk {tx.charge || 0}</span>
                 </div>
+
+                {tx.isDue && (
+                  <>
+                    <div className="flex justify-between py-1 border-b border-amber-200 bg-amber-50/60 px-2 rounded-lg">
+                      <span className="font-bold text-amber-900 uppercase">Customer Due</span>
+                      <span className="font-black text-amber-900 font-mono">
+                        Tk {(tx.dueAmount || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-gray-100">
+                      <span className="font-bold text-gray-400 uppercase">Cash Paid</span>
+                      <span className="font-extrabold text-gray-900 font-mono">
+                        Tk {(tx.paidAmount || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    {tx.customerName && (
+                      <div className="flex justify-between py-1 border-b border-gray-100">
+                        <span className="font-bold text-gray-400 uppercase">Customer</span>
+                        <span className="font-extrabold text-gray-900">
+                          {tx.customerName} {tx.customerPhone ? `(${tx.customerPhone})` : ''}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
 
                 <div className="flex justify-between py-1 border-b border-gray-100">
                   <span className="font-bold text-gray-400 uppercase">Wallet Balance After</span>

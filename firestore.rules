@@ -29,7 +29,7 @@ service cloud.firestore {
         && request.resource.data.storeName is string
         && request.resource.data.storeName.size() > 0
         && request.resource.data.storeName.size() <= 200;
-      allow delete: if false; // Disallow profile deletion via client
+      allow delete: if isOwner(userId);
 
       // Sales Subcollection
       match /sales/{saleId} {
@@ -123,7 +123,25 @@ service cloud.firestore {
         allow create, update: if isOwner(userId);
         allow delete: if isOwner(userId);
       }
+
+      // Inventory Subcollection
+      match /inventory/{itemId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.currentStock is number;
+        allow delete: if isOwner(userId);
+      }
+
+      // MFS Closings Subcollection
+      match /mfsClosings/{closingId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.date is string;
+        allow delete: if isOwner(userId);
+      }
     }
 
   }
 }
+

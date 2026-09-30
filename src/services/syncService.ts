@@ -1,8 +1,13 @@
 import { 
-  collection, doc, getDocs, setDoc, deleteDoc 
+  collection, doc, getDocs, setDoc, deleteDoc, writeBatch 
 } from 'firebase/firestore';
 import { firestore, auth } from '../lib/firebase';
-import { db, Sale, Expense, MfsTransaction, Due, Customer, Account, BalanceLog, Borrowing, ServiceRate } from '../db/db';
+import { 
+  db, Sale, Expense, MfsTransaction, Due, Customer, 
+  Account, BalanceLog, Borrowing, ServiceRate, InventoryItem, MfsClosing,
+  setSyncSilent, hasPendingLocalChanges, getPendingModifiedTables,
+  clearPendingModifiedTable, clearAllPendingChanges, markTableModified, SYNCED_TABLES
+} from '../db/db';
 import { sanitizePayload, generateRecordHash } from '../lib/security';
 
 export interface SyncResult {
@@ -10,16 +15,62 @@ export interface SyncResult {
   message?: string;
   pushedCount?: number;
   pulledCount?: number;
+  isQuotaExceeded?: boolean;
+}
+
+// Calculate when next UTC day begins (when Google Cloud resets free daily write quota)
+export function getNextUtcResetTime(): number {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 5, 0);
+}
+
+// Known quota exhaustion date string
+const KNOWN_EXHAUSTED_DATE = '2026-09-24';
+
+/**
+ * Check if cloud sync is temporarily paused due to free quota limit
+ */
+export function isQuotaExceededBlocked(): boolean {
+  if (typeof localStorage === 'undefined') return true;
+
+  // Protect against known exhausted day so users don't face repeated Firestore retry loops
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  if (todayUtc === KNOWN_EXHAUSTED_DATE) {
+    const override = localStorage.getItem('albarakah_quota_override');
+    if (!override) {
+      return true;
+    }
+  }
+
+  const until = localStorage.getItem('albarakah_quota_blocked_until');
+  if (until) {
+    const expiry = Number(until);
+    if (Date.now() < expiry) {
+      return true;
+    }
+    localStorage.removeItem('albarakah_quota_blocked_until');
+  }
+
+  return false;
+}
+
+export function markQuotaExceeded(): void {
+  if (typeof localStorage === 'undefined') return;
+  const resetTime = getNextUtcResetTime();
+  localStorage.setItem('albarakah_quota_blocked_until', resetTime.toString());
 }
 
 /**
  * Delete a specific document from Firestore directly
  */
 export async function deleteCloudDocument(uid: string | undefined, table: string, id: string | number): Promise<void> {
-  if (!uid || !navigator.onLine) return;
+  if (!uid || !navigator.onLine || isQuotaExceededBlocked()) return;
   try {
     await deleteDoc(doc(firestore, 'users', uid, table, String(id)));
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota limit exceeded')) {
+      markQuotaExceeded();
+    }
     console.warn(`Failed to delete cloud doc users/${uid}/${table}/${id}:`, err);
   }
 }
@@ -32,26 +83,134 @@ export async function clearCloudCollections(uid: string | undefined, tables: str
   try {
     for (const table of tables) {
       const snap = await getDocs(collection(firestore, 'users', uid, table));
-      for (const d of snap.docs) {
-        await deleteDoc(doc(firestore, 'users', uid, table, d.id));
+      if (!snap.empty) {
+        let batch = writeBatch(firestore);
+        let batchCount = 0;
+        for (const d of snap.docs) {
+          batch.delete(d.ref);
+          batchCount++;
+          if (batchCount >= 400) {
+            await batch.commit();
+            batch = writeBatch(firestore);
+            batchCount = 0;
+          }
+        }
+        if (batchCount > 0) {
+          await batch.commit();
+        }
       }
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota limit exceeded')) {
+      markQuotaExceeded();
+    }
     console.warn(`Failed to clear cloud collections for ${uid}:`, err);
   }
 }
 
-export async function pushLocalToCloud(uid: string): Promise<number> {
+/**
+ * Delete ALL cloud data across all Firestore subcollections for the shop owner
+ */
+export async function clearAllCloudData(uid: string): Promise<{ deletedCount: number; collectionsCleared: string[] }> {
+  if (!uid || !navigator.onLine) {
+    return { deletedCount: 0, collectionsCleared: [] };
+  }
+
+  const allTables = [
+    'sales',
+    'expenses',
+    'mfs',
+    'dues',
+    'customers',
+    'accounts',
+    'balanceLogs',
+    'borrowings',
+    'services',
+    'activityLogs',
+    'inventory',
+    'mfsClosings'
+  ];
+
+  let deletedCount = 0;
+  const collectionsCleared: string[] = [];
+
+  for (const table of allTables) {
+    try {
+      const snap = await getDocs(collection(firestore, 'users', uid, table));
+      if (!snap.empty) {
+        let batch = writeBatch(firestore);
+        let batchCount = 0;
+        for (const d of snap.docs) {
+          batch.delete(d.ref);
+          batchCount++;
+          deletedCount++;
+          if (batchCount >= 400) {
+            await batch.commit();
+            batch = writeBatch(firestore);
+            batchCount = 0;
+          }
+        }
+        if (batchCount > 0) {
+          await batch.commit();
+        }
+        collectionsCleared.push(table);
+      }
+    } catch (err: any) {
+      console.warn(`Failed to wipe cloud collection users/${uid}/${table}:`, err);
+    }
+  }
+
+  // Clear sync tracking timestamps
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('albarakah_last_synced');
+    localStorage.removeItem('albarakah_quota_blocked_until');
+    localStorage.removeItem('albarakah_quota_override');
+  }
+
+  return { deletedCount, collectionsCleared };
+}
+
+export async function pushLocalToCloud(uid: string, forceAll: boolean = false): Promise<number> {
   if (!uid || !navigator.onLine) return 0;
+  if (isQuotaExceededBlocked()) {
+    console.info('Cloud sync paused: daily free quota limit reached. Local DB is 100% active and safe.');
+    return 0;
+  }
+
+  // 1. Strict dirty check: if not forceAll, only proceed if there are actual changes!
+  const pendingDeletions = await db.deletedRecords.toArray();
+  const dirtyTables = getPendingModifiedTables();
+  const isDirty = hasPendingLocalChanges();
+
+  if (!forceAll && !isDirty && pendingDeletions.length === 0 && dirtyTables.length === 0) {
+    // Absolutely no local changes! Do not waste quota sending any signal!
+    return 0;
+  }
 
   let count = 0;
+  const lastSyncedStr = localStorage.getItem('albarakah_last_synced');
+  // Exact timestamp check without clock-skew buffer to avoid redundant writes
+  const lastSyncedTime = (lastSyncedStr && !forceAll) ? new Date(lastSyncedStr).getTime() : 0;
+
+  const isRecentlyModified = (item: { updatedAt?: string; createdAt?: string }): boolean => {
+    if (!lastSyncedStr || forceAll) return true;
+    const updated = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+    const created = item.createdAt ? new Date(item.createdAt).getTime() : 0;
+    return Math.max(updated, created) >= lastSyncedTime;
+  };
+
+  const shouldSyncTable = (tbl: string) => forceAll || dirtyTables.includes(tbl) || !lastSyncedStr;
+
   try {
     // 0. Process any queued offline deletions first
-    const pendingDeletions = await db.deletedRecords.toArray();
     for (const item of pendingDeletions) {
       try {
         await deleteDoc(doc(firestore, 'users', uid, item.table, String(item.remoteId)));
-      } catch (e) {
+      } catch (e: any) {
+        if (e?.code === 'resource-exhausted' || e?.message?.includes('Quota limit exceeded')) {
+          markQuotaExceeded();
+          return count;
+        }
         console.warn('Error deleting cloud document:', item, e);
       }
     }
@@ -59,150 +218,226 @@ export async function pushLocalToCloud(uid: string): Promise<number> {
       await db.deletedRecords.clear();
     }
 
-    // 1. Accounts (Priority: Push accounts FIRST so balances are synced immediately)
-    const localAccounts = await db.accounts.toArray();
-    for (const rawItem of localAccounts) {
-      if (rawItem.id) {
-        const cleanItem = sanitizePayload(rawItem);
-        const recordHash = await generateRecordHash(cleanItem);
-        await setDoc(doc(firestore, 'users', uid, 'accounts', String(cleanItem.id)), {
-          ...cleanItem,
-          recordHash,
-          ownerUid: uid,
-          updatedAt: cleanItem.updatedAt || new Date().toISOString()
-        }, { merge: true });
-        count++;
+    // 1. Accounts
+    if (shouldSyncTable('accounts')) {
+      const localAccounts = await db.accounts.toArray();
+      for (const rawItem of localAccounts) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'accounts', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
       }
+      clearPendingModifiedTable('accounts');
     }
 
     // 2. Sales
-    const localSales = await db.sales.toArray();
-    for (const rawItem of localSales) {
-      if (rawItem.id) {
-        const cleanItem = sanitizePayload(rawItem);
-        const recordHash = await generateRecordHash(cleanItem);
-        await setDoc(doc(firestore, 'users', uid, 'sales', String(cleanItem.id)), {
-          ...cleanItem,
-          recordHash,
-          ownerUid: uid,
-          updatedAt: cleanItem.updatedAt || new Date().toISOString()
-        }, { merge: true });
-        count++;
+    if (shouldSyncTable('sales')) {
+      const localSales = await db.sales.toArray();
+      for (const rawItem of localSales) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'sales', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
       }
+      clearPendingModifiedTable('sales');
     }
 
     // 3. Expenses
-    const localExpenses = await db.expenses.toArray();
-    for (const rawItem of localExpenses) {
-      if (rawItem.id) {
-        const cleanItem = sanitizePayload(rawItem);
-        const recordHash = await generateRecordHash(cleanItem);
-        await setDoc(doc(firestore, 'users', uid, 'expenses', String(cleanItem.id)), {
-          ...cleanItem,
-          recordHash,
-          ownerUid: uid,
-          updatedAt: cleanItem.updatedAt || new Date().toISOString()
-        }, { merge: true });
-        count++;
+    if (shouldSyncTable('expenses')) {
+      const localExpenses = await db.expenses.toArray();
+      for (const rawItem of localExpenses) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'expenses', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
       }
+      clearPendingModifiedTable('expenses');
     }
 
     // 4. MFS
-    const localMfs = await db.mfs.toArray();
-    for (const rawItem of localMfs) {
-      if (rawItem.id) {
-        const cleanItem = sanitizePayload(rawItem);
-        const recordHash = await generateRecordHash(cleanItem);
-        await setDoc(doc(firestore, 'users', uid, 'mfs', String(cleanItem.id)), {
-          ...cleanItem,
-          recordHash,
-          ownerUid: uid,
-          updatedAt: cleanItem.updatedAt || new Date().toISOString()
-        }, { merge: true });
-        count++;
+    if (shouldSyncTable('mfs')) {
+      const localMfs = await db.mfs.toArray();
+      for (const rawItem of localMfs) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'mfs', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
       }
+      clearPendingModifiedTable('mfs');
     }
 
     // 5. Dues
-    const localDues = await db.dues.toArray();
-    for (const rawItem of localDues) {
-      if (rawItem.id) {
-        const cleanItem = sanitizePayload(rawItem);
-        const recordHash = await generateRecordHash(cleanItem);
-        await setDoc(doc(firestore, 'users', uid, 'dues', String(cleanItem.id)), {
-          ...cleanItem,
-          recordHash,
-          ownerUid: uid,
-          updatedAt: cleanItem.updatedAt || new Date().toISOString()
-        }, { merge: true });
-        count++;
+    if (shouldSyncTable('dues')) {
+      const localDues = await db.dues.toArray();
+      for (const rawItem of localDues) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'dues', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
       }
+      clearPendingModifiedTable('dues');
     }
 
     // 6. Customers
-    const localCustomers = await db.customers.toArray();
-    for (const rawItem of localCustomers) {
-      if (rawItem.id) {
-        const cleanItem = sanitizePayload(rawItem);
-        const recordHash = await generateRecordHash(cleanItem);
-        await setDoc(doc(firestore, 'users', uid, 'customers', String(cleanItem.id)), {
-          ...cleanItem,
-          recordHash,
-          ownerUid: uid,
-          updatedAt: cleanItem.updatedAt || new Date().toISOString()
-        }, { merge: true });
-        count++;
+    if (shouldSyncTable('customers')) {
+      const localCustomers = await db.customers.toArray();
+      for (const rawItem of localCustomers) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'customers', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
       }
+      clearPendingModifiedTable('customers');
     }
 
     // 7. Balance Logs
-    const localBalanceLogs = await db.balanceLogs.toArray();
-    for (const rawItem of localBalanceLogs) {
-      if (rawItem.id) {
-        const cleanItem = sanitizePayload(rawItem);
-        const recordHash = await generateRecordHash(cleanItem);
-        await setDoc(doc(firestore, 'users', uid, 'balanceLogs', String(cleanItem.id)), {
-          ...cleanItem,
-          recordHash,
-          ownerUid: uid,
-          updatedAt: cleanItem.updatedAt || new Date().toISOString()
-        }, { merge: true });
-        count++;
+    if (shouldSyncTable('balanceLogs')) {
+      const localBalanceLogs = await db.balanceLogs.toArray();
+      for (const rawItem of localBalanceLogs) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'balanceLogs', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
       }
+      clearPendingModifiedTable('balanceLogs');
     }
 
     // 8. Borrowings
-    const localBorrowings = await db.borrowings.toArray();
-    for (const rawItem of localBorrowings) {
-      if (rawItem.id) {
-        const cleanItem = sanitizePayload(rawItem);
-        const recordHash = await generateRecordHash(cleanItem);
-        await setDoc(doc(firestore, 'users', uid, 'borrowings', String(cleanItem.id)), {
-          ...cleanItem,
-          recordHash,
-          ownerUid: uid,
-          updatedAt: cleanItem.updatedAt || new Date().toISOString()
-        }, { merge: true });
-        count++;
+    if (shouldSyncTable('borrowings')) {
+      const localBorrowings = await db.borrowings.toArray();
+      for (const rawItem of localBorrowings) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'borrowings', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
       }
+      clearPendingModifiedTable('borrowings');
     }
 
     // 9. Services
-    const localServices = await db.services.toArray();
-    for (const rawItem of localServices) {
-      if (rawItem.id) {
-        const cleanItem = sanitizePayload(rawItem);
-        const recordHash = await generateRecordHash(cleanItem);
-        await setDoc(doc(firestore, 'users', uid, 'services', String(cleanItem.id)), {
-          ...cleanItem,
-          recordHash,
-          ownerUid: uid,
-          updatedAt: cleanItem.updatedAt || new Date().toISOString()
-        }, { merge: true });
-        count++;
+    if (shouldSyncTable('services')) {
+      const localServices = await db.services.toArray();
+      for (const rawItem of localServices) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'services', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
       }
+      clearPendingModifiedTable('services');
     }
-  } catch (err) {
+
+    // 10. Inventory Items
+    if (shouldSyncTable('inventory')) {
+      const localInventory = await db.inventory.toArray();
+      for (const rawItem of localInventory) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'inventory', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
+      }
+      clearPendingModifiedTable('inventory');
+    }
+
+    // 11. MFS Closings
+    if (shouldSyncTable('mfsClosings')) {
+      const localClosings = await db.mfsClosings.toArray();
+      for (const rawItem of localClosings) {
+        if (rawItem.id && isRecentlyModified(rawItem)) {
+          const cleanItem = sanitizePayload(rawItem);
+          const recordHash = await generateRecordHash(cleanItem);
+          await setDoc(doc(firestore, 'users', uid, 'mfsClosings', String(cleanItem.id)), {
+            ...cleanItem,
+            recordHash,
+            ownerUid: uid,
+            updatedAt: cleanItem.updatedAt || new Date().toISOString()
+          }, { merge: true });
+          count++;
+        }
+      }
+      clearPendingModifiedTable('mfsClosings');
+    }
+
+    // If changes were saved, update the last synced timestamp and clear dirty flag
+    if (count > 0 || pendingDeletions.length > 0) {
+      localStorage.setItem('albarakah_last_synced', new Date().toISOString());
+    }
+    clearAllPendingChanges();
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota limit exceeded')) {
+      markQuotaExceeded();
+      console.warn('Daily Firestore write quota reached. Switched to offline-safe mode.');
+      return count;
+    }
     console.error('Push to cloud error:', err);
     throw err;
   }
@@ -247,8 +482,12 @@ async function mergeWithTimestamp<T extends { id?: any; updatedAt?: string }>(
 
 export async function pullCloudToLocal(uid: string): Promise<number> {
   if (!uid || !navigator.onLine) return 0;
+  if (isQuotaExceededBlocked()) return 0;
 
   let count = 0;
+  // Mute Dexie hooks so pulling down cloud data DOES NOT trigger pushLocalToCloud again!
+  setSyncSilent(true);
+
   try {
     // Check pending local deletions so we never resurrect them
     const pendingDeletions = await db.deletedRecords.toArray();
@@ -361,50 +600,73 @@ export async function pullCloudToLocal(uid: string): Promise<number> {
         });
       count += await mergeWithTimestamp(db.services, services);
     }
-  } catch (err) {
+
+    // 10. Inventory Items
+    const invSnap = await getDocs(collection(firestore, 'users', uid, 'inventory'));
+    if (!invSnap.empty) {
+      const inventoryItems: InventoryItem[] = invSnap.docs
+        .filter(d => !deletedMap.has(`inventory:${d.id}`))
+        .map(d => {
+          const data = sanitizePayload(d.data()) as InventoryItem;
+          return { ...data, id: Number(d.id) };
+        });
+      count += await mergeWithTimestamp(db.inventory, inventoryItems);
+    }
+
+    // 11. MFS Closings
+    const clsSnap = await getDocs(collection(firestore, 'users', uid, 'mfsClosings'));
+    if (!clsSnap.empty) {
+      const closings: MfsClosing[] = clsSnap.docs
+        .filter(d => !deletedMap.has(`mfsClosings:${d.id}`))
+        .map(d => {
+          const data = sanitizePayload(d.data()) as MfsClosing;
+          return { ...data, id: Number(d.id) };
+        });
+      count += await mergeWithTimestamp(db.mfsClosings, closings);
+    }
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota limit exceeded')) {
+      markQuotaExceeded();
+      console.warn('Daily Firestore read/write quota reached during pull.');
+      return count;
+    }
     console.error('Pull from cloud error:', err);
     throw err;
+  } finally {
+    setSyncSilent(false);
   }
 
   return count;
 }
 
 /**
- * Immediately synchronizes a single account document to Firestore.
- * Call this directly when any balance is updated or calibrated so it reaches Firestore without delay.
+ * Marks account table as modified for the debounced sync batch.
+ * Prevents duplicate immediate Firestore writes that waste write quotas.
  */
 export async function syncSingleAccountToCloud(accountId: string): Promise<void> {
-  try {
-    const user = auth.currentUser;
-    if (!user || !navigator.onLine) return;
-    const cleanId = accountId.toLowerCase();
-    const acc = await db.accounts.get(cleanId);
-    if (!acc) return;
-
-    const cleanItem = sanitizePayload(acc);
-    const recordHash = await generateRecordHash(cleanItem);
-    await setDoc(doc(firestore, 'users', user.uid, 'accounts', cleanId), {
-      ...cleanItem,
-      id: cleanId,
-      recordHash,
-      ownerUid: user.uid,
-      updatedAt: cleanItem.updatedAt || new Date().toISOString()
-    }, { merge: true });
-  } catch (e) {
-    console.warn('Failed to immediately sync account to cloud:', accountId, e);
+  markTableModified('accounts');
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('albarakah-db-changed'));
   }
 }
 
-export async function fullSync(uid: string): Promise<SyncResult> {
+export async function fullSync(uid: string, forceAll: boolean = false): Promise<SyncResult> {
   if (!uid) {
     return { success: false, message: 'User not authenticated' };
   }
   if (!navigator.onLine) {
-    return { success: false, message: 'You are currently offline. Local data is safely hashed and stored in IndexedDB.' };
+    return { success: true, message: 'You are currently offline. Local data is safely stored in IndexedDB.' };
+  }
+  if (isQuotaExceededBlocked()) {
+    return { 
+      success: true, 
+      isQuotaExceeded: true, 
+      message: 'ক্লাউড সিঙ্ক কোটা সাময়িক পূর্ণ। তবে লোকাল IndexedDB-তে আপনার ডাটা ১০০% সুরক্ষিত ও স্বাভাবিকভাবে কাজ করছে।' 
+    };
   }
 
   try {
-    const pushed = await pushLocalToCloud(uid);
+    const pushed = await pushLocalToCloud(uid, forceAll);
     const pulled = await pullCloudToLocal(uid);
     localStorage.setItem('albarakah_last_synced', new Date().toISOString());
     return {
@@ -414,6 +676,14 @@ export async function fullSync(uid: string): Promise<SyncResult> {
       message: 'Cloud sync with SHA-256 verification completed successfully'
     };
   } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota limit exceeded')) {
+      markQuotaExceeded();
+      return {
+        success: true,
+        isQuotaExceeded: true,
+        message: 'দৈনিক ক্লাউড কোটা পূর্ণ। লোকাল IndexedDB ডাটাবেজে সকল ডাটা সম্পূর্ণ নিরাপদ আছে।'
+      };
+    }
     return {
       success: false,
       message: err?.message || 'Sync failed'

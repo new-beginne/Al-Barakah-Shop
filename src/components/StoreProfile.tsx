@@ -1,17 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { AuthModal } from './AuthModal';
 import { 
   Store, Phone, Lock, ArrowLeft, CheckCircle2, AlertCircle, 
-  KeyRound, ShieldCheck, UserCheck, Calendar, LogOut, RefreshCw, Eye, EyeOff, LogIn
+  KeyRound, ShieldCheck, UserCheck, Calendar, LogOut, RefreshCw, 
+  Eye, EyeOff, LogIn, Camera, Upload, Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export function StoreProfile() {
-  const { user, profile, isOnline, syncStatus, lastSynced, updateStorePassword, updateStoreName, logout, triggerSync } = useAuth();
+  const { user, profile, isOnline, syncStatus, lastSynced, updateStorePassword, updateStoreName, updateStorePhoto, logout, triggerSync } = useAuth();
   const navigate = useNavigate();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Profile Photo state
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [photoSuccess, setPhotoSuccess] = useState('');
+  const [photoError, setPhotoError] = useState('');
 
   // Password change state
   const [newPassword, setNewPassword] = useState('');
@@ -31,6 +38,88 @@ export function StoreProfile() {
 
   // Sync state
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Handle Photo Upload
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Please select a valid image file (PNG, JPG, WebP).');
+      setTimeout(() => setPhotoError(''), 4000);
+      return;
+    }
+
+    setPhotoLoading(true);
+    setPhotoError('');
+    setPhotoSuccess('');
+
+    try {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = async () => {
+          try {
+            // Compress/resize to max 256x256 to ensure quick loading and no storage quota issues
+            const canvas = document.createElement('canvas');
+            const maxDim = 256;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > maxDim) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              }
+            } else {
+              if (height > maxDim) {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+              await updateStorePhoto(compressedDataUrl);
+              setPhotoSuccess('Shop profile picture updated successfully!');
+              setTimeout(() => setPhotoSuccess(''), 3500);
+            }
+          } catch (err: any) {
+            setPhotoError('Failed to process image.');
+            setTimeout(() => setPhotoError(''), 4000);
+          } finally {
+            setPhotoLoading(false);
+          }
+        };
+        img.onerror = () => {
+          setPhotoError('Invalid image file.');
+          setPhotoLoading(false);
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setPhotoError('Failed to read image file.');
+      setPhotoLoading(false);
+    }
+  };
+
+  const handleResetPhoto = async () => {
+    setPhotoLoading(true);
+    try {
+      await updateStorePhoto('');
+      setPhotoSuccess('Reset to default logo.');
+      setTimeout(() => setPhotoSuccess(''), 3000);
+    } catch (err: any) {
+      setPhotoError('Failed to reset logo.');
+    } finally {
+      setPhotoLoading(false);
+    }
+  };
 
   // Handle password change
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -144,18 +233,64 @@ export function StoreProfile() {
         )}
       </div>
 
+      {/* Photo Notification Message */}
+      {photoSuccess && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
+          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+          <span>{photoSuccess}</span>
+        </div>
+      )}
+      {photoError && (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
+          <AlertCircle size={16} className="text-red-600 shrink-0" />
+          <span>{photoError}</span>
+        </div>
+      )}
+
       {/* Main Profile Info Card */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
         <div className="bg-[#084b3e] text-white p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-white p-1 border-2 border-emerald-300 shadow-md flex items-center justify-center shrink-0">
-              <img 
-                src="/logo.png?v=2" 
-                alt="Store Logo" 
-                className="w-full h-full object-contain rounded-xl"
-                referrerPolicy="no-referrer"
+            {/* Interactive Shop Profile Avatar */}
+            <div className="relative group shrink-0">
+              <div className="w-16 h-16 rounded-2xl bg-white p-0.5 border-2 border-emerald-300 shadow-md flex items-center justify-center overflow-hidden">
+                <img 
+                  src={profile?.photoURL || '/logo.png?v=2'} 
+                  alt="Shop Logo" 
+                  className="w-full h-full object-cover rounded-xl"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = '/logo.png?v=2';
+                  }}
+                />
+              </div>
+
+              {/* Hover Upload Overlay */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={photoLoading}
+                title="Change Shop Picture"
+                className="absolute inset-0 bg-black/50 hover:bg-black/70 text-white rounded-2xl flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[10px] font-bold"
+              >
+                {photoLoading ? (
+                  <RefreshCw size={16} className="animate-spin" />
+                ) : (
+                  <>
+                    <Camera size={18} />
+                    <span className="mt-0.5">Upload</span>
+                  </>
+                )}
+              </button>
+
+              <input 
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handleImageFileChange}
+                className="hidden"
               />
             </div>
+
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg sm:text-xl font-black text-white tracking-wide">
@@ -169,6 +304,29 @@ export function StoreProfile() {
                 <Phone size={13} className="text-emerald-300" />
                 {profile?.phone ? `+88 ${profile.phone}` : 'No phone number set'}
               </p>
+
+              {/* Quick Photo Actions */}
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-[11px] font-bold bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-lg border border-white/20 transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Upload size={12} />
+                  <span>Upload Picture</span>
+                </button>
+                {profile?.photoURL && (
+                  <button
+                    type="button"
+                    onClick={handleResetPhoto}
+                    className="text-[11px] font-bold text-emerald-200 hover:text-white px-1.5 py-1 transition-colors flex items-center gap-1 cursor-pointer"
+                    title="Reset to default logo"
+                  >
+                    <Trash2 size={11} />
+                    <span>Reset</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -178,7 +336,7 @@ export function StoreProfile() {
               setStoreNameInput(profile?.storeName || '');
               setIsEditingName(!isEditingName);
             }}
-            className="px-3 py-1.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-bold transition-all border border-white/20 self-end sm:self-auto"
+            className="px-3 py-1.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-bold transition-all border border-white/20 self-end sm:self-auto cursor-pointer"
           >
             {isEditingName ? 'Cancel' : 'Edit Name'}
           </button>
@@ -398,11 +556,47 @@ export function StoreProfile() {
           type="button"
           onClick={handleManualSync}
           disabled={isSyncing || !isOnline}
-          className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+          className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
         >
           <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
           {isSyncing ? 'Syncing...' : 'Sync Cloud Now'}
         </button>
+      </div>
+
+      {/* Account Session & Logout Option (Bottom of the page) */}
+      <div className="bg-white rounded-2xl border border-red-100 shadow-xs p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+            <LogOut size={16} className="text-red-500" />
+            <span>Account Session</span>
+          </h4>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {user ? 'You are currently signed in. Sign out to lock this device.' : 'You are in guest/offline mode.'}
+          </p>
+        </div>
+
+        {user ? (
+          <button
+            type="button"
+            onClick={async () => {
+              await logout();
+              navigate('/');
+            }}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+          >
+            <LogOut size={15} />
+            <span>Sign Out / Logout</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsAuthOpen(true)}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+          >
+            <LogIn size={15} />
+            <span>Login with Account</span>
+          </button>
+        )}
       </div>
 
       {/* Auth Modal */}

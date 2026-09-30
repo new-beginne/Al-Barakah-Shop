@@ -51,15 +51,18 @@ export function Customers() {
     dues.forEach(d => {
       const keyPhone = d.phone?.trim();
       const keyName = d.customerName?.trim().toLowerCase();
-      const key = keyPhone || keyName;
-      if (!key) return;
+      if (!keyPhone && !keyName) return;
       
-      const current = map.get(key) || { totalDue: 0, totalPaid: 0, pendingDue: 0, count: 0 };
+      const current = (keyPhone && map.get(keyPhone)) || (keyName && map.get(keyName)) || { 
+        totalDue: 0, totalPaid: 0, pendingDue: 0, count: 0 
+      };
       current.totalDue += d.totalAmount || 0;
       current.totalPaid += d.paidAmount || 0;
       current.pendingDue += Math.max(0, (d.totalAmount || 0) - (d.paidAmount || 0));
       current.count += 1;
-      map.set(key, current);
+
+      if (keyPhone) map.set(keyPhone, current);
+      if (keyName) map.set(keyName, current);
     });
     return map;
   }, [dues]);

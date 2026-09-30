@@ -1,8 +1,8 @@
 import { db } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from './accountService';
-import { logCustomRangeDelete, logAllDataReset } from './activityLogService';
+import { logCustomRangeDelete, logAllDataReset, logCompleteMasterWipe } from './activityLogService';
 import { auth } from '../lib/firebase';
-import { deleteCloudDocument, clearCloudCollections } from './syncService';
+import { deleteCloudDocument, clearCloudCollections, clearAllCloudData } from './syncService';
 
 export interface RangeDeleteOptions {
   startDate: string;
@@ -118,7 +118,7 @@ export async function executeCustomRangeDelete(options: RangeDeleteOptions): Pro
   }
 
   // Execute deletion in a transaction
-  await db.transaction('rw', [db.sales, db.dues, db.expenses, db.mfs, db.borrowings, db.accounts, db.balanceLogs, db.activityLogs], async () => {
+  await db.transaction('rw', [db.sales, db.dues, db.expenses, db.mfs, db.borrowings, db.accounts, db.balanceLogs, db.activityLogs, db.deletedRecords], async () => {
     // 1. Sales
     if (salesToDelete.length > 0) {
       const salesIds = salesToDelete.map(s => s.id!).filter(Boolean);
@@ -204,15 +204,17 @@ export async function executeCustomRangeDelete(options: RangeDeleteOptions): Pro
     }
   });
 
-  // Also remove from cloud if user is online & logged in
+  // Also remove from cloud if user is online & logged in (scheduled outside transaction)
   const uid = auth.currentUser?.uid;
   if (uid && navigator.onLine) {
-    (async () => {
-      for (const s of salesToDelete) if (s.id) await deleteCloudDocument(uid, 'sales', s.id);
-      for (const e of expensesToDelete) if (e.id) await deleteCloudDocument(uid, 'expenses', e.id);
-      for (const m of mfsToDelete) if (m.id) await deleteCloudDocument(uid, 'mfs', m.id);
-      for (const b of borrowingsToDelete) if (b.id) await deleteCloudDocument(uid, 'borrowings', b.id);
-    })().catch(err => console.warn('Cloud sync for range delete error:', err));
+    setTimeout(() => {
+      (async () => {
+        for (const s of salesToDelete) if (s.id) await deleteCloudDocument(uid, 'sales', s.id);
+        for (const e of expensesToDelete) if (e.id) await deleteCloudDocument(uid, 'expenses', e.id);
+        for (const m of mfsToDelete) if (m.id) await deleteCloudDocument(uid, 'mfs', m.id);
+        for (const b of borrowingsToDelete) if (b.id) await deleteCloudDocument(uid, 'borrowings', b.id);
+      })().catch(err => console.warn('Cloud sync for range delete error:', err));
+    }, 0);
   }
 
   const counts = {
@@ -280,7 +282,8 @@ export async function executeAllDataReset(options: ResetOptions): Promise<{
     db.expenseServices,
     db.accounts,
     db.balanceLogs,
-    db.activityLogs
+    db.activityLogs,
+    db.deletedRecords
   ], async () => {
     // Clear core transaction tables
     await db.sales.clear();
@@ -334,4 +337,159 @@ export async function executeAllDataReset(options: ResetOptions): Promise<{
   });
 
   return { counts };
+}
+
+export interface MasterWipeOptions {
+  wipeCustomers: boolean;
+  wipePresets: boolean;
+}
+
+export interface MasterWipeResult {
+  localCounts: {
+    sales: number;
+    expenses: number;
+    mfs: number;
+    dues: number;
+    customers: number;
+    borrowings: number;
+    inventory: number;
+    mfsClosings: number;
+    activityLogs: number;
+    total: number;
+  };
+  cloudResult: {
+    deletedDocs: number;
+    collections: string[];
+    isOnline: boolean;
+    userEmail: string | null;
+  };
+}
+
+/**
+ * Complete Master Wipe: Removes 100% of all data from both local IndexedDB and Firebase Firestore cloud database.
+ */
+export async function executeCompleteMasterWipe(options: MasterWipeOptions): Promise<MasterWipeResult> {
+  const [
+    salesCount,
+    expCount,
+    mfsCount,
+    duesCount,
+    custCount,
+    borCount,
+    invCount,
+    clsCount,
+    logCount
+  ] = await Promise.all([
+    db.sales.count(),
+    db.expenses.count(),
+    db.mfs.count(),
+    db.dues.count(),
+    db.customers.count(),
+    db.borrowings.count(),
+    db.inventory.count(),
+    db.mfsClosings.count(),
+    db.activityLogs.count(),
+  ]);
+
+  const localCounts = {
+    sales: salesCount,
+    expenses: expCount,
+    mfs: mfsCount,
+    dues: duesCount,
+    customers: options.wipeCustomers ? custCount : 0,
+    borrowings: borCount,
+    inventory: invCount,
+    mfsClosings: clsCount,
+    activityLogs: logCount,
+    total: salesCount + expCount + mfsCount + duesCount + borCount + invCount + clsCount + (options.wipeCustomers ? custCount : 0),
+  };
+
+  // 1. Transactionally wipe all local IndexedDB tables
+  await db.transaction('rw', [
+    db.sales,
+    db.expenses,
+    db.mfs,
+    db.dues,
+    db.borrowings,
+    db.customers,
+    db.services,
+    db.expenseServices,
+    db.accounts,
+    db.balanceLogs,
+    db.activityLogs,
+    db.inventory,
+    db.mfsClosings,
+    db.deletedRecords
+  ], async () => {
+    await db.sales.clear();
+    await db.expenses.clear();
+    await db.mfs.clear();
+    await db.dues.clear();
+    await db.borrowings.clear();
+    await db.inventory.clear();
+    await db.mfsClosings.clear();
+    await db.balanceLogs.clear();
+    await db.activityLogs.clear();
+    await db.deletedRecords.clear();
+
+    if (options.wipeCustomers) {
+      await db.customers.clear();
+    }
+
+    if (options.wipePresets) {
+      await db.services.clear();
+      await db.expenseServices.clear();
+    }
+
+    // Reset account balances to 0
+    const allAccs = await db.accounts.toArray();
+    for (const acc of allAccs) {
+      await db.accounts.update(acc.id, {
+        balance: 0,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  });
+
+  // 2. Wipe Firebase Cloud database completely
+  const user = auth.currentUser;
+  const uid = user?.uid;
+  const isOnline = navigator.onLine;
+  let cloudDeletedDocs = 0;
+  let clearedCollections: string[] = [];
+
+  if (uid && isOnline) {
+    try {
+      const res = await clearAllCloudData(uid);
+      cloudDeletedDocs = res.deletedCount;
+      clearedCollections = res.collectionsCleared;
+    } catch (err) {
+      console.warn('Error during cloud wipe:', err);
+    }
+  }
+
+  // 3. Clear local storage indicators
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('albarakah_last_synced');
+    localStorage.removeItem('albarakah_quota_blocked_until');
+    localStorage.removeItem('albarakah_quota_override');
+  }
+
+  // 4. Log the wipe event
+  await logCompleteMasterWipe({
+    localTotal: localCounts.total,
+    cloudDocsDeleted: cloudDeletedDocs,
+    userEmail: user?.email || undefined,
+    clearedCollections,
+  });
+
+  return {
+    localCounts,
+    cloudResult: {
+      deletedDocs: cloudDeletedDocs,
+      collections: clearedCollections,
+      isOnline,
+      userEmail: user?.email || null,
+    }
+  };
 }

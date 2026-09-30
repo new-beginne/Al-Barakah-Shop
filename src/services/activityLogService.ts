@@ -213,3 +213,19 @@ export async function logAllDataReset(data: {
     meta: data,
   });
 }
+
+export async function logCompleteMasterWipe(data: {
+  localTotal: number;
+  cloudDocsDeleted: number;
+  userEmail?: string;
+  clearedCollections: string[];
+}) {
+  await recordActivityLog({
+    action: 'RESET',
+    module: 'All Data',
+    title: `Complete All-Data Wipe: Local (${data.localTotal}) & Cloud (${data.cloudDocsDeleted}) Cleared`,
+    details: `Cleaned all IndexedDB local tables + Firebase Cloud database (${data.userEmail || 'Guest / Offline'}). Collections wiped: ${data.clearedCollections.join(', ') || 'All'}`,
+    meta: data,
+  });
+}
+
