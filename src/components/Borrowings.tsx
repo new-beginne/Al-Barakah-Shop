@@ -280,21 +280,31 @@ export function Borrowings() {
   const handleConfirmDelete = async () => {
     if (!deleteTarget?.id) return;
 
-    await db.borrowings.delete(deleteTarget.id);
+    // Calculate un-repaid amount received into account
+    const netRemaining = (deleteTarget.amount || 0) - (deleteTarget.paidAmount || 0);
+    const targetAccount = deleteTarget.receiveAccount;
+
+    await db.transaction('rw', db.borrowings, db.accounts, db.balanceLogs, db.activityLogs, async () => {
+      await db.borrowings.delete(deleteTarget.id!);
+
+      if (targetAccount && targetAccount !== 'none' && netRemaining > 0) {
+        await adjustAccountBalance(targetAccount, -netRemaining);
+      }
+    });
 
     await recordActivityLog({
       action: 'DELETE',
       module: 'Borrowings',
       title: `Deleted borrowing record: ${deleteTarget.lenderName}`,
-      details: `Amount: Tk ${deleteTarget.amount.toLocaleString()}, Repaid: Tk ${deleteTarget.paidAmount.toLocaleString()}`,
-      meta: { borrowingId: deleteTarget.id, lenderName: deleteTarget.lenderName }
+      details: `Amount: Tk ${deleteTarget.amount.toLocaleString()}, Repaid: Tk ${deleteTarget.paidAmount.toLocaleString()}${targetAccount && targetAccount !== 'none' && netRemaining > 0 ? ` (Reversed Tk ${netRemaining.toLocaleString()} from ${getAccountName(targetAccount)})` : ''}`,
+      meta: { borrowingId: deleteTarget.id, lenderName: deleteTarget.lenderName, reversedAmount: netRemaining, account: targetAccount }
     });
 
     if (detailsBorrowingId === deleteTarget.id) {
       setDetailsBorrowingId(null);
     }
     setDeleteTarget(null);
-    setSuccessMsg('Borrowing record deleted.');
+    setSuccessMsg('Borrowing record deleted and account balance updated.');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 

@@ -63,6 +63,7 @@ export function SalesEntry() {
   const sales = useLiveQuery(() => db.sales.orderBy('id').reverse().toArray()) || [];
   const services = useLiveQuery(() => db.services.toArray()) || [];
   const customers = useLiveQuery(() => db.customers.toArray()) || [];
+  const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
 
   // Today metrics
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -305,7 +306,7 @@ export function SalesEntry() {
         const remainingProfit = Math.max(0, currentProfit - paidProfit);
         const remainingCost = Math.max(0, (parseFloat(cost) || 0) - paidCost);
 
-        const saleId = await db.transaction('rw', db.sales, db.dues, db.accounts, db.balanceLogs, async () => {
+        const saleId = await db.transaction('rw', db.sales, db.dues, db.accounts, db.balanceLogs, db.inventory, async () => {
           const id = await db.sales.add({
             date,
             time,
@@ -321,7 +322,7 @@ export function SalesEntry() {
             customerName: customerName.trim() || undefined,
             customerPhone: customerPhone.trim() || undefined,
             paidAmount: calculatedPaidAmount,
-            dueAmount: 0,
+            dueAmount: calculatedDueAmount,
             quantity: parseInt(quantity) || 1,
             unitPrice: unitPrice ? parseFloat(unitPrice) : undefined,
             unitCost: unitCost ? parseFloat(unitCost) : undefined
@@ -346,6 +347,20 @@ export function SalesEntry() {
           });
 
           await adjustAccountBalance('cash', calculatedPaidAmount);
+
+          // Auto-decrement inventory stock if item matches
+          const qtyToDeduct = parseInt(quantity) || 1;
+          const matchedInv = inventoryItems.find(inv => 
+            inv.name.toLowerCase().trim() === finalServiceName.toLowerCase().trim()
+          );
+          if (matchedInv && matchedInv.id) {
+            const currentStock = Number(matchedInv.currentStock || 0);
+            await db.inventory.update(matchedInv.id, {
+              currentStock: Math.max(0, currentStock - qtyToDeduct),
+              updatedAt: new Date().toISOString()
+            });
+          }
+
           return id;
         });
 
@@ -372,10 +387,24 @@ export function SalesEntry() {
         return;
       } else {
         // Standard 100% paid sale
-        const saleId = await db.transaction('rw', db.sales, db.accounts, db.balanceLogs, async () => {
+        const saleId = await db.transaction('rw', db.sales, db.accounts, db.balanceLogs, db.inventory, async () => {
           const id = await db.sales.add(newSale);
           const accountId = mapPaymentMethodToAccountId(paymentMethod);
           await adjustAccountBalance(accountId, parsedAmount);
+
+          // Auto-decrement inventory stock if item matches
+          const qtyToDeduct = parseInt(quantity) || 1;
+          const matchedInv = inventoryItems.find(inv => 
+            inv.name.toLowerCase().trim() === finalServiceName.toLowerCase().trim()
+          );
+          if (matchedInv && matchedInv.id) {
+            const currentStock = Number(matchedInv.currentStock || 0);
+            await db.inventory.update(matchedInv.id, {
+              currentStock: Math.max(0, currentStock - qtyToDeduct),
+              updatedAt: new Date().toISOString()
+            });
+          }
+
           return id;
         });
 
@@ -404,7 +433,7 @@ export function SalesEntry() {
     if (!deleteTarget || !deleteTarget.id) return;
     try {
       const { id, paymentMethod: pMethod, amount: saleAmount } = deleteTarget;
-      await db.transaction('rw', db.sales, db.dues, db.accounts, db.balanceLogs, db.activityLogs, async () => {
+      await db.transaction('rw', [db.sales, db.dues, db.accounts, db.balanceLogs, db.activityLogs, db.inventory], async () => {
         await db.sales.delete(id);
         if (pMethod !== 'Due') {
           const accountId = mapPaymentMethodToAccountId(pMethod);
@@ -412,16 +441,39 @@ export function SalesEntry() {
         } else if ((deleteTarget.paidAmount || 0) > 0) {
           await adjustAccountBalance('cash', -(deleteTarget.paidAmount || 0));
         }
-        // Clean up associated due if any
-        if (deleteTarget.customerName && (deleteTarget.dueAmount || 0) > 0) {
+
+        // Clean up associated unpaid due if any
+        if (deleteTarget.customerName) {
+          const dueTargetAmt = (deleteTarget.dueAmount && deleteTarget.dueAmount > 0) 
+            ? deleteTarget.dueAmount 
+            : deleteTarget.amount;
+
           const matchingDue = await db.dues
             .where('customerName')
             .equals(deleteTarget.customerName)
-            .filter(d => d.totalAmount === deleteTarget.amount && (!d.date || d.date === deleteTarget.date))
+            .filter(d => 
+              (d.totalAmount === dueTargetAmt || d.totalAmount === deleteTarget.amount || (deleteTarget.dueAmount !== undefined && d.totalAmount === deleteTarget.dueAmount)) &&
+              (!d.date || d.date === deleteTarget.date) &&
+              d.status === 'Unpaid'
+            )
             .first();
+
           if (matchingDue && matchingDue.id) {
             await db.dues.delete(matchingDue.id);
           }
+        }
+
+        // Restore inventory stock if matched
+        const matchedInv = inventoryItems.find(inv => 
+          inv.name.toLowerCase().trim() === deleteTarget.serviceName.toLowerCase().trim()
+        );
+        if (matchedInv && matchedInv.id) {
+          const qtyToRestore = Number(deleteTarget.quantity) || 1;
+          const currentStock = Number(matchedInv.currentStock || 0);
+          await db.inventory.update(matchedInv.id, {
+            currentStock: currentStock + qtyToRestore,
+            updatedAt: new Date().toISOString()
+          });
         }
       });
       await logSaleDelete(deleteTarget);

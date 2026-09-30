@@ -231,35 +231,47 @@ export function Customers() {
               updatedAt: now
             });
 
-            // Calculate proportional cost and profit for this cleared portion
-            const totalDueAmt = d.totalAmount || collectFromThis;
-            const ratio = totalDueAmt > 0 ? (collectFromThis / totalDueAmt) : 1;
-            const costPart = Math.round(((d.cost || 0) * ratio) * 100) / 100;
-            const profitPart = d.profit !== undefined 
-              ? Math.round(((d.profit) * ratio) * 100) / 100 
-              : Math.max(0, collectFromThis - costPart);
+            // If this due was from an MFS transaction, it is a cash reimbursement for wallet balance
+            // NOT a studio sale with 100% profit!
+            const isMfsDue = d.referenceType === 'mfs';
 
-            totalProfitEarned += profitPart;
+            if (!isMfsDue) {
+              // Calculate proportional cost and profit for studio sales
+              const totalDueAmt = d.totalAmount || collectFromThis;
+              const ratio = totalDueAmt > 0 ? (collectFromThis / totalDueAmt) : 1;
+              const costPart = Math.round(((d.cost || 0) * ratio) * 100) / 100;
+              const profitPart = d.profit !== undefined 
+                ? Math.round(((d.profit) * ratio) * 100) / 100 
+                : Math.max(0, collectFromThis - costPart);
 
-            // CRITICAL: When due is cleared, add to sales & profit immediately!
-            await db.sales.add({
-              date: todayDate,
-              time: todayTime,
-              createdAt: now,
-              updatedAt: now,
-              category: d.category || 'Due Collection',
-              serviceName: d.serviceName ? `Due Clear: ${d.serviceName}` : `Due Cleared (${d.customerName})`,
-              amount: collectFromThis,
-              cost: costPart,
-              profit: profitPart,
-              paymentMethod: collectDueMethod,
-              note: `Due cleared (${isFullClear ? 'Full' : 'Partial'}): Tk ${collectFromThis.toLocaleString()} of Tk ${totalDueAmt.toLocaleString()} for ${d.serviceName || 'Service'}${collectDueNote.trim() ? ` - ${collectDueNote.trim()}` : ''}`,
-              customerName: d.customerName,
-              customerPhone: d.phone,
-              paidAmount: collectFromThis,
-              dueAmount: 0,
-              quantity: 1
-            });
+              totalProfitEarned += profitPart;
+
+              // When studio due is cleared, record the sale & profit
+              await db.sales.add({
+                date: todayDate,
+                time: todayTime,
+                createdAt: now,
+                updatedAt: now,
+                category: d.category || 'Due Collection',
+                serviceName: d.serviceName ? `Due Clear: ${d.serviceName}` : `Due Cleared (${d.customerName})`,
+                amount: collectFromThis,
+                cost: costPart,
+                profit: profitPart,
+                paymentMethod: collectDueMethod,
+                note: `Due cleared (${isFullClear ? 'Full' : 'Partial'}): Tk ${collectFromThis.toLocaleString()} of Tk ${totalDueAmt.toLocaleString()} for ${d.serviceName || 'Service'}${collectDueNote.trim() ? ` - ${collectDueNote.trim()}` : ''}`,
+                customerName: d.customerName,
+                customerPhone: d.phone,
+                paidAmount: collectFromThis,
+                dueAmount: 0,
+                quantity: 1
+              });
+            } else {
+              // MFS Due: Add proportional MFS fee profit if any
+              const totalDueAmt = d.totalAmount || collectFromThis;
+              const ratio = totalDueAmt > 0 ? (collectFromThis / totalDueAmt) : 1;
+              const mfsProfitPart = d.profit ? Math.round((d.profit * ratio) * 100) / 100 : 0;
+              totalProfitEarned += mfsProfitPart;
+            }
 
             remainingToCollect -= collectFromThis;
           }
@@ -558,7 +570,12 @@ export function Customers() {
               <AlertTriangle size={28} strokeWidth={2.5} />
             </div>
             <h3 className="font-bold text-xl text-gray-900 mb-2">Delete Customer?</h3>
-            <p className="text-sm text-gray-500 mb-6 font-medium">Remove <span className="font-black text-gray-900">{deleteCustomerTarget.name}</span> and all related data?</p>
+            <p className="text-sm text-gray-500 mb-3 font-medium">Remove <span className="font-black text-gray-900">{deleteCustomerTarget.name}</span> and all related data?</p>
+            {getCustomerDueInfo(deleteCustomerTarget).pendingDue > 0 && (
+              <div className="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold text-left">
+                ⚠️ Warning: This customer has <span className="text-rose-950 font-black">Tk {getCustomerDueInfo(deleteCustomerTarget).pendingDue.toLocaleString()}</span> in unpaid dues which will also be deleted!
+              </div>
+            )}
             <div className="flex gap-3">
               <button onClick={() => setDeleteCustomerTarget(null)} className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors">Cancel</button>
               <button onClick={handleConfirmDelete} className="flex-1 py-3 font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors shadow-sm">Delete</button>

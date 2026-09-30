@@ -24,23 +24,11 @@ export function getNextUtcResetTime(): number {
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 5, 0);
 }
 
-// Known quota exhaustion date string
-const KNOWN_EXHAUSTED_DATE = '2026-09-24';
-
 /**
  * Check if cloud sync is temporarily paused due to free quota limit
  */
 export function isQuotaExceededBlocked(): boolean {
-  if (typeof localStorage === 'undefined') return true;
-
-  // Protect against known exhausted day so users don't face repeated Firestore retry loops
-  const todayUtc = new Date().toISOString().slice(0, 10);
-  if (todayUtc === KNOWN_EXHAUSTED_DATE) {
-    const override = localStorage.getItem('albarakah_quota_override');
-    if (!override) {
-      return true;
-    }
-  }
+  if (typeof localStorage === 'undefined') return false;
 
   const until = localStorage.getItem('albarakah_quota_blocked_until');
   if (until) {

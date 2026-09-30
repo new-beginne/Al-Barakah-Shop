@@ -344,41 +344,51 @@ export function CustomerProfile() {
             Math.abs(s.amount - currentTotal) < 0.01
           );
 
-          const totalDueAmt = currentTotal || payment;
-          const ratio = totalDueAmt > 0 ? (payment / totalDueAmt) : 1;
-          const costPart = Math.round(((d.cost || 0) * ratio) * 100) / 100;
-          const profitPart = d.profit !== undefined 
-            ? Math.round(((d.profit) * ratio) * 100) / 100 
-            : Math.max(0, payment - costPart);
+          const isMfsDue = d.referenceType === 'mfs';
 
-          totalProfitEarned += profitPart;
+          if (!isMfsDue) {
+            const totalDueAmt = currentTotal || payment;
+            const ratio = totalDueAmt > 0 ? (payment / totalDueAmt) : 1;
+            const costPart = Math.round(((d.cost || 0) * ratio) * 100) / 100;
+            const profitPart = d.profit !== undefined 
+              ? Math.round(((d.profit) * ratio) * 100) / 100 
+              : Math.max(0, payment - costPart);
 
-          if (matchingSale && matchingSale.id) {
-            await db.sales.update(matchingSale.id, {
-              paidAmount: newPaid,
-              dueAmount: Math.max(0, currentTotal - newPaid),
-              updatedAt: nowIso
-            });
+            totalProfitEarned += profitPart;
+
+            if (matchingSale && matchingSale.id) {
+              await db.sales.update(matchingSale.id, {
+                paidAmount: newPaid,
+                dueAmount: Math.max(0, currentTotal - newPaid),
+                updatedAt: nowIso
+              });
+            } else {
+              // When due is cleared, record the collected sale & profit
+              await db.sales.add({
+                date: todayDate,
+                time: todayTime,
+                createdAt: nowIso,
+                updatedAt: nowIso,
+                category: d.category || 'Due Collection',
+                serviceName: d.serviceName ? `Due Clear: ${d.serviceName}` : `Due Cleared (${customer.name})`,
+                amount: payment,
+                cost: costPart,
+                profit: profitPart,
+                paymentMethod: collectMethod,
+                note: `Due cleared (${newStatus}): Tk ${payment.toLocaleString()} of Tk ${currentTotal.toLocaleString()} for ${d.serviceName || 'Service'}${collectNote.trim() ? ` - ${collectNote.trim()}` : ''}`,
+                customerName: customer.name,
+                customerPhone: customer.phone,
+                paidAmount: payment,
+                dueAmount: 0,
+                quantity: 1
+              });
+            }
           } else {
-            // CRITICAL: When due is cleared, record the collected sale & profit!
-            await db.sales.add({
-              date: todayDate,
-              time: todayTime,
-              createdAt: nowIso,
-              updatedAt: nowIso,
-              category: d.category || 'Due Collection',
-              serviceName: d.serviceName ? `Due Clear: ${d.serviceName}` : `Due Cleared (${customer.name})`,
-              amount: payment,
-              cost: costPart,
-              profit: profitPart,
-              paymentMethod: collectMethod,
-              note: `Due cleared (${newStatus}): Tk ${payment.toLocaleString()} of Tk ${currentTotal.toLocaleString()} for ${d.serviceName || 'Service'}${collectNote.trim() ? ` - ${collectNote.trim()}` : ''}`,
-              customerName: customer.name,
-              customerPhone: customer.phone,
-              paidAmount: payment,
-              dueAmount: 0,
-              quantity: 1
-            });
+            // MFS Due: account balance is increased, recognize proportional fee profit if any
+            const totalDueAmt = currentTotal || payment;
+            const ratio = totalDueAmt > 0 ? (payment / totalDueAmt) : 1;
+            const mfsProfitPart = d.profit ? Math.round((d.profit * ratio) * 100) / 100 : 0;
+            totalProfitEarned += mfsProfitPart;
           }
 
           remainingToAllocate -= payment;

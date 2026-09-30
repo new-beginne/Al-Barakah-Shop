@@ -101,19 +101,21 @@ export function Dashboard() {
     .reduce((acc, e) => acc + e.amount, 0);
   const mfsCashImpact = todayMfs.reduce((acc, m) => {
     // Cash-Out: Customer receives cash from drawer -> Cash in hand decreases
-    // Cash-In, Recharge, Send Money: Customer gives cash to shop -> Cash in hand increases
+    // Cash-In, Recharge, Send Money: Customer gives cash to shop -> Cash in hand increases (only what was actually paid in cash)
     if (m.type === 'Cash-Out') {
       return acc - m.amount;
     }
     if (m.type === 'Cash-In' || m.type === 'Recharge') {
-      return acc + m.amount;
+      const actualCash = m.isDue ? (m.paidAmount || 0) : m.amount;
+      return acc + actualCash;
     }
     if (
       m.type === 'Send Money' ||
       m.type === 'Send Money (Out)' || 
       m.type === 'Send-Money-Out'
     ) {
-      return acc + (m.amount + (m.charge || 0));
+      const actualCash = m.isDue ? (m.paidAmount || 0) : (m.amount + (m.charge || 0));
+      return acc + actualCash;
     }
     return acc;
   }, 0);
