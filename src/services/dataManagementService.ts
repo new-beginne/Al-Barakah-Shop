@@ -1,6 +1,6 @@
-import { db } from '../db/db';
+import { db, setSyncSilent, clearAllPendingChanges } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from './accountService';
-import { logCustomRangeDelete, logAllDataReset, logCompleteMasterWipe } from './activityLogService';
+import { logCustomRangeDelete, logAllDataReset, logCompleteMasterWipe, recordActivityLog } from './activityLogService';
 import { auth } from '../lib/firebase';
 import { deleteCloudDocument, clearCloudCollections, clearAllCloudData } from './syncService';
 
@@ -344,31 +344,92 @@ export interface MasterWipeOptions {
   wipePresets: boolean;
 }
 
+export interface LocalDataCounts {
+  sales: number;
+  expenses: number;
+  mfs: number;
+  dues: number;
+  customers: number;
+  borrowings: number;
+  inventory: number;
+  mfsClosings: number;
+  activityLogs: number;
+  total: number;
+}
+
+export interface CloudWipeResult {
+  deletedDocs: number;
+  collections: string[];
+  isOnline: boolean;
+  userEmail: string | null;
+}
+
 export interface MasterWipeResult {
-  localCounts: {
-    sales: number;
-    expenses: number;
-    mfs: number;
-    dues: number;
-    customers: number;
-    borrowings: number;
-    inventory: number;
-    mfsClosings: number;
-    activityLogs: number;
-    total: number;
-  };
-  cloudResult: {
-    deletedDocs: number;
-    collections: string[];
-    isOnline: boolean;
-    userEmail: string | null;
+  localCounts: LocalDataCounts;
+  cloudResult: CloudWipeResult;
+}
+
+/**
+ * Clear All Cloud Data ONLY:
+ * Deletes all documents in Firestore for the current user while preserving 100% of local IndexedDB data.
+ */
+export async function executeClearCloudOnly(): Promise<CloudWipeResult> {
+  const user = auth.currentUser;
+  const uid = user?.uid;
+  const isOnline = navigator.onLine;
+
+  if (!uid) {
+    throw new Error('Please login to your Google store account first to clear cloud data.');
+  }
+  if (!isOnline) {
+    throw new Error('You are currently offline. An active internet connection is required to clear cloud data.');
+  }
+
+  let cloudDeletedDocs = 0;
+  let clearedCollections: string[] = [];
+
+  try {
+    const res = await clearAllCloudData(uid);
+    cloudDeletedDocs = res.deletedCount;
+    clearedCollections = res.collectionsCleared;
+  } catch (err: any) {
+    console.error('Error during cloud-only wipe:', err);
+    throw err;
+  }
+
+  // Clear cloud tracking timestamps and dirty flag so local data isn't pushed right back
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('albarakah_last_synced');
+    localStorage.removeItem('albarakah_quota_blocked_until');
+    localStorage.removeItem('albarakah_quota_override');
+    localStorage.removeItem('albarakah_pending_tables');
+    localStorage.setItem('albarakah_db_dirty', 'false');
+  }
+
+  await recordActivityLog({
+    action: 'RESET',
+    module: 'All Data',
+    title: `Clear All Cloud Data: ${cloudDeletedDocs} documents removed`,
+    details: `Cleaned Firebase Firestore cloud database for ${user.email || 'User'}. Local IndexedDB records were preserved.`,
+    meta: { cloudDeletedDocs, clearedCollections }
+  });
+
+  return {
+    deletedDocs: cloudDeletedDocs,
+    collections: clearedCollections,
+    isOnline,
+    userEmail: user.email || null,
   };
 }
 
 /**
- * Complete Master Wipe: Removes 100% of all data from both local IndexedDB and Firebase Firestore cloud database.
+ * Clear All Local Data ONLY:
+ * Wipes local IndexedDB data on this device while leaving Firebase Firestore cloud backups completely intact.
  */
-export async function executeCompleteMasterWipe(options: MasterWipeOptions): Promise<MasterWipeResult> {
+export async function executeClearLocalOnly(options: {
+  wipeCustomers?: boolean;
+  wipePresets?: boolean;
+}): Promise<{ localCounts: LocalDataCounts }> {
   const [
     salesCount,
     expCount,
@@ -391,7 +452,7 @@ export async function executeCompleteMasterWipe(options: MasterWipeOptions): Pro
     db.activityLogs.count(),
   ]);
 
-  const localCounts = {
+  const localCounts: LocalDataCounts = {
     sales: salesCount,
     expenses: expCount,
     mfs: mfsCount,
@@ -404,54 +465,81 @@ export async function executeCompleteMasterWipe(options: MasterWipeOptions): Pro
     total: salesCount + expCount + mfsCount + duesCount + borCount + invCount + clsCount + (options.wipeCustomers ? custCount : 0),
   };
 
-  // 1. Transactionally wipe all local IndexedDB tables
-  await db.transaction('rw', [
-    db.sales,
-    db.expenses,
-    db.mfs,
-    db.dues,
-    db.borrowings,
-    db.customers,
-    db.services,
-    db.expenseServices,
-    db.accounts,
-    db.balanceLogs,
-    db.activityLogs,
-    db.inventory,
-    db.mfsClosings,
-    db.deletedRecords
-  ], async () => {
-    await db.sales.clear();
-    await db.expenses.clear();
-    await db.mfs.clear();
-    await db.dues.clear();
-    await db.borrowings.clear();
-    await db.inventory.clear();
-    await db.mfsClosings.clear();
-    await db.balanceLogs.clear();
-    await db.activityLogs.clear();
-    await db.deletedRecords.clear();
+  // CRITICAL: Mute sync so deletion hooks do NOT record to deletedRecords and do NOT wipe the Cloud!
+  setSyncSilent(true);
 
-    if (options.wipeCustomers) {
-      await db.customers.clear();
-    }
+  try {
+    await db.transaction('rw', [
+      db.sales,
+      db.expenses,
+      db.mfs,
+      db.dues,
+      db.borrowings,
+      db.customers,
+      db.services,
+      db.expenseServices,
+      db.accounts,
+      db.balanceLogs,
+      db.activityLogs,
+      db.inventory,
+      db.mfsClosings,
+      db.deletedRecords
+    ], async () => {
+      await db.sales.clear();
+      await db.expenses.clear();
+      await db.mfs.clear();
+      await db.dues.clear();
+      await db.borrowings.clear();
+      await db.inventory.clear();
+      await db.mfsClosings.clear();
+      await db.balanceLogs.clear();
+      await db.activityLogs.clear();
+      await db.deletedRecords.clear();
 
-    if (options.wipePresets) {
-      await db.services.clear();
-      await db.expenseServices.clear();
-    }
+      if (options.wipeCustomers) {
+        await db.customers.clear();
+      }
 
-    // Reset account balances to 0
-    const allAccs = await db.accounts.toArray();
-    for (const acc of allAccs) {
-      await db.accounts.update(acc.id, {
-        balance: 0,
-        updatedAt: new Date().toISOString(),
-      });
-    }
+      if (options.wipePresets) {
+        await db.services.clear();
+        await db.expenseServices.clear();
+      }
+
+      // Reset account balances to 0
+      const allAccs = await db.accounts.toArray();
+      for (const acc of allAccs) {
+        await db.accounts.update(acc.id, {
+          balance: 0,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    // Clear local dirty indicators
+    clearAllPendingChanges();
+  } finally {
+    setSyncSilent(false);
+  }
+
+  await recordActivityLog({
+    action: 'RESET',
+    module: 'All Data',
+    title: `Clear All Local Data: ${localCounts.total} local items wiped`,
+    details: `Cleaned local device IndexedDB. Cloud Firebase backups were left untouched.`,
+    meta: { localCounts }
   });
 
-  // 2. Wipe Firebase Cloud database completely
+  return { localCounts };
+}
+
+/**
+ * Complete Master Wipe: Removes 100% of all data from both local IndexedDB and Firebase Firestore cloud database.
+ */
+export async function executeCompleteMasterWipe(options: MasterWipeOptions): Promise<MasterWipeResult> {
+  // 1. Wipe local data
+  const { localCounts } = await executeClearLocalOnly(options);
+
+  // 2. Wipe Firebase Cloud database completely if logged in
   const user = auth.currentUser;
   const uid = user?.uid;
   const isOnline = navigator.onLine;
@@ -473,6 +561,8 @@ export async function executeCompleteMasterWipe(options: MasterWipeOptions): Pro
     localStorage.removeItem('albarakah_last_synced');
     localStorage.removeItem('albarakah_quota_blocked_until');
     localStorage.removeItem('albarakah_quota_override');
+    localStorage.removeItem('albarakah_pending_tables');
+    localStorage.setItem('albarakah_db_dirty', 'false');
   }
 
   // 4. Log the wipe event

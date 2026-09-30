@@ -31,9 +31,12 @@ import { useAuth } from '../context/AuthContext';
 import { 
   getCustomRangePreview, 
   executeCustomRangeDelete, 
+  executeClearCloudOnly,
+  executeClearLocalOnly,
   executeCompleteMasterWipe,
   RangePreviewResult,
-  MasterWipeResult
+  MasterWipeResult,
+  CloudWipeResult
 } from '../services/dataManagementService';
 
 export function DataManagementSettings() {
@@ -78,6 +81,7 @@ export function DataManagementSettings() {
 
   // Master Wipe (All Delete: Local + Cloud) Modal
   const [isMasterWipeModalOpen, setIsMasterWipeModalOpen] = useState(false);
+  const [wipeMode, setWipeMode] = useState<'all' | 'cloud' | 'local'>('all');
   const [wipeCustomers, setWipeCustomers] = useState(true);
   const [wipePresets, setWipePresets] = useState(false);
   const [confirmInputText, setConfirmInputText] = useState('');
@@ -90,6 +94,78 @@ export function DataManagementSettings() {
 
   // Notification Banner
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string; details?: string } | null>(null);
+
+  // Expected confirmation phrase based on active wipeMode
+  const getExpectedConfirmText = () => {
+    if (wipeMode === 'cloud') return 'CLEAR CLOUD';
+    if (wipeMode === 'local') return 'CLEAR LOCAL';
+    return 'CLEAR ALL';
+  };
+
+  const isConfirmInputValid = 
+    confirmInputText.trim().toUpperCase() === getExpectedConfirmText() ||
+    (wipeMode === 'all' && confirmInputText.trim().toUpperCase() === 'DELETE ALL');
+
+  const openWipeModalWithMode = (mode: 'all' | 'cloud' | 'local') => {
+    setWipeMode(mode);
+    setConfirmInputText('');
+    setIsMasterWipeModalOpen(true);
+  };
+
+  const handleConfirmMasterWipe = async () => {
+    if (!isConfirmInputValid) return;
+    setIsWipingMaster(true);
+
+    try {
+      if (wipeMode === 'cloud') {
+        setWipeStepText('Deleting cloud records from Google Firebase Firestore...');
+        const res = await executeClearCloudOnly();
+        setIsMasterWipeModalOpen(false);
+        setConfirmInputText('');
+        setNotification({
+          type: 'success',
+          message: `All Cloud Data Successfully Cleared! Removed ${res.deletedDocs} documents.`,
+          details: `Firebase Firestore cleaned for ${res.userEmail || 'Store'}. Local IndexedDB records were preserved safely.`
+        });
+      } else if (wipeMode === 'local') {
+        setWipeStepText('Clearing local IndexedDB storage...');
+        const res = await executeClearLocalOnly({ wipeCustomers, wipePresets });
+        setIsMasterWipeModalOpen(false);
+        setConfirmInputText('');
+        setNotification({
+          type: 'success',
+          message: `All Local Data Cleared! Wiped ${res.localCounts.total} local items.`,
+          details: 'Local database is 100% clean with Tk 0.00 balance. Firebase Cloud backups were preserved.'
+        });
+      } else {
+        setWipeStepText('Clearing local storage and cloud database...');
+        const res: MasterWipeResult = await executeCompleteMasterWipe({
+          wipeCustomers,
+          wipePresets,
+        });
+
+        setIsMasterWipeModalOpen(false);
+        setConfirmInputText('');
+        setNotification({
+          type: 'success',
+          message: `All Data Completely Cleared! Wiped ${res.localCounts.total} local items & ${res.cloudResult.deletedDocs} cloud documents.`,
+          details: res.cloudResult.userEmail 
+            ? `Cleared Firebase Firestore for ${res.cloudResult.userEmail}. Local & Cloud are 100% clean.` 
+            : 'Local database is 100% clean. Started fresh with Tk 0.00 balance.'
+        });
+      }
+      setTimeout(() => setNotification(null), 9000);
+    } catch (err: any) {
+      console.error('Wipe error:', err);
+      setNotification({
+        type: 'error',
+        message: err?.message || 'Failed to complete requested wipe. Please try again.',
+      });
+    } finally {
+      setIsWipingMaster(false);
+      setWipeStepText('');
+    }
+  };
 
   // Fetch range preview whenever dates or module choices change
   useEffect(() => {
@@ -166,42 +242,6 @@ export function DataManagementSettings() {
       });
     } finally {
       setIsDeletingRange(false);
-    }
-  };
-
-  // Execute Complete Master Wipe (All Delete: Local + Cloud)
-  const isConfirmInputValid = confirmInputText.trim().toUpperCase() === 'CLEAR ALL' || confirmInputText.trim().toUpperCase() === 'DELETE ALL';
-
-  const handleConfirmMasterWipe = async () => {
-    if (!isConfirmInputValid) return;
-    setIsWipingMaster(true);
-    setWipeStepText('Clearing local IndexedDB storage...');
-    try {
-      setWipeStepText('Deleting cloud records from Google Firebase Firestore...');
-      const res: MasterWipeResult = await executeCompleteMasterWipe({
-        wipeCustomers,
-        wipePresets,
-      });
-
-      setIsMasterWipeModalOpen(false);
-      setConfirmInputText('');
-      setNotification({
-        type: 'success',
-        message: `All Data Completely Cleared! Wiped ${res.localCounts.total} local items & ${res.cloudResult.deletedDocs} cloud documents.`,
-        details: res.cloudResult.userEmail 
-          ? `Cleared Firebase Firestore for ${res.cloudResult.userEmail}. Local & Cloud are 100% clean.` 
-          : 'Local database is 100% clean. Started fresh with Tk 0.00 balance.'
-      });
-      setTimeout(() => setNotification(null), 9000);
-    } catch (err) {
-      console.error('Master wipe error:', err);
-      setNotification({
-        type: 'error',
-        message: 'Failed to complete full wipe. Please check your network and try again.',
-      });
-    } finally {
-      setIsWipingMaster(false);
-      setWipeStepText('');
     }
   };
 
@@ -430,23 +470,99 @@ export function DataManagementSettings() {
           </div>
         </div>
 
-        {/* Action Trigger Button */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-          <p className="text-[11px] text-rose-700 font-medium">
-            Requires typing <code className="bg-rose-100 px-1.5 py-0.5 rounded font-black text-rose-900">CLEAR ALL</code> in the modal to confirm.
-          </p>
+        {/* Action Trigger Options: 3 Options (Cloud Only, Local Only, Both) */}
+        <div className="space-y-3 pt-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            
+            {/* OPTION 1: CLEAR ALL CLOUD DATA */}
+            <div className="bg-sky-50/70 border-2 border-sky-200 hover:border-sky-300 rounded-2xl p-4 flex flex-col justify-between transition-all">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sky-800">
+                  <div className="p-2 rounded-xl bg-sky-100 text-sky-700">
+                    <Cloud size={18} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-xs sm:text-sm text-sky-950">Clear All Cloud Data</h4>
+                    <span className="text-[10px] font-bold text-sky-700 block">শুধু ক্লাউড ডেটা মুছুন</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-sky-800/90 leading-relaxed font-medium">
+                  ফায়ারবেস ক্লাউডের সমস্ত ব্যাকআপ মুছে ফেলবে। আপনার এই ডিভাইসের লোকাল ডেটা (IndexedDB) ১০০% অক্ষত ও নিরাপদ থাকবে।
+                </p>
+              </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setConfirmInputText('');
-              setIsMasterWipeModalOpen(true);
-            }}
-            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-rose-600/30 cursor-pointer"
-          >
-            <Trash2 size={18} />
-            <span>All Delete: Local & Cloud (একদম ক্লিয়ার)</span>
-          </button>
+              <div className="pt-3 border-t border-sky-100 mt-3">
+                <button
+                  type="button"
+                  onClick={() => openWipeModalWithMode('cloud')}
+                  disabled={!user || !isOnline}
+                  className="w-full py-2.5 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Trash2 size={15} />
+                  <span>{user ? 'Clear Cloud Data' : 'Login Required for Cloud'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* OPTION 2: CLEAR ALL LOCAL DATA */}
+            <div className="bg-amber-50/70 border-2 border-amber-200 hover:border-amber-300 rounded-2xl p-4 flex flex-col justify-between transition-all">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-amber-800">
+                  <div className="p-2 rounded-xl bg-amber-100 text-amber-700">
+                    <Database size={18} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-xs sm:text-sm text-amber-950">Clear All Local Data</h4>
+                    <span className="text-[10px] font-bold text-amber-700 block">শুধু লোকাল ডেটা মুছুন</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-amber-800/90 leading-relaxed font-medium">
+                  এই ডিভাইসের সমস্ত লোকাল রেকর্ড মুছে ব্যালেন্স ০.০০ করবে। ফায়ারবেস ক্লাউডের অনলাইন ব্যাকআপ ১০০% নিরাপদ থাকবে।
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-amber-100 mt-3">
+                <button
+                  type="button"
+                  onClick={() => openWipeModalWithMode('local')}
+                  className="w-full py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Trash2 size={15} />
+                  <span>Clear Local Data</span>
+                </button>
+              </div>
+            </div>
+
+            {/* OPTION 3: ALL DELETE: LOCAL + CLOUD */}
+            <div className="bg-rose-50/70 border-2 border-rose-300 hover:border-rose-400 rounded-2xl p-4 flex flex-col justify-between transition-all">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-rose-800">
+                  <div className="p-2 rounded-xl bg-rose-100 text-rose-700">
+                    <ShieldAlert size={18} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-xs sm:text-sm text-rose-950">All Delete: Local & Cloud</h4>
+                    <span className="text-[10px] font-bold text-rose-700 block">একদম সবকিছু ক্লিয়ার</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-rose-800/90 leading-relaxed font-medium">
+                  লোকাল ডিভাইস এবং গুগল ফায়ারবেস ক্লাউড দুটোই সম্পূর্ণ মুছে ফেলবে (Factory Reset)। কোনো হিসাব থাকবে না।
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-rose-100 mt-3">
+                <button
+                  type="button"
+                  onClick={() => openWipeModalWithMode('all')}
+                  className="w-full py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-rose-600/30 cursor-pointer"
+                >
+                  <Trash2 size={15} />
+                  <span>All Delete: Both (সব ক্লিয়ার)</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
         </div>
 
       </div>
@@ -787,7 +903,7 @@ export function DataManagementSettings() {
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL 1: MASTER WIPE (ALL DELETE: LOCAL + CLOUD) */}
+      {/* MODAL 1: MASTER WIPE / DELETE OPTIONS (ALL, CLOUD ONLY, LOCAL ONLY) */}
       {/* ========================================================================= */}
       {isMasterWipeModalOpen && (
         <div 
@@ -795,83 +911,193 @@ export function DataManagementSettings() {
           onClick={() => !isWipingMaster && setIsMasterWipeModalOpen(false)}
         >
           <div 
-            className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border-2 border-rose-300 animate-in fade-in zoom-in-95 space-y-5 my-8"
+            className={`bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border-2 animate-in fade-in zoom-in-95 space-y-5 my-8 ${
+              wipeMode === 'cloud' ? 'border-sky-300' :
+              wipeMode === 'local' ? 'border-amber-300' :
+              'border-rose-300'
+            }`}
             onClick={e => e.stopPropagation()}
           >
+            {/* Mode Switcher Tabs */}
+            <div className="flex rounded-xl bg-gray-100 p-1 gap-1 text-xs font-bold">
+              <button
+                type="button"
+                disabled={isWipingMaster}
+                onClick={() => {
+                  setWipeMode('all');
+                  setConfirmInputText('');
+                }}
+                className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  wipeMode === 'all' 
+                    ? 'bg-rose-600 text-white shadow-xs' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <ShieldAlert size={14} />
+                <span>Both (Local & Cloud)</span>
+              </button>
+              <button
+                type="button"
+                disabled={isWipingMaster || !user || !isOnline}
+                onClick={() => {
+                  setWipeMode('cloud');
+                  setConfirmInputText('');
+                }}
+                className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  wipeMode === 'cloud' 
+                    ? 'bg-sky-600 text-white shadow-xs' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Cloud size={14} />
+                <span>Cloud Only</span>
+              </button>
+              <button
+                type="button"
+                disabled={isWipingMaster}
+                onClick={() => {
+                  setWipeMode('local');
+                  setConfirmInputText('');
+                }}
+                className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  wipeMode === 'local' 
+                    ? 'bg-amber-600 text-white shadow-xs' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Database size={14} />
+                <span>Local Only</span>
+              </button>
+            </div>
+
             {/* Header */}
-            <div className="flex items-start gap-3.5 text-rose-600">
-              <div className="p-3 bg-rose-100 rounded-2xl shrink-0">
-                <ShieldAlert size={28} />
+            <div className="flex items-start gap-3.5">
+              <div className={`p-3 rounded-2xl shrink-0 ${
+                wipeMode === 'cloud' ? 'bg-sky-100 text-sky-700' :
+                wipeMode === 'local' ? 'bg-amber-100 text-amber-700' :
+                'bg-rose-100 text-rose-700'
+              }`}>
+                {wipeMode === 'cloud' ? <Cloud size={28} /> :
+                 wipeMode === 'local' ? <Database size={28} /> :
+                 <ShieldAlert size={28} />}
               </div>
               <div>
                 <h3 className="text-xl font-black text-gray-900 leading-tight">
-                  All Delete: Local & Cloud Wipe
+                  {wipeMode === 'cloud' ? 'Clear All Cloud Data' :
+                   wipeMode === 'local' ? 'Clear All Local Data' :
+                   'All Delete: Local & Cloud Wipe'}
                 </h3>
-                <p className="text-xs text-rose-600 font-bold mt-0.5">
-                  Permanent Master Reset (একদম ক্লিয়ার)
+                <p className={`text-xs font-bold mt-0.5 ${
+                  wipeMode === 'cloud' ? 'text-sky-700' :
+                  wipeMode === 'local' ? 'text-amber-700' :
+                  'text-rose-600'
+                }`}>
+                  {wipeMode === 'cloud' ? 'গুগল ফায়ারবেস ক্লাউডের সমস্ত ব্যাকআপ মুছে ফেলুন' :
+                   wipeMode === 'local' ? 'ডিভাইসের লোকাল ডেটা সম্পূর্ণ মুছুন (ক্লাউড অক্ষত থাকবে)' :
+                   'লোকাল ও ক্লাউড দুটোই সম্পূর্ণ মুছে ফেলুন (একদম ক্লিয়ার)'}
                 </p>
               </div>
             </div>
 
-            {/* Warning Message */}
-            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-xs space-y-2 text-rose-950 font-medium">
-              <p className="font-bold text-rose-900">
-                You are about to completely wipe both your offline device data AND your Google Cloud backups:
-              </p>
-              <ul className="list-disc pl-4 space-y-1 text-gray-700">
-                <li><strong>Local Database:</strong> {totalAllLocalRecords} records across all IndexedDB tables.</li>
-                <li><strong>Cash & Wallets:</strong> Balances for Cash, bKash, Nagad, Rocket reset to <strong>Tk 0.00</strong>.</li>
-                <li>
-                  <strong>Google Firebase Firestore:</strong> {user ? `All cloud subcollections for ${user.email} will be permanently erased.` : 'Device local data will be wiped.'}
-                </li>
-              </ul>
-            </div>
+            {/* Mode-specific Warning Message */}
+            {wipeMode === 'cloud' ? (
+              <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 text-xs space-y-2 text-sky-950 font-medium">
+                <p className="font-bold text-sky-900">
+                  You are about to delete all data stored in Google Firebase Cloud Firestore:
+                </p>
+                <ul className="list-disc pl-4 space-y-1 text-gray-700">
+                  <li><strong>Target Account:</strong> {user?.email || 'Logged in account'}</li>
+                  <li><strong>Cloud Collections:</strong> Sales, expenses, mfs, dues, customers, inventory and logs in Firestore will be emptied.</li>
+                  <li><strong>Local Database:</strong> <span className="font-bold text-emerald-700">100% Safe.</span> All {totalAllLocalRecords} records on this device will NOT be touched.</li>
+                </ul>
+              </div>
+            ) : wipeMode === 'local' ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs space-y-2 text-amber-950 font-medium">
+                <p className="font-bold text-amber-900">
+                  You are about to wipe all data from this device's local IndexedDB:
+                </p>
+                <ul className="list-disc pl-4 space-y-1 text-gray-700">
+                  <li><strong>Local Records:</strong> All {totalAllLocalRecords} records on this phone/computer will be wiped.</li>
+                  <li><strong>Cash & Wallets:</strong> All balances (Cash, bKash, Nagad, Rocket) will be reset to <strong>Tk 0.00</strong>.</li>
+                  <li><strong>Google Firebase Cloud:</strong> <span className="font-bold text-emerald-700">100% Preserved.</span> Your cloud backups will NOT be deleted.</li>
+                </ul>
+              </div>
+            ) : (
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-xs space-y-2 text-rose-950 font-medium">
+                <p className="font-bold text-rose-900">
+                  You are about to completely wipe both your offline device data AND your Google Cloud backups:
+                </p>
+                <ul className="list-disc pl-4 space-y-1 text-gray-700">
+                  <li><strong>Local Database:</strong> {totalAllLocalRecords} records across all IndexedDB tables will be wiped.</li>
+                  <li><strong>Cash & Wallets:</strong> Balances for Cash, bKash, Nagad, Rocket reset to <strong>Tk 0.00</strong>.</li>
+                  <li>
+                    <strong>Google Firebase Firestore:</strong> {user ? `All cloud subcollections for ${user.email} will be permanently erased.` : 'Local storage will be wiped.'}
+                  </li>
+                </ul>
+              </div>
+            )}
 
-            {/* Optional Wipe Checkboxes */}
-            <div className="space-y-2.5 bg-gray-50 border border-gray-200 rounded-2xl p-4 text-xs font-bold text-gray-800">
-              <label className="flex items-center gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={wipeCustomers}
-                  onChange={e => setWipeCustomers(e.target.checked)}
-                  className="rounded text-rose-600 focus:ring-rose-600 cursor-pointer"
-                />
-                <span>Also wipe Customer Directory ({customersCount} Customers)</span>
-              </label>
+            {/* Optional Wipe Checkboxes (only for local and all modes) */}
+            {wipeMode !== 'cloud' && (
+              <div className="space-y-2.5 bg-gray-50 border border-gray-200 rounded-2xl p-4 text-xs font-bold text-gray-800">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={wipeCustomers}
+                    onChange={e => setWipeCustomers(e.target.checked)}
+                    className="rounded text-rose-600 focus:ring-rose-600 cursor-pointer"
+                  />
+                  <span>Also wipe Customer Directory ({customersCount} Customers)</span>
+                </label>
 
-              <label className="flex items-center gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={wipePresets}
-                  onChange={e => setWipePresets(e.target.checked)}
-                  className="rounded text-rose-600 focus:ring-rose-600 cursor-pointer"
-                />
-                <span>Also wipe custom Preset Services & Expense Categories</span>
-              </label>
-            </div>
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={wipePresets}
+                    onChange={e => setWipePresets(e.target.checked)}
+                    className="rounded text-rose-600 focus:ring-rose-600 cursor-pointer"
+                  />
+                  <span>Also wipe custom Preset Services & Expense Categories</span>
+                </label>
+              </div>
+            )}
 
             {/* Typing Confirmation Requirement */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-gray-700">
-                  Type <strong className="text-rose-700 font-black">CLEAR ALL</strong> to confirm:
+                  Type <strong className={`font-black ${
+                    wipeMode === 'cloud' ? 'text-sky-700' :
+                    wipeMode === 'local' ? 'text-amber-700' :
+                    'text-rose-700'
+                  }`}>{getExpectedConfirmText()}</strong> to confirm:
                 </span>
                 <button
                   type="button"
-                  onClick={() => setConfirmInputText('CLEAR ALL')}
-                  className="text-[11px] font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer"
+                  onClick={() => setConfirmInputText(getExpectedConfirmText())}
+                  className={`text-[11px] font-bold underline cursor-pointer ${
+                    wipeMode === 'cloud' ? 'text-sky-600 hover:text-sky-800' :
+                    wipeMode === 'local' ? 'text-amber-600 hover:text-amber-800' :
+                    'text-rose-600 hover:text-rose-800'
+                  }`}
                 >
-                  Auto-fill "CLEAR ALL"
+                  Auto-fill "{getExpectedConfirmText()}"
                 </button>
               </div>
 
               <input
                 type="text"
                 disabled={isWipingMaster}
-                placeholder="CLEAR ALL"
+                placeholder={getExpectedConfirmText()}
                 value={confirmInputText}
                 onChange={e => setConfirmInputText(e.target.value)}
-                className="w-full p-3 border-2 border-rose-300 focus:border-rose-600 rounded-xl text-sm font-black text-rose-900 outline-none uppercase text-center tracking-widest bg-rose-50/30"
+                className={`w-full p-3 border-2 rounded-xl text-sm font-black outline-none uppercase text-center tracking-widest ${
+                  wipeMode === 'cloud' 
+                    ? 'border-sky-300 focus:border-sky-600 text-sky-900 bg-sky-50/30' :
+                  wipeMode === 'local' 
+                    ? 'border-amber-300 focus:border-amber-600 text-amber-900 bg-amber-50/30' :
+                    'border-rose-300 focus:border-rose-600 text-rose-900 bg-rose-50/30'
+                }`}
               />
             </div>
 
@@ -879,7 +1105,7 @@ export function DataManagementSettings() {
             {isWipingMaster && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-xs font-bold text-amber-900 animate-pulse">
                 <RefreshCw size={16} className="animate-spin text-amber-700" />
-                <span>{wipeStepText || 'Processing complete wipe...'}</span>
+                <span>{wipeStepText || 'Processing requested wipe...'}</span>
               </div>
             )}
 
@@ -897,10 +1123,19 @@ export function DataManagementSettings() {
                 type="button"
                 disabled={!isConfirmInputValid || isWipingMaster}
                 onClick={handleConfirmMasterWipe}
-                className="px-6 py-2.5 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-md uppercase"
+                className={`px-6 py-2.5 text-xs font-black text-white rounded-xl flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-md uppercase transition-all ${
+                  wipeMode === 'cloud' ? 'bg-sky-600 hover:bg-sky-700' :
+                  wipeMode === 'local' ? 'bg-amber-600 hover:bg-amber-700' :
+                  'bg-rose-600 hover:bg-rose-700'
+                }`}
               >
                 <Trash2 size={16} />
-                <span>{isWipingMaster ? 'Wiping All Data...' : 'Confirm & Wipe Everything'}</span>
+                <span>
+                  {isWipingMaster ? 'Processing Wipe...' :
+                   wipeMode === 'cloud' ? 'Confirm & Wipe Cloud' :
+                   wipeMode === 'local' ? 'Confirm & Wipe Local' :
+                   'Confirm & Wipe Everything'}
+                </span>
               </button>
             </div>
 
