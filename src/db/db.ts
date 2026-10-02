@@ -29,6 +29,7 @@ export interface Sale {
   note?: string;
   dueAmount?: number;
   paidAmount?: number;
+  discount?: number;
   customerName?: string;
   customerPhone?: string;
 }
@@ -66,6 +67,7 @@ export interface Due {
   phone: string;
   totalAmount: number;
   paidAmount: number;
+  discount?: number;
   status: 'Unpaid' | 'Partial' | 'Paid';
   referenceType?: 'sale' | 'mfs' | 'other';
   referenceId?: number;
@@ -168,7 +170,7 @@ export interface Borrowing {
   createdAt?: string;
   updatedAt?: string;
   lenderName: string;
-  phone: string;
+  phone?: string;
   amount: number;
   paidAmount: number;
   dueDate: string;

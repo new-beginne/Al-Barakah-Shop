@@ -127,10 +127,11 @@ export async function executeCustomRangeDelete(options: RangeDeleteOptions): Pro
       // Clean up associated dues
       for (const s of salesToDelete) {
         if (s.customerName && ((s.dueAmount || 0) > 0 || s.paymentMethod === 'Due')) {
+          const targetDueAmt = (s.dueAmount && s.dueAmount > 0) ? s.dueAmount : s.amount;
           const matchingDue = await db.dues
             .where('customerName')
             .equals(s.customerName)
-            .filter(d => Math.abs(d.totalAmount - s.amount) < 0.01 && (!d.date || d.date === s.date))
+            .filter(d => (Math.abs(d.totalAmount - targetDueAmt) < 0.01 || Math.abs(d.totalAmount - s.amount) < 0.01) && (!d.date || d.date === s.date))
             .first();
           if (matchingDue && matchingDue.id) {
             await db.dues.delete(matchingDue.id);
@@ -185,13 +186,19 @@ export async function executeCustomRangeDelete(options: RangeDeleteOptions): Pro
             await adjustAccountBalance(op, -amt);
             await adjustAccountBalance('cash', amt);
           } else if (m.type === 'Cash-In' || m.type === 'Recharge') {
-            // Cash-In/Recharge originally deducted from wallet, added to cash
-            await adjustAccountBalance(op, amt);
-            await adjustAccountBalance('cash', -amt);
+            // Cash-In/Recharge originally deducted (amt + chg) from wallet, cash received (paidAmount if due)
+            await adjustAccountBalance(op, amt + chg);
+            const cashToRevert = m.isDue ? (m.paidAmount || 0) : amt;
+            if (cashToRevert > 0) {
+              await adjustAccountBalance('cash', -cashToRevert);
+            }
           } else if (m.type === 'Send Money') {
-            // Send Money originally deducted from wallet, added (amt + chg) to cash
-            await adjustAccountBalance(op, amt);
-            await adjustAccountBalance('cash', -(amt + chg));
+            // Send Money originally deducted (amt + chg) from wallet, cash received (paidAmount if due)
+            await adjustAccountBalance(op, amt + chg);
+            const cashToRevert = m.isDue ? (m.paidAmount || 0) : (amt + chg);
+            if (cashToRevert > 0) {
+              await adjustAccountBalance('cash', -cashToRevert);
+            }
           }
         }
       }
@@ -201,6 +208,17 @@ export async function executeCustomRangeDelete(options: RangeDeleteOptions): Pro
     if (borrowingsToDelete.length > 0) {
       const borrowingIds = borrowingsToDelete.map(b => b.id!).filter(Boolean);
       await db.borrowings.bulkDelete(borrowingIds);
+
+      if (adjustBalances) {
+        // Reverse un-repaid net loan received into accounts
+        for (const b of borrowingsToDelete) {
+          const targetAccount = b.receiveAccount;
+          const netRemaining = (b.amount || 0) - (b.paidAmount || 0);
+          if (targetAccount && targetAccount !== 'none' && netRemaining > 0) {
+            await adjustAccountBalance(targetAccount, -netRemaining);
+          }
+        }
+      }
     }
   });
 

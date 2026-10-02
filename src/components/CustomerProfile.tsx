@@ -55,6 +55,7 @@ export function CustomerProfile() {
   // Collect Due modal states
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
   const [collectAmount, setCollectAmount] = useState('');
+  const [collectDiscount, setCollectDiscount] = useState('');
   const [collectMethod, setCollectMethod] = useState<'Cash' | 'bKash' | 'Nagad' | 'Rocket'>('Cash');
   const [collectNote, setCollectNote] = useState('');
   const [isSubmittingCollection, setIsSubmittingCollection] = useState(false);
@@ -289,9 +290,12 @@ export function CustomerProfile() {
     e.preventDefault();
     if (!customer) return;
 
-    const amt = parseFloat(collectAmount);
-    if (isNaN(amt) || amt <= 0) {
-      setErrorMsg('Please enter a valid amount');
+    const cashAmount = parseFloat(collectAmount) || 0;
+    const discountAmount = parseFloat(collectDiscount) || 0;
+    const totalSettled = cashAmount + discountAmount;
+
+    if (totalSettled <= 0) {
+      setErrorMsg('Please enter a valid amount or discount');
       setTimeout(() => setErrorMsg(''), 4000);
       return;
     }
@@ -313,7 +317,9 @@ export function CustomerProfile() {
         return (a.id || 0) - (b.id || 0);
       });
 
-      let remainingToAllocate = amt;
+      let remainingToSettle = totalSettled;
+      let remainingCash = cashAmount;
+      let remainingDiscount = discountAmount;
       let totalProfitEarned = 0;
       const nowIso = new Date().toISOString();
       const todayDate = format(new Date(), 'yyyy-MM-dd');
@@ -321,49 +327,40 @@ export function CustomerProfile() {
 
       if (unsettledDues.length > 0) {
         for (const d of unsettledDues) {
-          if (remainingToAllocate <= 0) break;
+          if (remainingToSettle <= 0) break;
           const currentTotal = d.totalAmount || 0;
           const currentPaid = d.paidAmount || 0;
           const currentRemaining = Math.max(0, currentTotal - currentPaid);
           if (currentRemaining <= 0) continue;
 
-          const payment = Math.min(remainingToAllocate, currentRemaining);
-          const newPaid = currentPaid + payment;
+          const settleFromThis = Math.min(remainingToSettle, currentRemaining);
+          const cashForThis = Math.min(settleFromThis, remainingCash);
+          const discountForThis = Math.min(settleFromThis - cashForThis, remainingDiscount);
+
+          const newPaid = currentPaid + settleFromThis;
           const newStatus = newPaid >= currentTotal ? 'Paid' : 'Partial';
+          const newDueDiscount = (d.discount || 0) + discountForThis;
 
           await db.dues.update(d.id!, {
             paidAmount: newPaid,
+            discount: newDueDiscount,
             status: newStatus,
             updatedAt: nowIso,
           });
 
-          // Sync matching sale if available
-          const matchingSale = allSales.find(s => 
-            ((s.customerPhone && custPhone && s.customerPhone === custPhone) || s.customerName?.toLowerCase() === custName) &&
-            s.date === d.date &&
-            Math.abs(s.amount - currentTotal) < 0.01
-          );
-
           const isMfsDue = d.referenceType === 'mfs';
 
           if (!isMfsDue) {
-            const totalDueAmt = currentTotal || payment;
-            const ratio = totalDueAmt > 0 ? (payment / totalDueAmt) : 1;
+            const totalDueAmt = currentTotal || settleFromThis;
+            const ratio = totalDueAmt > 0 ? (settleFromThis / totalDueAmt) : 1;
             const costPart = Math.round(((d.cost || 0) * ratio) * 100) / 100;
-            const profitPart = d.profit !== undefined 
-              ? Math.round(((d.profit) * ratio) * 100) / 100 
-              : Math.max(0, payment - costPart);
+            // Net profit after discount
+            const profitPart = Math.max(0, Math.round((cashForThis - costPart) * 100) / 100);
 
             totalProfitEarned += profitPart;
 
-            if (matchingSale && matchingSale.id) {
-              await db.sales.update(matchingSale.id, {
-                paidAmount: newPaid,
-                dueAmount: Math.max(0, currentTotal - newPaid),
-                updatedAt: nowIso
-              });
-            } else {
-              // When due is cleared, record the collected sale & profit
+            if (cashForThis > 0 || discountForThis > 0) {
+              // Record the collected sale & profit
               await db.sales.add({
                 date: todayDate,
                 time: todayTime,
@@ -371,33 +368,36 @@ export function CustomerProfile() {
                 updatedAt: nowIso,
                 category: d.category || 'Due Collection',
                 serviceName: d.serviceName ? `Due Clear: ${d.serviceName}` : `Due Cleared (${customer.name})`,
-                amount: payment,
+                amount: cashForThis,
                 cost: costPart,
                 profit: profitPart,
+                discount: discountForThis > 0 ? discountForThis : undefined,
                 paymentMethod: collectMethod,
-                note: `Due cleared (${newStatus}): Tk ${payment.toLocaleString()} of Tk ${currentTotal.toLocaleString()} for ${d.serviceName || 'Service'}${collectNote.trim() ? ` - ${collectNote.trim()}` : ''}`,
+                note: `Due cleared (${newStatus}): Tk ${cashForThis.toLocaleString()} paid${discountForThis > 0 ? ` [Tk ${discountForThis.toLocaleString()} Discount]` : ''} of Tk ${currentTotal.toLocaleString()} for ${d.serviceName || 'Service'}${collectNote.trim() ? ` - ${collectNote.trim()}` : ''}`,
                 customerName: customer.name,
                 customerPhone: customer.phone,
-                paidAmount: payment,
+                paidAmount: cashForThis,
                 dueAmount: 0,
                 quantity: 1
               });
             }
           } else {
             // MFS Due: account balance is increased, recognize proportional fee profit if any
-            const totalDueAmt = currentTotal || payment;
-            const ratio = totalDueAmt > 0 ? (payment / totalDueAmt) : 1;
+            const totalDueAmt = currentTotal || settleFromThis;
+            const ratio = totalDueAmt > 0 ? (settleFromThis / totalDueAmt) : 1;
             const mfsProfitPart = d.profit ? Math.round((d.profit * ratio) * 100) / 100 : 0;
-            totalProfitEarned += mfsProfitPart;
+            totalProfitEarned += Math.max(0, mfsProfitPart - discountForThis);
           }
 
-          remainingToAllocate -= payment;
+          remainingToSettle -= settleFromThis;
+          remainingCash -= cashForThis;
+          remainingDiscount -= discountForThis;
         }
       }
 
       // If any excess payment beyond dues, record as credit sale
-      if (remainingToAllocate > 0) {
-        totalProfitEarned += remainingToAllocate;
+      if (remainingCash > 0) {
+        totalProfitEarned += remainingCash;
         await db.sales.add({
           date: todayDate,
           time: todayTime,
@@ -405,37 +405,41 @@ export function CustomerProfile() {
           updatedAt: nowIso,
           category: 'Due Collection',
           serviceName: `Due Payment (${customer.name})`,
-          amount: remainingToAllocate,
+          amount: remainingCash,
           cost: 0,
-          profit: remainingToAllocate,
+          profit: remainingCash,
           paymentMethod: collectMethod,
-          note: `Due credit collected: Tk ${remainingToAllocate.toLocaleString()}${collectNote.trim() ? ` - ${collectNote.trim()}` : ''}`,
+          note: `Due credit collected: Tk ${remainingCash.toLocaleString()}${collectNote.trim() ? ` - ${collectNote.trim()}` : ''}`,
           customerName: customer.name,
           customerPhone: customer.phone,
-          paidAmount: remainingToAllocate,
+          paidAmount: remainingCash,
           dueAmount: 0,
           quantity: 1
         });
       }
 
-      setSuccessMsg(`Collected Tk ${amt.toLocaleString()} (${collectMethod}) from ${customer.name}. Added to sales & profit.`);
+      const discountMsg = discountAmount > 0 ? ` (Tk ${discountAmount.toLocaleString()} discount)` : '';
+      setSuccessMsg(`Cleared Tk ${totalSettled.toLocaleString()} due${discountMsg} (${collectMethod}) for ${customer.name}.`);
       
-      // Update account balance
-      try {
-        const targetAccountId = mapPaymentMethodToAccountId(collectMethod) || 'cash';
-        await adjustAccountBalance(targetAccountId, amt);
-      } catch (err) {
-        console.error('Failed to update account balance in CustomerProfile:', err);
+      // Update account balance only with actual cash received
+      if (cashAmount > 0) {
+        try {
+          const targetAccountId = mapPaymentMethodToAccountId(collectMethod) || 'cash';
+          await adjustAccountBalance(targetAccountId, cashAmount);
+        } catch (err) {
+          console.error('Failed to update account balance in CustomerProfile:', err);
+        }
       }
 
       // Log activity
       try {
         await logDueClear(
           customer.name, 
-          amt, 
+          cashAmount, 
           collectMethod, 
-          totalProfitEarned,
-          collectNote.trim() ? `Note: ${collectNote.trim()}` : undefined
+          totalProfitEarned, 
+          collectNote.trim() ? `Note: ${collectNote.trim()}` : undefined,
+          discountAmount
         );
       } catch (logErr) {
         console.warn('Failed to log due collection activity:', logErr);
@@ -443,6 +447,7 @@ export function CustomerProfile() {
 
       setIsCollectModalOpen(false);
       setCollectAmount('');
+      setCollectDiscount('');
       setCollectNote('');
       setTimeout(() => setSuccessMsg(''), 4500);
     } catch (err) {
@@ -972,32 +977,101 @@ export function CustomerProfile() {
                     Tk {metrics.currentDue.toLocaleString()}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setCollectAmount(metrics.currentDue.toString())}
-                  className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 cursor-pointer"
-                >
-                  Pay Full
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollectAmount(metrics.currentDue.toString());
+                      setCollectDiscount('');
+                    }}
+                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 cursor-pointer"
+                  >
+                    Pay Full
+                  </button>
+                  {parseFloat(collectAmount) > 0 && parseFloat(collectAmount) < metrics.currentDue && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const diff = Math.max(0, metrics.currentDue - (parseFloat(collectAmount) || 0));
+                        setCollectDiscount(diff > 0 ? diff.toString() : '');
+                      }}
+                      className="px-2 py-1 text-[11px] font-bold rounded-lg bg-amber-100 border border-amber-300 text-amber-900 hover:bg-amber-200 cursor-pointer"
+                    >
+                      Rem. as Discount
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Amount */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Amount (Tk) *
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  step="any"
-                  required
-                  value={collectAmount}
-                  onChange={e => setCollectAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-900 outline-none focus:border-[#084b3e]"
-                  autoFocus
-                />
+              {/* Amount and Discount Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Received Amount / নগদ (Tk) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    required={!(parseFloat(collectDiscount) > 0)}
+                    value={collectAmount}
+                    onChange={e => setCollectAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-900 outline-none focus:border-[#084b3e]"
+                    autoFocus
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Cash drawer entry</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-amber-900 mb-1 flex items-center justify-between">
+                    <span>Discount / ছাড় (Tk)</span>
+                    <span className="text-[10px] font-medium text-amber-700 bg-amber-100/70 px-1.5 py-0.2 rounded">Optional</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={collectDiscount}
+                    onChange={e => setCollectDiscount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-3.5 py-2.5 border border-amber-200 bg-amber-50/50 rounded-xl text-sm font-bold text-amber-950 outline-none focus:border-amber-500"
+                  />
+                  <p className="text-[10px] text-amber-700 mt-1">Waived from due</p>
+                </div>
               </div>
+
+              {/* Live Settlement Breakdown */}
+              {(() => {
+                const cAmt = parseFloat(collectAmount) || 0;
+                const dAmt = parseFloat(collectDiscount) || 0;
+                const tot = cAmt + dAmt;
+                const rem = Math.max(0, metrics.currentDue - tot);
+                return (
+                  <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-1 text-xs">
+                    <div className="flex justify-between items-center text-gray-600 font-semibold">
+                      <span>Cash Received:</span>
+                      <span className="font-bold text-gray-900">Tk {cAmt.toLocaleString()}</span>
+                    </div>
+                    {dAmt > 0 && (
+                      <div className="flex justify-between items-center text-amber-800 font-semibold">
+                        <span>Discount / ছাড়:</span>
+                        <span className="font-bold text-amber-900">- Tk {dAmt.toLocaleString()}</span>
+                      </div>
+                    )}
+                    <div className="border-t border-gray-200 pt-1 flex justify-between items-center font-bold">
+                      <span className="text-gray-800">Total Cleared from Due:</span>
+                      <span className="text-emerald-700 font-black">Tk {tot.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] text-gray-500 pt-0.5">
+                      <span>Remaining Due:</span>
+                      <span className={`font-bold ${rem > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        {rem > 0 ? `Tk ${rem.toLocaleString()}` : 'Tk 0 (Full Clear)'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Method */}
               <div>
@@ -1042,17 +1116,17 @@ export function CustomerProfile() {
                   type="button"
                   onClick={() => setIsCollectModalOpen(false)}
                   disabled={isSubmittingCollection}
-                  className="flex-1 py-2 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200"
+                  className="flex-1 py-2 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingCollection || !collectAmount || parseFloat(collectAmount) <= 0}
+                  disabled={isSubmittingCollection || ((parseFloat(collectAmount) || 0) + (parseFloat(collectDiscount) || 0) <= 0)}
                   className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
                 >
                   {isSubmittingCollection ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                  <span>Confirm</span>
+                  <span>Confirm (Tk {(parseFloat(collectAmount) || 0).toLocaleString()} Paid)</span>
                 </button>
               </div>
             </form>

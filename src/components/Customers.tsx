@@ -39,6 +39,7 @@ export function Customers() {
   // Collect Due modal state
   const [collectDueCustomer, setCollectDueCustomer] = useState<Customer | null>(null);
   const [collectDueAmount, setCollectDueAmount] = useState('');
+  const [collectDueDiscount, setCollectDueDiscount] = useState('');
   const [collectDueMethod, setCollectDueMethod] = useState<'Cash' | 'bKash' | 'Nagad' | 'Rocket'>('Cash');
   const [collectDueNote, setCollectDueNote] = useState('');
   const [isCollecting, setIsCollecting] = useState(false);
@@ -202,15 +203,23 @@ export function Customers() {
     
     setIsCollecting(true);
     try {
-      const amount = parseFloat(collectDueAmount);
-      if (isNaN(amount) || amount <= 0) return;
+      const cashReceived = parseFloat(collectDueAmount) || 0;
+      const discountGiven = parseFloat(collectDueDiscount) || 0;
+      const totalSettled = cashReceived + discountGiven;
+
+      if (totalSettled <= 0) {
+        setIsCollecting(false);
+        return;
+      }
 
       const customerDues = dues.filter(d => 
         (collectDueCustomer.phone && d.phone === collectDueCustomer.phone) || 
         d.customerName.toLowerCase() === collectDueCustomer.name.toLowerCase()
       ).sort((a, b) => (a.id || 0) - (b.id || 0));
 
-      let remainingToCollect = amount;
+      let remainingToSettle = totalSettled;
+      let remainingCash = cashReceived;
+      let remainingDiscount = discountGiven;
       let totalProfitEarned = 0;
       const now = new Date().toISOString();
       const todayDate = format(new Date(), 'yyyy-MM-dd');
@@ -218,68 +227,76 @@ export function Customers() {
 
       await db.transaction('rw', [db.dues, db.sales, db.accounts, db.balanceLogs, db.activityLogs], async () => {
         for (const d of customerDues) {
-          if (remainingToCollect <= 0) break;
+          if (remainingToSettle <= 0) break;
           const pendingForThisDue = (d.totalAmount || 0) - (d.paidAmount || 0);
           if (pendingForThisDue > 0) {
-            const collectFromThis = Math.min(pendingForThisDue, remainingToCollect);
-            const newPaid = (d.paidAmount || 0) + collectFromThis;
+            const settleFromThis = Math.min(pendingForThisDue, remainingToSettle);
+            const cashForThis = Math.min(settleFromThis, remainingCash);
+            const discountForThis = Math.min(settleFromThis - cashForThis, remainingDiscount);
+
+            const newPaid = (d.paidAmount || 0) + settleFromThis;
             const isFullClear = newPaid >= (d.totalAmount || 0);
+            const newDiscount = (d.discount || 0) + discountForThis;
 
             await db.dues.update(d.id!, {
               paidAmount: newPaid,
+              discount: newDiscount,
               status: isFullClear ? 'Paid' : 'Partial',
               updatedAt: now
             });
 
             // If this due was from an MFS transaction, it is a cash reimbursement for wallet balance
-            // NOT a studio sale with 100% profit!
             const isMfsDue = d.referenceType === 'mfs';
 
             if (!isMfsDue) {
               // Calculate proportional cost and profit for studio sales
-              const totalDueAmt = d.totalAmount || collectFromThis;
-              const ratio = totalDueAmt > 0 ? (collectFromThis / totalDueAmt) : 1;
+              const totalDueAmt = d.totalAmount || settleFromThis;
+              const ratio = totalDueAmt > 0 ? (settleFromThis / totalDueAmt) : 1;
               const costPart = Math.round(((d.cost || 0) * ratio) * 100) / 100;
-              const profitPart = d.profit !== undefined 
-                ? Math.round(((d.profit) * ratio) * 100) / 100 
-                : Math.max(0, collectFromThis - costPart);
+              // Net profit after discount
+              const profitPart = Math.max(0, Math.round((cashForThis - costPart) * 100) / 100);
 
               totalProfitEarned += profitPart;
 
               // When studio due is cleared, record the sale & profit
-              await db.sales.add({
-                date: todayDate,
-                time: todayTime,
-                createdAt: now,
-                updatedAt: now,
-                category: d.category || 'Due Collection',
-                serviceName: d.serviceName ? `Due Clear: ${d.serviceName}` : `Due Cleared (${d.customerName})`,
-                amount: collectFromThis,
-                cost: costPart,
-                profit: profitPart,
-                paymentMethod: collectDueMethod,
-                note: `Due cleared (${isFullClear ? 'Full' : 'Partial'}): Tk ${collectFromThis.toLocaleString()} of Tk ${totalDueAmt.toLocaleString()} for ${d.serviceName || 'Service'}${collectDueNote.trim() ? ` - ${collectDueNote.trim()}` : ''}`,
-                customerName: d.customerName,
-                customerPhone: d.phone,
-                paidAmount: collectFromThis,
-                dueAmount: 0,
-                quantity: 1
-              });
+              if (cashForThis > 0 || discountForThis > 0) {
+                await db.sales.add({
+                  date: todayDate,
+                  time: todayTime,
+                  createdAt: now,
+                  updatedAt: now,
+                  category: d.category || 'Due Collection',
+                  serviceName: d.serviceName ? `Due Clear: ${d.serviceName}` : `Due Cleared (${d.customerName})`,
+                  amount: cashForThis,
+                  cost: costPart,
+                  profit: profitPart,
+                  discount: discountForThis > 0 ? discountForThis : undefined,
+                  paymentMethod: collectDueMethod,
+                  note: `Due cleared (${isFullClear ? 'Full' : 'Partial'}): Tk ${cashForThis.toLocaleString()} paid${discountForThis > 0 ? ` [Tk ${discountForThis.toLocaleString()} Discount]` : ''} of Tk ${totalDueAmt.toLocaleString()} for ${d.serviceName || 'Service'}${collectDueNote.trim() ? ` - ${collectDueNote.trim()}` : ''}`,
+                  customerName: d.customerName,
+                  customerPhone: d.phone,
+                  paidAmount: cashForThis,
+                  dueAmount: 0,
+                  quantity: 1
+                });
+              }
             } else {
               // MFS Due: Add proportional MFS fee profit if any
-              const totalDueAmt = d.totalAmount || collectFromThis;
-              const ratio = totalDueAmt > 0 ? (collectFromThis / totalDueAmt) : 1;
+              const totalDueAmt = d.totalAmount || settleFromThis;
+              const ratio = totalDueAmt > 0 ? (settleFromThis / totalDueAmt) : 1;
               const mfsProfitPart = d.profit ? Math.round((d.profit * ratio) * 100) / 100 : 0;
-              totalProfitEarned += mfsProfitPart;
+              totalProfitEarned += Math.max(0, mfsProfitPart - discountForThis);
             }
 
-            remainingToCollect -= collectFromThis;
+            remainingToSettle -= settleFromThis;
+            remainingCash -= cashForThis;
+            remainingDiscount -= discountForThis;
           }
         }
 
         // If there's an excess payment beyond recorded dues, record as general due collection sale
-        if (remainingToCollect > 0) {
-          totalProfitEarned += remainingToCollect;
+        if (remainingCash > 0) {
+          totalProfitEarned += remainingCash;
           await db.sales.add({
             date: todayDate,
             time: todayTime,
@@ -287,38 +304,44 @@ export function Customers() {
             updatedAt: now,
             category: 'Due Collection',
             serviceName: `Due Payment (${collectDueCustomer.name})`,
-            amount: remainingToCollect,
+            amount: remainingCash,
             cost: 0,
-            profit: remainingToCollect,
+            profit: remainingCash,
             paymentMethod: collectDueMethod,
-            note: `Due credit collected: Tk ${remainingToCollect.toLocaleString()}${collectDueNote.trim() ? ` - ${collectDueNote.trim()}` : ''}`,
+            note: `Due credit collected: Tk ${remainingCash.toLocaleString()}${collectDueNote.trim() ? ` - ${collectDueNote.trim()}` : ''}`,
             customerName: collectDueCustomer.name,
             customerPhone: collectDueCustomer.phone,
-            paidAmount: remainingToCollect,
+            paidAmount: remainingCash,
             dueAmount: 0,
             quantity: 1
           });
         }
         
-        const accountId = mapPaymentMethodToAccountId(collectDueMethod);
-        await adjustAccountBalance(accountId, amount);
+        // ONLY the actual cash received is added to account balance
+        if (cashReceived > 0) {
+          const accountId = mapPaymentMethodToAccountId(collectDueMethod);
+          await adjustAccountBalance(accountId, cashReceived);
+        }
       });
 
       // Record clear log in Activity History
       await logDueClear(
         collectDueCustomer.name, 
-        amount, 
+        cashReceived, 
         collectDueMethod, 
         totalProfitEarned,
-        collectDueNote.trim() ? `Note: ${collectDueNote.trim()}` : undefined
+        collectDueNote.trim() ? `Note: ${collectDueNote.trim()}` : undefined,
+        discountGiven
       );
 
-      setSuccessMsg(`Successfully cleared Tk ${amount.toLocaleString()} due from ${collectDueCustomer.name}. Added to sales & profit.`);
+      const discountMsg = discountGiven > 0 ? ` (Tk ${discountGiven.toLocaleString()} discount)` : '';
+      setSuccessMsg(`Successfully cleared Tk ${totalSettled.toLocaleString()} due${discountMsg} for ${collectDueCustomer.name}.`);
       setTimeout(() => setSuccessMsg(''), 4500);
     } finally {
       setIsCollecting(false);
       setCollectDueCustomer(null);
       setCollectDueAmount('');
+      setCollectDueDiscount('');
       setCollectDueNote('');
     }
   };
@@ -526,41 +549,188 @@ export function Customers() {
       )}
 
       {/* COLLECT DUE MODAL */}
-      {collectDueCustomer && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setCollectDueCustomer(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-lg text-gray-900 mb-2 flex justify-between items-center">
-              Collect Due
-              <button onClick={() => setCollectDueCustomer(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-            </h3>
-            <p className="text-sm text-gray-500 mb-5 font-medium">From <span className="font-bold text-gray-900">{collectDueCustomer.name}</span></p>
-            <form onSubmit={handleCollectDue} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Amount to Collect (Tk)</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-gray-400">TK</span>
-                  <input type="number" step="any" required max={getCustomerDueInfo(collectDueCustomer).pendingDue} value={collectDueAmount} onChange={e => setCollectDueAmount(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-black outline-none font-mono focus:border-[#084b3e]" autoFocus />
+      {collectDueCustomer && (() => {
+        const pendingDue = getCustomerDueInfo(collectDueCustomer).pendingDue;
+        const numCash = parseFloat(collectDueAmount) || 0;
+        const numDiscount = parseFloat(collectDueDiscount) || 0;
+        const totalSettled = numCash + numDiscount;
+        const remainingDue = Math.max(0, pendingDue - totalSettled);
+
+        return (
+          <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setCollectDueCustomer(null)}>
+            <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-100">
+                <div>
+                  <h3 className="font-black text-xl text-gray-900 tracking-tight">
+                    Collect Due / বাকি আদায়
+                  </h3>
+                  <p className="text-xs text-gray-500 font-semibold mt-0.5">
+                    Customer: <span className="text-gray-900 font-bold">{collectDueCustomer.name}</span> • Pending: <span className="text-rose-600 font-black">Tk {pendingDue.toLocaleString()}</span>
+                  </p>
                 </div>
-                <p className="text-[10px] text-gray-500 mt-1.5 font-bold">Max due: Tk {getCustomerDueInfo(collectDueCustomer).pendingDue}</p>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Payment Method</label>
-                <select value={collectDueMethod} onChange={e => setCollectDueMethod(e.target.value as any)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-[#084b3e]">
-                  <option value="Cash">Cash</option>
-                  <option value="bKash">bKash</option>
-                  <option value="Nagad">Nagad</option>
-                  <option value="Rocket">Rocket</option>
-                </select>
-              </div>
-              <div className="pt-2">
-                <button type="submit" disabled={isCollecting} className="w-full bg-[#084b3e] text-white font-bold py-3 rounded-xl hover:bg-[#0c5e4e] transition-colors shadow-sm disabled:opacity-50">
-                  {isCollecting ? 'Processing...' : 'Confirm Collection'}
+                <button 
+                  type="button"
+                  onClick={() => setCollectDueCustomer(null)} 
+                  className="w-8 h-8 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <X size={18} />
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={handleCollectDue} className="space-y-4">
+                {/* Quick settlement action buttons */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollectDueAmount(pendingDue.toString());
+                      setCollectDueDiscount('');
+                    }}
+                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                  >
+                    Full Due (Tk {pendingDue.toLocaleString()})
+                  </button>
+                  {numCash > 0 && numCash < pendingDue && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const diff = Math.max(0, pendingDue - numCash);
+                        setCollectDueDiscount(diff > 0 ? diff.toString() : '');
+                      }}
+                      className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold rounded-lg border border-amber-200 transition-colors cursor-pointer"
+                    >
+                      Set Remaining Tk {(pendingDue - numCash).toLocaleString()} as Discount
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Cash Received Field */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Received Amount / নগদ (Tk) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">Tk</span>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        min="0"
+                        required={numDiscount <= 0}
+                        value={collectDueAmount} 
+                        onChange={e => setCollectDueAmount(e.target.value)} 
+                        placeholder="0.00"
+                        className="w-full pl-8 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-[#084b3e] transition-all" 
+                        autoFocus 
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1 font-medium">Cash drawer entry</p>
+                  </div>
+
+                  {/* Discount / ছাড় Field */}
+                  <div>
+                    <label className="block text-xs font-bold text-amber-900 mb-1 flex items-center justify-between">
+                      <span>Discount / ছাড় (Tk)</span>
+                      <span className="text-[10px] text-amber-700 bg-amber-100/70 px-1.5 py-0.2 rounded font-medium">Waived</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-amber-600">Tk</span>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        min="0"
+                        value={collectDueDiscount} 
+                        onChange={e => setCollectDueDiscount(e.target.value)} 
+                        placeholder="0.00"
+                        className="w-full pl-8 pr-3 py-2 bg-amber-50/50 border border-amber-200 rounded-xl font-bold text-sm text-amber-950 outline-none focus:bg-white focus:ring-2 focus:ring-amber-500 transition-all" 
+                      />
+                    </div>
+                    <p className="text-[10px] text-amber-700 mt-1 font-medium">Waived from due</p>
+                  </div>
+                </div>
+
+                {/* Live Settlement Breakdown */}
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-2xl space-y-1 text-xs">
+                  <div className="flex justify-between items-center text-gray-600 font-semibold">
+                    <span>Cash Received:</span>
+                    <span className="font-bold text-gray-900">Tk {numCash.toLocaleString()}</span>
+                  </div>
+                  {numDiscount > 0 && (
+                    <div className="flex justify-between items-center text-amber-800 font-semibold">
+                      <span>Discount / ছাড়:</span>
+                      <span className="font-bold text-amber-900">- Tk {numDiscount.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="border-t border-gray-200 pt-1 flex justify-between items-center font-bold">
+                    <span className="text-gray-800">Total Settled:</span>
+                    <span className="text-emerald-700 font-black">Tk {totalSettled.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px] text-gray-500 pt-0.5">
+                    <span>Remaining Due:</span>
+                    <span className={`font-bold ${remainingDue > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {remainingDue > 0 ? `Tk ${remainingDue.toLocaleString()}` : 'Tk 0 (Full Clear)'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Payment Method */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                    Payment Method
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(['Cash', 'bKash', 'Nagad', 'Rocket'] as const).map(m => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setCollectDueMethod(m)}
+                        className={`py-1.5 text-center rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          collectDueMethod === m
+                            ? 'bg-[#084b3e] text-white border-[#084b3e] shadow-xs'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Optional Note */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Note (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={collectDueNote}
+                    onChange={e => setCollectDueNote(e.target.value)}
+                    placeholder="e.g. Paid Tk 450, discount Tk 50"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-800 outline-none focus:bg-white focus:ring-2 focus:ring-[#084b3e]"
+                  />
+                </div>
+
+                <div className="pt-2 flex gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => setCollectDueCustomer(null)}
+                    className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={isCollecting || totalSettled <= 0} 
+                    className="flex-1 bg-[#084b3e] text-white font-bold py-2.5 rounded-xl hover:bg-[#0c5e4e] transition-all shadow-xs disabled:opacity-50 cursor-pointer text-xs"
+                  >
+                    {isCollecting ? 'Processing...' : `Confirm (Tk ${numCash.toLocaleString()} Paid)`}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* DELETE CONFIRMATION MODAL */}
       {deleteCustomerTarget && (

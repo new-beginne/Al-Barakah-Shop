@@ -64,6 +64,7 @@ export function SalesEntry() {
   const services = useLiveQuery(() => db.services.toArray()) || [];
   const customers = useLiveQuery(() => db.customers.toArray()) || [];
   const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
+  const dues = useLiveQuery(() => db.dues.toArray()) || [];
 
   // Today metrics
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -78,10 +79,10 @@ export function SalesEntry() {
   }, [todaySales]);
 
   const todayDueTotal = useMemo(() => {
-    return todaySales
-      .filter(s => s.paymentMethod === 'Due')
-      .reduce((sum, s) => sum + (s.amount || 0), 0);
-  }, [todaySales]);
+    return dues
+      .filter(d => d.date === todayStr && d.referenceType === 'sale')
+      .reduce((sum, d) => sum + Math.max(0, (d.totalAmount || 0) - (d.paidAmount || 0)), 0);
+  }, [dues, todayStr]);
 
   // Handle URL query parameters for pre-filling customer
   useEffect(() => {
@@ -258,22 +259,39 @@ export function SalesEntry() {
 
       if (isPureDue) {
         // Pure Due: ONLY add to db.dues! Do NOT add to db.sales, expenses, or profit!
-        const dueId = await db.dues.add({
-          date,
-          time,
-          customerName: customerName.trim(),
-          phone: customerPhone.trim(),
-          totalAmount: parsedAmount,
-          paidAmount: 0,
-          status: 'Unpaid',
-          serviceName: finalServiceName,
-          category: category || 'General',
-          cost: parseFloat(cost) || 0,
-          profit: currentProfit,
-          referenceType: 'sale',
-          note: note.trim(),
-          createdAt,
-          updatedAt
+        const dueId = await db.transaction('rw', db.dues, db.inventory, async () => {
+          const id = await db.dues.add({
+            date,
+            time,
+            customerName: customerName.trim(),
+            phone: customerPhone.trim(),
+            totalAmount: parsedAmount,
+            paidAmount: 0,
+            status: 'Unpaid',
+            serviceName: finalServiceName,
+            category: category || 'General',
+            cost: parseFloat(cost) || 0,
+            profit: currentProfit,
+            referenceType: 'sale',
+            note: note.trim(),
+            createdAt,
+            updatedAt
+          });
+
+          // Auto-decrement inventory stock if item matches
+          const qtyToDeduct = parseInt(quantity) || 1;
+          const matchedInv = inventoryItems.find(inv => 
+            inv.name.toLowerCase().trim() === finalServiceName.toLowerCase().trim()
+          );
+          if (matchedInv && matchedInv.id) {
+            const currentStock = Number(matchedInv.currentStock || 0);
+            await db.inventory.update(matchedInv.id, {
+              currentStock: Math.max(0, currentStock - qtyToDeduct),
+              updatedAt: new Date().toISOString()
+            });
+          }
+
+          return id;
         });
 
         await recordActivityLog({

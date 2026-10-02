@@ -37,6 +37,7 @@ export function Borrowings() {
   // Form State (Add)
   const [lenderName, setLenderName] = useState('');
   const [phone, setPhone] = useState('');
+  const [borrowDate, setBorrowDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [note, setNote] = useState('');
@@ -45,6 +46,7 @@ export function Borrowings() {
   // Edit Form State
   const [editLenderName, setEditLenderName] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editBorrowDate, setEditBorrowDate] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editPaidAmount, setEditPaidAmount] = useState('');
   const [editReceiveAccount, setEditReceiveAccount] = useState('cash');
@@ -55,6 +57,15 @@ export function Borrowings() {
   // Payment Form State
   const [payAmount, setPayAmount] = useState('');
   const [payAccount, setPayAccount] = useState('cash');
+
+  // Borrow More State (Row Details Modal)
+  const [isBorrowMoreModalOpen, setIsBorrowMoreModalOpen] = useState(false);
+  const [borrowMoreTarget, setBorrowMoreTarget] = useState<Borrowing | null>(null);
+  const [borrowMoreAmount, setBorrowMoreAmount] = useState('');
+  const [borrowMoreDate, setBorrowMoreDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [borrowMoreAccount, setBorrowMoreAccount] = useState('cash');
+  const [borrowMoreDueDate, setBorrowMoreDueDate] = useState('');
+  const [borrowMoreNote, setBorrowMoreNote] = useState('');
 
   const accounts = useLiveQuery(() => db.accounts.toArray()) || [];
 
@@ -69,7 +80,7 @@ export function Borrowings() {
 
   const filteredBorrowings = borrowings.filter(b => 
     b.lenderName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    b.phone.includes(searchQuery)
+    (b.phone || '').includes(searchQuery)
   );
 
   const totalBorrowed = borrowings.reduce((acc, b) => acc + (b.amount || 0), 0);
@@ -83,7 +94,7 @@ export function Borrowings() {
     return found ? `${found.name} (${found.type.toUpperCase()})` : accId;
   };
 
-  const handleCopyPhone = (phoneNumber: string) => {
+  const handleCopyPhone = (phoneNumber?: string) => {
     if (!phoneNumber) return;
     navigator.clipboard.writeText(phoneNumber);
     setCopiedPhone(true);
@@ -105,9 +116,10 @@ export function Borrowings() {
     e.preventDefault();
     const now = new Date();
     const parsedAmount = Number(amount) || 0;
+    const entryDate = borrowDate || format(now, 'yyyy-MM-dd');
 
     const newId = await db.borrowings.add({
-      date: format(now, 'yyyy-MM-dd'),
+      date: entryDate,
       time: format(now, 'hh:mm:ss a'),
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -129,13 +141,14 @@ export function Borrowings() {
       action: 'CREATE',
       module: 'Borrowings',
       title: `Borrowing Tk ${parsedAmount.toLocaleString()} from ${lenderName}`,
-      details: `Received in ${getAccountName(receiveAccount)} (Due: ${dueDate})`,
-      meta: { borrowingId: newId, lenderName, amount: parsedAmount, receiveAccount }
+      details: `Received in ${getAccountName(receiveAccount)} (Due: ${dueDate}, Date: ${entryDate})`,
+      meta: { borrowingId: newId, lenderName, amount: parsedAmount, receiveAccount, date: entryDate }
     });
 
     setLenderName('');
     setPhone('');
     setAmount('');
+    setBorrowDate(format(new Date(), 'yyyy-MM-dd'));
     setDueDate('');
     setNote('');
     setReceiveAccount('cash');
@@ -192,10 +205,73 @@ export function Borrowings() {
     setIsPaymentModalOpen(true);
   };
 
+  const openBorrowMoreModal = (b: Borrowing) => {
+    setBorrowMoreTarget(b);
+    setBorrowMoreAmount('');
+    setBorrowMoreDate(format(new Date(), 'yyyy-MM-dd'));
+    setBorrowMoreAccount(b.receiveAccount || 'cash');
+    setBorrowMoreDueDate(b.dueDate || '');
+    setBorrowMoreNote('');
+    setIsBorrowMoreModalOpen(true);
+  };
+
+  const handleConfirmBorrowMore = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!borrowMoreTarget || !borrowMoreTarget.id) return;
+
+    const additionalNum = Number(borrowMoreAmount) || 0;
+    if (additionalNum <= 0) return;
+
+    const currentAmount = borrowMoreTarget.amount || 0;
+    const currentPaid = borrowMoreTarget.paidAmount || 0;
+    const newTotalAmount = currentAmount + additionalNum;
+    const newStatus = currentPaid >= newTotalAmount ? 'Paid' : (currentPaid > 0 ? 'Partial' : 'Unpaid');
+
+    const entryDate = borrowMoreDate || format(new Date(), 'yyyy-MM-dd');
+    const appendNote = `[+Tk ${additionalNum.toLocaleString()} on ${entryDate}${borrowMoreNote.trim() ? `: ${borrowMoreNote.trim()}` : ''}]`;
+    const updatedNote = borrowMoreTarget.note ? `${borrowMoreTarget.note}\n${appendNote}` : appendNote;
+
+    await db.transaction('rw', [db.borrowings, db.accounts, db.balanceLogs, db.activityLogs], async () => {
+      await db.borrowings.update(borrowMoreTarget.id!, {
+        amount: newTotalAmount,
+        status: newStatus,
+        dueDate: borrowMoreDueDate || borrowMoreTarget.dueDate,
+        note: updatedNote,
+        receiveAccount: borrowMoreAccount !== 'none' ? borrowMoreAccount : borrowMoreTarget.receiveAccount,
+        updatedAt: new Date().toISOString()
+      });
+
+      if (borrowMoreAccount !== 'none' && additionalNum > 0) {
+        await adjustAccountBalance(borrowMoreAccount, additionalNum);
+      }
+    });
+
+    await recordActivityLog({
+      action: 'EDIT',
+      module: 'Borrowings',
+      title: `Borrowed additional Tk ${additionalNum.toLocaleString()} from ${borrowMoreTarget.lenderName}`,
+      details: `Total increased from Tk ${currentAmount.toLocaleString()} to Tk ${newTotalAmount.toLocaleString()} (Received in ${getAccountName(borrowMoreAccount)})`,
+      meta: {
+        borrowingId: borrowMoreTarget.id,
+        lenderName: borrowMoreTarget.lenderName,
+        additionalAmount: additionalNum,
+        newTotalAmount,
+        borrowDate: entryDate,
+        receiveAccount: borrowMoreAccount
+      }
+    });
+
+    setIsBorrowMoreModalOpen(false);
+    setBorrowMoreTarget(null);
+    setSuccessMsg(`Successfully added Tk ${additionalNum.toLocaleString()} to ${borrowMoreTarget.lenderName}'s account.`);
+    setTimeout(() => setSuccessMsg(''), 3500);
+  };
+
   const openEditModal = (b: Borrowing) => {
     setEditingBorrowing(b);
     setEditLenderName(b.lenderName || '');
     setEditPhone(b.phone || '');
+    setEditBorrowDate(b.date || format(new Date(), 'yyyy-MM-dd'));
     setEditAmount((b.amount || 0).toString());
     setEditPaidAmount((b.paidAmount || 0).toString());
     setEditReceiveAccount(b.receiveAccount || 'cash');
@@ -244,6 +320,7 @@ export function Borrowings() {
     }
 
     await db.borrowings.update(editingBorrowing.id, {
+      date: editBorrowDate || editingBorrowing.date || format(new Date(), 'yyyy-MM-dd'),
       lenderName: editLenderName.trim(),
       phone: editPhone.trim(),
       amount: parsedNewAmount,
@@ -403,7 +480,11 @@ export function Borrowings() {
                         <div className="font-bold text-gray-900 group-hover:text-[#084b3e] transition-colors">
                           {b.lenderName}
                         </div>
-                        <div className="text-xs text-gray-500 font-mono">{b.phone}</div>
+                        {b.phone ? (
+                          <div className="text-xs text-gray-500 font-mono">{b.phone}</div>
+                        ) : (
+                          <div className="text-[11px] text-gray-400 italic">No phone</div>
+                        )}
                         {b.receiveAccount && (
                           <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1">
                             <Wallet size={11} className="text-gray-400" />
@@ -513,40 +594,54 @@ export function Borrowings() {
                   </div>
                   <div>
                     <h4 className="font-black text-lg text-gray-900">{activeDetailsBorrowing.lenderName}</h4>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <a 
-                        href={`tel:${activeDetailsBorrowing.phone}`}
-                        className="text-xs font-bold text-gray-600 hover:text-[#084b3e] flex items-center gap-1 font-mono transition-colors"
-                      >
-                        <Phone size={12} className="text-[#084b3e]" />
-                        {activeDetailsBorrowing.phone}
-                      </a>
-                      <button
-                        onClick={() => handleCopyPhone(activeDetailsBorrowing.phone)}
-                        className="text-gray-400 hover:text-gray-700 p-1 rounded-md hover:bg-white transition-colors cursor-pointer"
-                        title="Copy phone"
-                      >
-                        {copiedPhone ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                      </button>
-                    </div>
+                    {activeDetailsBorrowing.phone ? (
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <a 
+                          href={`tel:${activeDetailsBorrowing.phone}`}
+                          className="text-xs font-bold text-gray-600 hover:text-[#084b3e] flex items-center gap-1 font-mono transition-colors"
+                        >
+                          <Phone size={12} className="text-[#084b3e]" />
+                          {activeDetailsBorrowing.phone}
+                        </a>
+                        <button
+                          onClick={() => handleCopyPhone(activeDetailsBorrowing.phone)}
+                          className="text-gray-400 hover:text-gray-700 p-1 rounded-md hover:bg-white transition-colors cursor-pointer"
+                          title="Copy phone"
+                        >
+                          {copiedPhone ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400 italic mt-0.5">No phone number</div>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex flex-col items-end gap-1">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    activeDetailsBorrowing.status === 'Paid' ? 'bg-emerald-100 text-emerald-800' :
-                    activeDetailsBorrowing.status === 'Partial' ? 'bg-amber-100 text-amber-800' :
-                    'bg-rose-100 text-rose-800'
-                  }`}>
-                    {activeDetailsBorrowing.status}
-                  </span>
-                  {activeDetailsBorrowing.status !== 'Paid' && (
-                    isPast(new Date(activeDetailsBorrowing.dueDate)) && !isToday(new Date(activeDetailsBorrowing.dueDate))
-                  ) && (
-                    <span className="text-[11px] font-bold text-rose-600 flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100">
-                      <AlertCircle size={11} /> Overdue
+                <div className="flex flex-col sm:items-end gap-2 w-full sm:w-auto">
+                  <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      activeDetailsBorrowing.status === 'Paid' ? 'bg-emerald-100 text-emerald-800' :
+                      activeDetailsBorrowing.status === 'Partial' ? 'bg-amber-100 text-amber-800' :
+                      'bg-rose-100 text-rose-800'
+                    }`}>
+                      {activeDetailsBorrowing.status}
                     </span>
-                  )}
+                    {activeDetailsBorrowing.status !== 'Paid' && (
+                      isPast(new Date(activeDetailsBorrowing.dueDate)) && !isToday(new Date(activeDetailsBorrowing.dueDate))
+                    ) && (
+                      <span className="text-[11px] font-bold text-rose-600 flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100">
+                        <AlertCircle size={11} /> Overdue
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openBorrowMoreModal(activeDetailsBorrowing)}
+                    className="px-3 py-1.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
+                  >
+                    <Plus size={13} />
+                    Borrow More
+                  </button>
                 </div>
               </div>
 
@@ -678,7 +773,18 @@ export function Borrowings() {
                 </button>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const toBorrow = activeDetailsBorrowing;
+                    openBorrowMoreModal(toBorrow);
+                  }}
+                  className="px-4 py-2 bg-[#084b3e] hover:bg-[#0c5e4e] text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus size={14} />
+                  Borrow More
+                </button>
                 {activeDetailsBorrowing.status !== 'Paid' && (
                   <button
                     type="button"
@@ -722,43 +828,64 @@ export function Borrowings() {
             
             <div className="p-6 overflow-y-auto">
               <form id="add-borrowing-form" onSubmit={handleAddBorrowing} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Lender Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={lenderName}
-                    onChange={(e) => setLenderName(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
-                    placeholder="e.g. John Doe"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Phone</label>
-                  <input
-                    type="tel"
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none font-mono"
-                    placeholder="01XXXXXXXXX"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Amount (Tk)</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Lender Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={lenderName}
+                      onChange={(e) => setLenderName(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
+                      placeholder="e.g. John Doe"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider flex items-center justify-between">
+                      <span>Phone (Optional)</span>
+                      <span className="text-[10px] text-gray-400 font-normal">ঐচ্ছিক</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none font-mono"
+                      placeholder="01XXXXXXXXX (Optional)"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Amount (Tk) *</label>
                     <input
                       type="number"
                       required
                       min="1"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none font-mono"
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold text-gray-900 outline-none font-mono"
                       placeholder="0"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Due Date</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider flex items-center justify-between">
+                      <span>Borrow Date / তারিখ</span>
+                      <span className="text-[10px] text-[#084b3e] font-bold">Default: Today</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={borrowDate}
+                      onChange={(e) => setBorrowDate(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold text-gray-900 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Due Date / পরিশোধের তারিখ</label>
                     <input
                       type="date"
                       required
@@ -767,20 +894,20 @@ export function Borrowings() {
                       className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Receive In Account</label>
-                  <select
-                    value={receiveAccount}
-                    onChange={(e) => setReceiveAccount(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold outline-none cursor-pointer"
-                  >
-                    <option value="cash">Cash Drawer</option>
-                    {accounts.filter(a => a.id !== 'cash').map(a => (
-                      <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
-                    ))}
-                    <option value="none">Do not adjust account balance</option>
-                  </select>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Receive In Account</label>
+                    <select
+                      value={receiveAccount}
+                      onChange={(e) => setReceiveAccount(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold outline-none cursor-pointer"
+                    >
+                      <option value="cash">Cash Drawer</option>
+                      {accounts.filter(a => a.id !== 'cash').map(a => (
+                        <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
+                      ))}
+                      <option value="none">Do not adjust account balance</option>
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Note (Optional)</label>
@@ -833,7 +960,7 @@ export function Borrowings() {
               <form id="edit-borrowing-form" onSubmit={handleSaveEdit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Lender Name</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Lender Name *</label>
                     <input
                       type="text"
                       required
@@ -843,13 +970,39 @@ export function Borrowings() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Phone</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider flex items-center justify-between">
+                      <span>Phone (Optional)</span>
+                      <span className="text-[10px] text-gray-400 font-normal">ঐচ্ছিক</span>
+                    </label>
                     <input
                       type="tel"
-                      required
                       value={editPhone}
                       onChange={(e) => setEditPhone(e.target.value)}
                       className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none font-mono"
+                      placeholder="01XXXXXXXXX (Optional)"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Borrow Date / গ্রহণের তারিখ</label>
+                    <input
+                      type="date"
+                      required
+                      value={editBorrowDate}
+                      onChange={(e) => setEditBorrowDate(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold text-gray-900 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Due Date / পরিশোধের তারিখ</label>
+                    <input
+                      type="date"
+                      required
+                      value={editDueDate}
+                      onChange={(e) => setEditDueDate(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
                     />
                   </div>
                 </div>
@@ -920,27 +1073,15 @@ export function Borrowings() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Due Date</label>
-                    <input
-                      type="date"
-                      required
-                      value={editDueDate}
-                      onChange={(e) => setEditDueDate(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Note (Optional)</label>
-                    <textarea
-                      value={editNote}
-                      onChange={(e) => setEditNote(e.target.value)}
-                      rows={2}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none resize-none"
-                      placeholder="Notes..."
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Note (Optional)</label>
+                  <textarea
+                    value={editNote}
+                    onChange={(e) => setEditNote(e.target.value)}
+                    rows={2}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none resize-none"
+                    placeholder="Notes..."
+                  />
                 </div>
               </form>
             </div>
@@ -1054,6 +1195,181 @@ export function Borrowings() {
                 className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
               >
                 Confirm Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Borrow More Modal (Row Details Action) */}
+      {isBorrowMoreModalOpen && borrowMoreTarget && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/75 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#084b3e]/10 text-[#084b3e] flex items-center justify-center">
+                  <Plus size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-gray-900">Borrow More / আরও ধার নিন</h3>
+                  <p className="text-xs text-gray-500">Lender: <span className="font-bold text-gray-800">{borrowMoreTarget.lenderName}</span></p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsBorrowMoreModalOpen(false)} 
+                className="w-8 h-8 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4">
+              {/* Current Status Banner */}
+              <div className="grid grid-cols-3 gap-2 p-3 bg-gray-50 rounded-2xl border border-gray-100 text-center">
+                <div>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">Current Loan</span>
+                  <div className="font-black text-sm text-gray-900">Tk {(borrowMoreTarget.amount || 0).toLocaleString()}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase">Paid Back</span>
+                  <div className="font-black text-sm text-emerald-700">Tk {(borrowMoreTarget.paidAmount || 0).toLocaleString()}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-rose-700 uppercase">Current Due</span>
+                  <div className="font-black text-sm text-rose-700">
+                    Tk {Math.max(0, (borrowMoreTarget.amount || 0) - (borrowMoreTarget.paidAmount || 0)).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              <form id="borrow-more-form" onSubmit={handleConfirmBorrowMore} className="space-y-4">
+                {/* Additional Amount */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-800 mb-1.5 uppercase tracking-wider">
+                    Additional Amount / অতিরিক্ত ধারের পরিমাণ (Tk) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-black text-gray-400">Tk</span>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      step="any"
+                      autoFocus
+                      value={borrowMoreAmount}
+                      onChange={(e) => setBorrowMoreAmount(e.target.value)}
+                      placeholder="0"
+                      className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-lg font-black outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Dates Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider flex items-center justify-between">
+                      <span>Borrow Date / তারিখ</span>
+                      <span className="text-[10px] text-[#084b3e] font-bold">Default: Today</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={borrowMoreDate}
+                      onChange={(e) => setBorrowMoreDate(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold text-gray-900 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                      Extended Due Date / পরিশোধের তারিখ
+                    </label>
+                    <input
+                      type="date"
+                      value={borrowMoreDueDate}
+                      onChange={(e) => setBorrowMoreDueDate(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Receive In Account */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                    Receive In Account / যে অ্যাকাউন্টে জমা হবে
+                  </label>
+                  <select
+                    value={borrowMoreAccount}
+                    onChange={(e) => setBorrowMoreAccount(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold outline-none cursor-pointer"
+                  >
+                    <option value="cash">Cash Drawer (নগদ ক্যাশ)</option>
+                    {accounts.filter(a => a.id !== 'cash').map(a => (
+                      <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
+                    ))}
+                    <option value="none">Do not adjust account balance (ব্যালেন্স পরিবর্তন করবেন না)</option>
+                  </select>
+                </div>
+
+                {/* Note */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                    Note / মন্তব্য (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={borrowMoreNote}
+                    onChange={(e) => setBorrowMoreNote(e.target.value)}
+                    placeholder="e.g. Additional emergency fund"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
+                  />
+                </div>
+
+                {/* Calculation Impact Preview */}
+                {Number(borrowMoreAmount) > 0 && (
+                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-1.5 text-xs animate-in fade-in duration-150">
+                    <div className="font-bold text-emerald-950 flex items-center gap-1.5">
+                      <CheckCircle2 size={14} className="text-emerald-600" />
+                      Summary After Adding:
+                    </div>
+                    <div className="flex justify-between text-gray-700">
+                      <span>New Total Loan:</span>
+                      <span className="font-black text-gray-900 font-mono">
+                        Tk {((borrowMoreTarget.amount || 0) + (Number(borrowMoreAmount) || 0)).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-rose-700">
+                      <span>New Total Due:</span>
+                      <span className="font-black font-mono">
+                        Tk {Math.max(0, ((borrowMoreTarget.amount || 0) + (Number(borrowMoreAmount) || 0)) - (borrowMoreTarget.paidAmount || 0)).toLocaleString()}
+                      </span>
+                    </div>
+                    {borrowMoreAccount !== 'none' && (
+                      <div className="pt-1 border-t border-emerald-200/60 text-[11px] text-emerald-800 font-semibold">
+                        + Tk {Number(borrowMoreAmount).toLocaleString()} will be deposited into {getAccountName(borrowMoreAccount)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </form>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 bg-gray-50 shrink-0 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsBorrowMoreModalOpen(false)}
+                className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="borrow-more-form"
+                disabled={!(Number(borrowMoreAmount) > 0)}
+                className="px-6 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Plus size={16} />
+                Confirm & Add / ধার যোগ করুন
               </button>
             </div>
           </div>

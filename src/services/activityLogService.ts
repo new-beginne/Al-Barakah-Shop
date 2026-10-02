@@ -154,13 +154,15 @@ export async function logDueEdit(customerName: string, amount: number, paymentMe
   });
 }
 
-export async function logDueClear(customerName: string, amount: number, paymentMethod: string, profit: number = 0, detailsExtra?: string) {
+export async function logDueClear(customerName: string, amount: number, paymentMethod: string, profit: number = 0, detailsExtra?: string, discount: number = 0) {
+  const discountText = discount > 0 ? ` (Discount: Tk ${discount.toLocaleString()})` : '';
+  const settledText = discount > 0 ? ` • Settled: Tk ${(amount + discount).toLocaleString()} (Tk ${discount.toLocaleString()} Discount)` : '';
   await recordActivityLog({
     action: 'CLEAR',
     module: 'Dues',
-    title: `Due Cleared: Tk ${amount.toLocaleString()} from ${customerName}`,
-    details: `Paid via ${paymentMethod} • Added to Sales & Profit (Tk ${profit.toLocaleString()})${detailsExtra ? ` • ${detailsExtra}` : ''}`,
-    meta: { customerName, amount, paymentMethod, profit },
+    title: `Due Cleared: Tk ${amount.toLocaleString()} from ${customerName}${discountText}`,
+    details: `Paid via ${paymentMethod}${settledText} • Added to Sales & Profit (Tk ${profit.toLocaleString()})${detailsExtra ? ` • ${detailsExtra}` : ''}`,
+    meta: { customerName, amount, discount, paymentMethod, profit },
   });
 }
 
