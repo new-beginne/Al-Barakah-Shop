@@ -516,30 +516,58 @@ export function Customers() {
       {/* ADD/EDIT MODAL */}
       {isFormOpen && (
         <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setIsFormOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-lg text-gray-900 mb-5 flex justify-between items-center">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h2 className="text-center font-bold text-xl text-[#182236] mb-6">
               {editingCustomerId ? 'Edit Customer' : 'Add New Customer'}
-              <button onClick={() => setIsFormOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-            </h3>
+            </h2>
             <form onSubmit={handleSaveCustomer} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Name *</label>
-                <input type="text" required value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold outline-none focus:border-[#084b3e]" autoFocus />
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">Name *</label>
+                <input 
+                  type="text" 
+                  required 
+                  value={name} 
+                  onChange={e => setName(e.target.value)} 
+                  placeholder="Customer full name"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-bold" 
+                  autoFocus 
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Phone</label>
-                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-[#084b3e]" />
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">Phone</label>
+                <input 
+                  type="tel" 
+                  value={phone} 
+                  onChange={e => setPhone(e.target.value)} 
+                  placeholder="01XXXXXXXXX"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-medium font-mono" 
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Address (Optional)</label>
-                <input type="text" value={address} onChange={e => setAddress(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-[#084b3e]" />
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">Address (Optional)</label>
+                <input 
+                  type="text" 
+                  value={address} 
+                  onChange={e => setAddress(e.target.value)} 
+                  placeholder="Village / Road / Area"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-medium" 
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Notes (Optional)</label>
-                <input type="text" value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-[#084b3e]" />
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">Notes (Optional)</label>
+                <input 
+                  type="text" 
+                  value={notes} 
+                  onChange={e => setNotes(e.target.value)} 
+                  placeholder="Any additional notes"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-medium" 
+                />
               </div>
               <div className="pt-2">
-                <button type="submit" className="w-full bg-[#084b3e] text-white font-bold py-3 rounded-xl hover:bg-[#0c5e4e] transition-colors shadow-sm">
+                <button 
+                  type="submit" 
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
+                >
                   {editingCustomerId ? 'Update Customer' : 'Save Customer'}
                 </button>
               </div>
@@ -558,24 +586,13 @@ export function Customers() {
 
         return (
           <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setCollectDueCustomer(null)}>
-            <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-              <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-100">
-                <div>
-                  <h3 className="font-black text-xl text-gray-900 tracking-tight">
-                    Collect Due / বাকি আদায়
-                  </h3>
-                  <p className="text-xs text-gray-500 font-semibold mt-0.5">
-                    Customer: <span className="text-gray-900 font-bold">{collectDueCustomer.name}</span> • Pending: <span className="text-rose-600 font-black">Tk {pendingDue.toLocaleString()}</span>
-                  </p>
-                </div>
-                <button 
-                  type="button"
-                  onClick={() => setCollectDueCustomer(null)} 
-                  className="w-8 h-8 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-colors cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
-              </div>
+            <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <h2 className="text-center font-bold text-xl text-[#182236] mb-1">
+                Collect Due Payment
+              </h2>
+              <p className="text-center text-xs text-gray-500 font-semibold mb-5">
+                Customer: <span className="text-gray-900 font-bold">{collectDueCustomer.name}</span> • Pending: <span className="text-rose-600 font-black">Tk {pendingDue.toLocaleString()}</span>
+              </p>
 
               <form onSubmit={handleCollectDue} className="space-y-4">
                 {/* Quick settlement action buttons */}
@@ -607,61 +624,52 @@ export function Customers() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Cash Received Field */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Received Amount / নগদ (Tk) *
+                    <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                      Received Amount (Tk) *
                     </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">Tk</span>
-                      <input 
-                        type="number" 
-                        step="any" 
-                        min="0"
-                        required={numDiscount <= 0}
-                        value={collectDueAmount} 
-                        onChange={e => setCollectDueAmount(e.target.value)} 
-                        placeholder="0.00"
-                        className="w-full pl-8 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-[#084b3e] transition-all" 
-                        autoFocus 
-                      />
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-1 font-medium">Cash drawer entry</p>
+                    <input 
+                      type="number" 
+                      step="any" 
+                      min="0"
+                      required={numDiscount <= 0}
+                      value={collectDueAmount} 
+                      onChange={e => setCollectDueAmount(e.target.value)} 
+                      placeholder="0.00"
+                      className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-black font-mono" 
+                      autoFocus 
+                    />
                   </div>
 
-                  {/* Discount / ছাড় Field */}
+                  {/* Discount Field */}
                   <div>
-                    <label className="block text-xs font-bold text-amber-900 mb-1 flex items-center justify-between">
-                      <span>Discount / ছাড় (Tk)</span>
-                      <span className="text-[10px] text-amber-700 bg-amber-100/70 px-1.5 py-0.2 rounded font-medium">Waived</span>
+                    <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                      Discount (Tk)
                     </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-amber-600">Tk</span>
-                      <input 
-                        type="number" 
-                        step="any" 
-                        min="0"
-                        value={collectDueDiscount} 
-                        onChange={e => setCollectDueDiscount(e.target.value)} 
-                        placeholder="0.00"
-                        className="w-full pl-8 pr-3 py-2 bg-amber-50/50 border border-amber-200 rounded-xl font-bold text-sm text-amber-950 outline-none focus:bg-white focus:ring-2 focus:ring-amber-500 transition-all" 
-                      />
-                    </div>
-                    <p className="text-[10px] text-amber-700 mt-1 font-medium">Waived from due</p>
+                    <input 
+                      type="number" 
+                      step="any" 
+                      min="0"
+                      value={collectDueDiscount} 
+                      onChange={e => setCollectDueDiscount(e.target.value)} 
+                      placeholder="0.00"
+                      className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-black font-mono" 
+                    />
                   </div>
                 </div>
 
                 {/* Live Settlement Breakdown */}
-                <div className="p-3 bg-gray-50 border border-gray-200 rounded-2xl space-y-1 text-xs">
+                <div className="p-3 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl space-y-1 text-xs">
                   <div className="flex justify-between items-center text-gray-600 font-semibold">
                     <span>Cash Received:</span>
                     <span className="font-bold text-gray-900">Tk {numCash.toLocaleString()}</span>
                   </div>
                   {numDiscount > 0 && (
                     <div className="flex justify-between items-center text-amber-800 font-semibold">
-                      <span>Discount / ছাড়:</span>
+                      <span>Discount:</span>
                       <span className="font-bold text-amber-900">- Tk {numDiscount.toLocaleString()}</span>
                     </div>
                   )}
-                  <div className="border-t border-gray-200 pt-1 flex justify-between items-center font-bold">
+                  <div className="border-t border-[#dce1e7] pt-1 flex justify-between items-center font-bold">
                     <span className="text-gray-800">Total Settled:</span>
                     <span className="text-emerald-700 font-black">Tk {totalSettled.toLocaleString()}</span>
                   </div>
@@ -675,7 +683,7 @@ export function Customers() {
 
                 {/* Payment Method */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                  <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                     Payment Method
                   </label>
                   <div className="grid grid-cols-4 gap-1.5">
@@ -684,10 +692,10 @@ export function Customers() {
                         key={m}
                         type="button"
                         onClick={() => setCollectDueMethod(m)}
-                        className={`py-1.5 text-center rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        className={`h-[40px] text-center rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                           collectDueMethod === m
-                            ? 'bg-[#084b3e] text-white border-[#084b3e] shadow-xs'
-                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                            ? 'bg-[#075b4d] text-white border-[#075b4d] shadow-xs'
+                            : 'bg-[#f8f9fa] text-gray-700 border-[#dce1e7] hover:bg-gray-100'
                         }`}
                       >
                         {m}
@@ -698,7 +706,7 @@ export function Customers() {
 
                 {/* Optional Note */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                  <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                     Note (Optional)
                   </label>
                   <input
@@ -706,22 +714,15 @@ export function Customers() {
                     value={collectDueNote}
                     onChange={e => setCollectDueNote(e.target.value)}
                     placeholder="e.g. Paid Tk 450, discount Tk 50"
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-800 outline-none focus:bg-white focus:ring-2 focus:ring-[#084b3e]"
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-gray-800 outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                   />
                 </div>
 
-                <div className="pt-2 flex gap-2">
-                  <button 
-                    type="button"
-                    onClick={() => setCollectDueCustomer(null)}
-                    className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
+                <div className="pt-2">
                   <button 
                     type="submit" 
                     disabled={isCollecting || totalSettled <= 0} 
-                    className="flex-1 bg-[#084b3e] text-white font-bold py-2.5 rounded-xl hover:bg-[#0c5e4e] transition-all shadow-xs disabled:opacity-50 cursor-pointer text-xs"
+                    className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                   >
                     {isCollecting ? 'Processing...' : `Confirm (Tk ${numCash.toLocaleString()} Paid)`}
                   </button>

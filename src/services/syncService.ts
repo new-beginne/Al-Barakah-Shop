@@ -663,7 +663,7 @@ export async function fullSync(uid: string, forceAll: boolean = false): Promise<
     return { 
       success: true, 
       isQuotaExceeded: true, 
-      message: 'ক্লাউড সিঙ্ক কোটা সাময়িক পূর্ণ। তবে লোকাল IndexedDB-তে আপনার ডাটা ১০০% সুরক্ষিত ও স্বাভাবিকভাবে কাজ করছে।' 
+      message: 'Cloud sync quota is temporarily reached. Your data is 100% safe in local IndexedDB and works normally.' 
     };
   }
 
@@ -683,7 +683,7 @@ export async function fullSync(uid: string, forceAll: boolean = false): Promise<
       return {
         success: true,
         isQuotaExceeded: true,
-        message: 'দৈনিক ক্লাউড কোটা পূর্ণ। লোকাল IndexedDB ডাটাবেজে সকল ডাটা সম্পূর্ণ নিরাপদ আছে।'
+        message: 'Daily cloud quota reached. All data is completely safe in local IndexedDB database.'
       };
     }
     return {

@@ -243,7 +243,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { 
         success: true, 
         isQuotaExceeded: true, 
-        message: 'অফলাইন মোড সচল - লোকাল ডেটাবেজে সবকিছু নিরাপদ আছে।' 
+        message: 'Offline mode active - All data is safe in local database.' 
       };
     }
 
@@ -267,7 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {
           success: true,
           isQuotaExceeded: true,
-          message: 'দৈনিক ক্লাউড কোটা পূর্ণ। লোকাল IndexedDB-তে ডাটা সুরক্ষিত রয়েছে।'
+          message: 'Daily cloud quota reached. All data is securely saved in local IndexedDB.'
         };
       }
       setSyncStatus('error');

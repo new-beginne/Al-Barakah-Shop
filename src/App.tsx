@@ -14,6 +14,7 @@ import { StoreProfile } from './components/StoreProfile';
 import { LoginScreen } from './components/LoginScreen';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { Inventory } from './components/Inventory';
+import { StockDeductionRules } from './components/StockDeductionRules';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { WifiOff, Cloud, RefreshCw, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -162,6 +163,8 @@ function ShopContent() {
               <Route path="/customers/:id" element={<CustomerProfile />} />
               <Route path="/mfs" element={<MfsLedger />} />
               <Route path="/inventory" element={<Inventory />} />
+              <Route path="/inventory/rules" element={<StockDeductionRules />} />
+              <Route path="/stock-rules" element={<StockDeductionRules />} />
               <Route path="/borrowings" element={<Borrowings />} />
               <Route path="/dues" element={<Navigate to="/customers" replace />} />
               <Route path="/expenses" element={<Expenses />} />

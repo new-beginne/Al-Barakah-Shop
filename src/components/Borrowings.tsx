@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, Borrowing } from '../db/db';
+import { db, Borrowing, Customer } from '../db/db';
 import { recordActivityLog } from '../services/activityLogService';
 import { adjustAccountBalance } from '../services/accountService';
 import { 
@@ -18,9 +18,10 @@ import {
   FileText, 
   X, 
   Check, 
-  Copy
+  Copy,
+  User
 } from 'lucide-react';
-import { format, isPast, isToday, differenceInDays } from 'date-fns';
+import { format, isPast, isToday, differenceInDays, addDays } from 'date-fns';
 
 export function Borrowings() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -38,10 +39,16 @@ export function Borrowings() {
   const [lenderName, setLenderName] = useState('');
   const [phone, setPhone] = useState('');
   const [borrowDate, setBorrowDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [durationDays, setDurationDays] = useState('30');
   const [amount, setAmount] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [dueDate, setDueDate] = useState(() => format(addDays(new Date(), 30), 'yyyy-MM-dd'));
   const [note, setNote] = useState('');
   const [receiveAccount, setReceiveAccount] = useState('cash');
+
+  // Customer suggestion state
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | undefined>(undefined);
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  const customerSuggestionRef = useRef<HTMLDivElement>(null);
 
   // Edit Form State
   const [editLenderName, setEditLenderName] = useState('');
@@ -68,10 +75,22 @@ export function Borrowings() {
   const [borrowMoreNote, setBorrowMoreNote] = useState('');
 
   const accounts = useLiveQuery(() => db.accounts.toArray()) || [];
+  const customers = useLiveQuery(() => db.customers.toArray()) || [];
 
   const borrowings = useLiveQuery(() => 
     db.borrowings.orderBy('id').reverse().toArray()
   ) || [];
+
+  // Close customer suggestions on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (customerSuggestionRef.current && !customerSuggestionRef.current.contains(event.target as Node)) {
+        setShowCustomerSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Live lookup for active details modal
   const activeDetailsBorrowing = detailsBorrowingId 
@@ -112,17 +131,80 @@ export function Borrowings() {
     }
   };
 
+  const updateDurationDays = (daysStr: string, baseDateStr = borrowDate) => {
+    setDurationDays(daysStr);
+    const numDays = parseInt(daysStr);
+    if (!isNaN(numDays) && numDays > 0) {
+      try {
+        const base = baseDateStr ? new Date(baseDateStr) : new Date();
+        setDueDate(format(addDays(base, numDays), 'yyyy-MM-dd'));
+      } catch {
+        setDueDate(format(addDays(new Date(), numDays), 'yyyy-MM-dd'));
+      }
+    }
+  };
+
+  const handleBorrowDateChange = (newBorrowDate: string) => {
+    setBorrowDate(newBorrowDate);
+    const numDays = parseInt(durationDays) || 30;
+    try {
+      const base = newBorrowDate ? new Date(newBorrowDate) : new Date();
+      setDueDate(format(addDays(base, numDays), 'yyyy-MM-dd'));
+    } catch {}
+  };
+
+  const handleDirectDueDateChange = (newDueDate: string) => {
+    setDueDate(newDueDate);
+    if (newDueDate && borrowDate) {
+      try {
+        const diff = differenceInDays(new Date(newDueDate), new Date(borrowDate));
+        if (diff > 0) {
+          setDurationDays(String(diff));
+        }
+      } catch {}
+    }
+  };
+
   const handleAddBorrowing = async (e: React.FormEvent) => {
     e.preventDefault();
     const now = new Date();
     const parsedAmount = Number(amount) || 0;
     const entryDate = borrowDate || format(now, 'yyyy-MM-dd');
 
+    // Requirement: If lender is not in customer list, auto-add to customers!
+    let linkedCustomerId = selectedCustomerId;
+    if (lenderName.trim()) {
+      const existingCustomer = customers.find(c => 
+        (selectedCustomerId && c.id === selectedCustomerId) ||
+        c.name.toLowerCase().trim() === lenderName.toLowerCase().trim() ||
+        (phone.trim() && c.phone && c.phone.trim() === phone.trim())
+      );
+      if (!existingCustomer) {
+        const newCustId = await db.customers.add({
+          name: lenderName.trim(),
+          phone: phone.trim(),
+          notes: 'Auto-added from Borrowings (Lender)',
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString()
+        });
+        linkedCustomerId = Number(newCustId);
+      } else {
+        linkedCustomerId = existingCustomer.id;
+        if (!existingCustomer.phone && phone.trim()) {
+          await db.customers.update(existingCustomer.id!, {
+            phone: phone.trim(),
+            updatedAt: now.toISOString()
+          });
+        }
+      }
+    }
+
     const newId = await db.borrowings.add({
       date: entryDate,
       time: format(now, 'hh:mm:ss a'),
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
+      customerId: linkedCustomerId,
       lenderName: lenderName.trim(),
       phone: phone.trim(),
       amount: parsedAmount,
@@ -147,9 +229,12 @@ export function Borrowings() {
 
     setLenderName('');
     setPhone('');
+    setSelectedCustomerId(undefined);
     setAmount('');
-    setBorrowDate(format(new Date(), 'yyyy-MM-dd'));
-    setDueDate('');
+    const today = format(new Date(), 'yyyy-MM-dd');
+    setBorrowDate(today);
+    setDurationDays('30');
+    setDueDate(format(addDays(new Date(), 30), 'yyyy-MM-dd'));
     setNote('');
     setReceiveAccount('cash');
     setIsModalOpen(false);
@@ -316,6 +401,26 @@ export function Borrowings() {
         if (newAccount !== 'none' && parsedNewAmount > 0) {
           await adjustAccountBalance(newAccount, parsedNewAmount);
         }
+      }
+    }
+
+    if (editLenderName.trim()) {
+      const existingCustomer = customers.find(c => 
+        c.name.toLowerCase().trim() === editLenderName.toLowerCase().trim()
+      );
+      if (!existingCustomer) {
+        await db.customers.add({
+          name: editLenderName.trim(),
+          phone: editPhone.trim(),
+          notes: 'Auto-added from Borrowings (Lender)',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      } else if (!existingCustomer.phone && editPhone.trim()) {
+        await db.customers.update(existingCustomer.id!, {
+          phone: editPhone.trim(),
+          updatedAt: new Date().toISOString()
+        });
       }
     }
 
@@ -814,318 +919,337 @@ export function Borrowings() {
 
       {/* Add Borrowing Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
-              <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                <HandCoins size={20} className="text-[#084b3e]" />
-                Record Borrowing
-              </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer">
-                ✕
-              </button>
-            </div>
-            
-            <div className="p-6 overflow-y-auto">
-              <form id="add-borrowing-form" onSubmit={handleAddBorrowing} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Lender Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={lenderName}
-                      onChange={(e) => setLenderName(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
-                      placeholder="e.g. John Doe"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider flex items-center justify-between">
-                      <span>Phone (Optional)</span>
-                      <span className="text-[10px] text-gray-400 font-normal">ঐচ্ছিক</span>
-                    </label>
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none font-mono"
-                      placeholder="01XXXXXXXXX (Optional)"
-                    />
-                  </div>
-                </div>
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setIsModalOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">
+              Add New Borrowing
+            </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Amount (Tk) *</label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold text-gray-900 outline-none font-mono"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider flex items-center justify-between">
-                      <span>Borrow Date / তারিখ</span>
-                      <span className="text-[10px] text-[#084b3e] font-bold">Default: Today</span>
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={borrowDate}
-                      onChange={(e) => setBorrowDate(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold text-gray-900 outline-none"
-                    />
-                  </div>
-                </div>
+            <form onSubmit={handleAddBorrowing} className="space-y-4">
+              <div className="relative" ref={customerSuggestionRef}>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={lenderName}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setLenderName(val);
+                    setShowCustomerSuggestions(val.trim().length > 0);
+                  }}
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl font-bold outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
+                  placeholder="Enter or search lender name"
+                  autoFocus
+                />
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Due Date / পরিশোধের তারিখ</label>
-                    <input
-                      type="date"
-                      required
-                      value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Receive In Account</label>
-                    <select
-                      value={receiveAccount}
-                      onChange={(e) => setReceiveAccount(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold outline-none cursor-pointer"
-                    >
-                      <option value="cash">Cash Drawer</option>
-                      {accounts.filter(a => a.id !== 'cash').map(a => (
-                        <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
+                {/* Customer Suggestions Dropdown - Only shown when keywords are typed */}
+                {showCustomerSuggestions && lenderName.trim().length > 0 && (() => {
+                  const query = lenderName.toLowerCase().trim();
+                  const matched = customers.filter(c =>
+                    c.name.toLowerCase().includes(query) ||
+                    (c.phone && c.phone.includes(query))
+                  );
+                  if (matched.length === 0) return null;
+                  return (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#dce1e7] rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-gray-50">
+                      {matched.slice(0, 8).map(c => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setLenderName(c.name);
+                            if (c.phone) setPhone(c.phone);
+                            setSelectedCustomerId(c.id);
+                            setShowCustomerSuggestions(false);
+                          }}
+                          className="w-full p-2.5 text-left hover:bg-emerald-50 transition-colors flex items-center justify-between cursor-pointer"
+                        >
+                          <div>
+                            <div className="font-bold text-xs text-gray-900">{c.name}</div>
+                            {c.phone && <div className="text-[11px] text-gray-500 font-mono">{c.phone}</div>}
+                          </div>
+                          <span className="text-[10px] font-bold text-[#075b4d]">Select</span>
+                        </button>
                       ))}
-                      <option value="none">Do not adjust account balance</option>
-                    </select>
-                  </div>
-                </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                  Phone (Optional)
+                </label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium outline-none text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
+                  placeholder="01XXXXXXXXX"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                  Amount (Tk) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl font-bold outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
+                  placeholder="0"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Note (Optional)</label>
-                  <textarea
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    rows={2}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none resize-none"
-                    placeholder="Reason or notes..."
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Borrow Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={borrowDate}
+                    onChange={(e) => handleBorrowDateChange(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium outline-none text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                   />
                 </div>
-              </form>
-            </div>
 
-            <div className="p-4 border-t border-gray-100 bg-gray-50 shrink-0 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="add-borrowing-form"
-                className="px-6 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
-              >
-                Save Record
-              </button>
-            </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Due In (Days)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={durationDays}
+                    onChange={(e) => updateDurationDays(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl font-bold outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
+                    placeholder="30"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                  Receive In Account
+                </label>
+                <select
+                  value={receiveAccount}
+                  onChange={(e) => setReceiveAccount(e.target.value)}
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium outline-none text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all cursor-pointer"
+                >
+                  <option value="cash">Cash Drawer</option>
+                  {accounts.filter(a => a.id !== 'cash').map(a => (
+                    <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
+                  ))}
+                  <option value="none">Do not adjust account balance</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                  Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Reason or notes..."
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium outline-none text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
+                >
+                  Save Borrowing
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
       {/* Edit Borrowing Modal */}
       {isEditModalOpen && editingBorrowing && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
-              <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                <Edit2 size={18} className="text-[#084b3e]" />
-                Edit Borrowing Record
-              </h3>
-              <button onClick={() => setIsEditModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer">
-                ✕
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setIsEditModalOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">
+              Edit Borrowing Record
+            </h3>
             
-            <div className="p-6 overflow-y-auto">
-              <form id="edit-borrowing-form" onSubmit={handleSaveEdit} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Lender Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={editLenderName}
-                      onChange={(e) => setEditLenderName(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider flex items-center justify-between">
-                      <span>Phone (Optional)</span>
-                      <span className="text-[10px] text-gray-400 font-normal">ঐচ্ছিক</span>
-                    </label>
-                    <input
-                      type="tel"
-                      value={editPhone}
-                      onChange={(e) => setEditPhone(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none font-mono"
-                      placeholder="01XXXXXXXXX (Optional)"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Borrow Date / গ্রহণের তারিখ</label>
-                    <input
-                      type="date"
-                      required
-                      value={editBorrowDate}
-                      onChange={(e) => setEditBorrowDate(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold text-gray-900 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Due Date / পরিশোধের তারিখ</label>
-                    <input
-                      type="date"
-                      required
-                      value={editDueDate}
-                      onChange={(e) => setEditDueDate(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3.5 bg-gray-50 rounded-2xl border border-gray-100">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-800 mb-1.5 uppercase tracking-wider">
-                      Borrowed Amount (Tk)
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      value={editAmount}
-                      onChange={(e) => setEditAmount(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-base font-black outline-none font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
-                      Repaid Amount (Tk)
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      value={editPaidAmount}
-                      onChange={(e) => setEditPaidAmount(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-colors text-base font-black outline-none font-mono text-emerald-700"
-                    />
-                  </div>
-                  <div className="sm:col-span-2 pt-1 flex justify-between items-center text-xs font-bold">
-                    <span className="text-gray-500">Calculated Due:</span>
-                    <span className="text-rose-600 font-mono text-sm">
-                      Tk {Math.max(0, (Number(editAmount) || 0) - (Number(editPaidAmount) || 0)).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-2 p-3.5 bg-emerald-50/40 rounded-2xl border border-emerald-100">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-800 mb-1.5 uppercase tracking-wider">
-                      Receive Account
-                    </label>
-                    <select
-                      value={editReceiveAccount}
-                      onChange={(e) => setEditReceiveAccount(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold outline-none cursor-pointer"
-                    >
-                      <option value="cash">Cash Drawer</option>
-                      {accounts.filter(a => a.id !== 'cash').map(a => (
-                        <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
-                      ))}
-                      <option value="none">Do not adjust account balance</option>
-                    </select>
-                  </div>
-
-                  <div className="pt-1">
-                    <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-gray-800">
-                      <input
-                        type="checkbox"
-                        checked={editAdjustBalance}
-                        onChange={(e) => setEditAdjustBalance(e.target.checked)}
-                        className="w-4 h-4 rounded text-[#084b3e] focus:ring-[#084b3e] cursor-pointer"
-                      />
-                      <span>Adjust account balance with amount difference</span>
-                    </label>
-                  </div>
-                </div>
-
+            <form id="edit-borrowing-form" onSubmit={handleSaveEdit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Note (Optional)</label>
-                  <textarea
-                    value={editNote}
-                    onChange={(e) => setEditNote(e.target.value)}
-                    rows={2}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none resize-none"
-                    placeholder="Notes..."
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">Lender Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editLenderName}
+                    onChange={(e) => setEditLenderName(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                   />
                 </div>
-              </form>
-            </div>
-            
-            <div className="p-4 border-t border-gray-100 bg-gray-50 shrink-0 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsEditModalOpen(false)}
-                className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="edit-borrowing-form"
-                className="px-6 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
-              >
-                Save Changes
-              </button>
-            </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Phone (Optional)
+                  </label>
+                  <input
+                    type="tel"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
+                    placeholder="01XXXXXXXXX"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">Borrow Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={editBorrowDate}
+                    onChange={(e) => setEditBorrowDate(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">Due Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={editDueDate}
+                    onChange={(e) => setEditDueDate(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-[#f8f9fa] rounded-xl border border-[#dce1e7]">
+                <div>
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Borrowed Amount (Tk)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-white border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] outline-none focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-emerald-800 mb-1.5 uppercase tracking-wider">
+                    Repaid Amount (Tk)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    value={editPaidAmount}
+                    onChange={(e) => setEditPaidAmount(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-white border border-[#dce1e7] rounded-xl text-base font-black text-emerald-700 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition-all font-mono"
+                  />
+                </div>
+                <div className="sm:col-span-2 pt-1 flex justify-between items-center text-xs font-bold">
+                  <span className="text-gray-500">Calculated Due:</span>
+                  <span className="text-rose-600 font-mono text-sm">
+                    Tk {Math.max(0, (Number(editAmount) || 0) - (Number(editPaidAmount) || 0)).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2 p-3.5 bg-[#f8f9fa] rounded-xl border border-[#dce1e7]">
+                <div>
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Receive Account
+                  </label>
+                  <select
+                    value={editReceiveAccount}
+                    onChange={(e) => setEditReceiveAccount(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-white border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] outline-none focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 transition-all cursor-pointer"
+                  >
+                    <option value="cash">Cash Drawer</option>
+                    {accounts.filter(a => a.id !== 'cash').map(a => (
+                      <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
+                    ))}
+                    <option value="none">Do not adjust account balance</option>
+                  </select>
+                </div>
+
+                <div className="pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={editAdjustBalance}
+                      onChange={(e) => setEditAdjustBalance(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#075b4d] focus:ring-[#075b4d] cursor-pointer"
+                    />
+                    <span>Adjust account balance with amount difference</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">Note (Optional)</label>
+                <textarea
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  rows={2}
+                  className="w-full min-h-[80px] p-3.5 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all resize-none"
+                  placeholder="Notes..."
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
       {/* Delete Confirmation Modal */}
       {deleteTarget && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden p-6 space-y-4">
-            <h3 className="font-bold text-lg text-gray-900">Delete Borrowing Record?</h3>
-            <p className="text-sm text-gray-600">
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setDeleteTarget(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-2 border border-red-100">
+              <AlertCircle size={28} strokeWidth={2.5} />
+            </div>
+            <h3 className="font-bold text-xl text-[#182236]">Delete Borrowing Record?</h3>
+            <p className="text-sm text-gray-500 font-medium">
               Are you sure you want to delete the borrowing record for <span className="font-bold text-gray-900">{deleteTarget.lenderName}</span> (Tk {deleteTarget.amount.toLocaleString()})?
             </p>
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
+                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
               >
                 Delete
               </button>
@@ -1136,97 +1260,66 @@ export function Borrowings() {
 
       {/* Repayment Modal */}
       {isPaymentModalOpen && selectedBorrowing && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-              <h3 className="font-bold text-lg text-gray-900">Repayment</h3>
-              <button onClick={() => setIsPaymentModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer">
-                ✕
-              </button>
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setIsPaymentModalOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-2 text-center">Record Repayment</h3>
+            <div className="mb-5 text-sm bg-[#f8f9fa] p-3.5 rounded-xl border border-[#dce1e7] text-center">
+              <div className="font-medium text-gray-600">Lender: <span className="font-bold text-gray-900">{selectedBorrowing.lenderName}</span></div>
+              <div className="font-medium text-gray-600 mt-1">Outstanding: <span className="font-bold text-rose-600">Tk {((selectedBorrowing.amount || 0) - (selectedBorrowing.paidAmount || 0)).toLocaleString()}</span></div>
             </div>
-            
-            <div className="p-6">
-              <div className="mb-4 text-sm bg-gray-50 p-3 rounded-lg border border-gray-100">
-                <div className="font-medium text-gray-600">Lender: <span className="font-bold text-gray-900">{selectedBorrowing.lenderName}</span></div>
-                <div className="font-medium text-gray-600 mt-1">Outstanding: <span className="font-bold text-rose-600">Tk {((selectedBorrowing.amount || 0) - (selectedBorrowing.paidAmount || 0)).toLocaleString()}</span></div>
+
+            <form id="payment-form" onSubmit={handlePayment} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">Payment Amount (Tk) *</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  max={(selectedBorrowing.amount || 0) - (selectedBorrowing.paidAmount || 0)}
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl outline-none text-base font-black text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono text-center"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">Pay From Account</label>
+                <select
+                  value={payAccount}
+                  onChange={(e) => setPayAccount(e.target.value)}
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl outline-none text-sm font-bold text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all cursor-pointer"
+                >
+                  <option value="cash">Cash Drawer</option>
+                  {accounts.filter(a => a.id !== 'cash').map(a => (
+                    <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
+                  ))}
+                  <option value="none">Do not adjust account balance</option>
+                </select>
               </div>
 
-              <form id="payment-form" onSubmit={handlePayment} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Payment Amount (Tk)</label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    max={(selectedBorrowing.amount || 0) - (selectedBorrowing.paidAmount || 0)}
-                    value={payAmount}
-                    onChange={(e) => setPayAmount(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-lg font-black outline-none font-mono text-center"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Pay From Account</label>
-                  <select
-                    value={payAccount}
-                    onChange={(e) => setPayAccount(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold outline-none cursor-pointer"
-                  >
-                    <option value="cash">Cash Drawer</option>
-                    {accounts.filter(a => a.id !== 'cash').map(a => (
-                      <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
-                    ))}
-                    <option value="none">Do not adjust account balance</option>
-                  </select>
-                </div>
-              </form>
-            </div>
-
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsPaymentModalOpen(false)}
-                className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="payment-form"
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
-              >
-                Confirm Payment
-              </button>
-            </div>
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
+                >
+                  Confirm Payment
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
       {/* Borrow More Modal (Row Details Action) */}
       {isBorrowMoreModalOpen && borrowMoreTarget && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/75 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#084b3e]/10 text-[#084b3e] flex items-center justify-center">
-                  <Plus size={20} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-gray-900">Borrow More / আরও ধার নিন</h3>
-                  <p className="text-xs text-gray-500">Lender: <span className="font-bold text-gray-800">{borrowMoreTarget.lenderName}</span></p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setIsBorrowMoreModalOpen(false)} 
-                className="w-8 h-8 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setIsBorrowMoreModalOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-1 text-center">Borrow Additional Amount</h3>
+            <p className="text-center text-xs text-gray-500 font-semibold mb-5">Lender: <span className="font-bold text-gray-800">{borrowMoreTarget.lenderName}</span></p>
 
-            <div className="p-6 overflow-y-auto space-y-4">
+            <div className="space-y-4">
               {/* Current Status Banner */}
-              <div className="grid grid-cols-3 gap-2 p-3 bg-gray-50 rounded-2xl border border-gray-100 text-center">
+              <div className="grid grid-cols-3 gap-2 p-3 bg-[#f8f9fa] rounded-xl border border-[#dce1e7] text-center">
                 <div>
                   <span className="text-[10px] font-bold text-gray-500 uppercase">Current Loan</span>
                   <div className="font-black text-sm text-gray-900">Tk {(borrowMoreTarget.amount || 0).toLocaleString()}</div>
@@ -1246,88 +1339,84 @@ export function Borrowings() {
               <form id="borrow-more-form" onSubmit={handleConfirmBorrowMore} className="space-y-4">
                 {/* Additional Amount */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-800 mb-1.5 uppercase tracking-wider">
-                    Additional Amount / অতিরিক্ত ধারের পরিমাণ (Tk) *
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Additional Amount (Tk) *
                   </label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-black text-gray-400">Tk</span>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      step="any"
-                      autoFocus
-                      value={borrowMoreAmount}
-                      onChange={(e) => setBorrowMoreAmount(e.target.value)}
-                      placeholder="0"
-                      className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-lg font-black outline-none font-mono"
-                    />
-                  </div>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="any"
+                    autoFocus
+                    value={borrowMoreAmount}
+                    onChange={(e) => setBorrowMoreAmount(e.target.value)}
+                    placeholder="0"
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
+                  />
                 </div>
 
                 {/* Dates Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider flex items-center justify-between">
-                      <span>Borrow Date / তারিখ</span>
-                      <span className="text-[10px] text-[#084b3e] font-bold">Default: Today</span>
+                    <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider flex items-center justify-between">
+                      <span>Borrow Date</span>
                     </label>
                     <input
                       type="date"
                       required
                       value={borrowMoreDate}
                       onChange={(e) => setBorrowMoreDate(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold text-gray-900 outline-none"
+                      className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                      Extended Due Date / পরিশোধের তারিখ
+                    <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                      Extended Due Date
                     </label>
                     <input
                       type="date"
                       value={borrowMoreDueDate}
                       onChange={(e) => setBorrowMoreDueDate(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
+                      className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                     />
                   </div>
                 </div>
 
                 {/* Receive In Account */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                    Receive In Account / যে অ্যাকাউন্টে জমা হবে
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Receive In Account
                   </label>
                   <select
                     value={borrowMoreAccount}
                     onChange={(e) => setBorrowMoreAccount(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-bold outline-none cursor-pointer"
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all cursor-pointer"
                   >
-                    <option value="cash">Cash Drawer (নগদ ক্যাশ)</option>
+                    <option value="cash">Cash Drawer</option>
                     {accounts.filter(a => a.id !== 'cash').map(a => (
                       <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
                     ))}
-                    <option value="none">Do not adjust account balance (ব্যালেন্স পরিবর্তন করবেন না)</option>
+                    <option value="none">Do not adjust account balance</option>
                   </select>
                 </div>
 
                 {/* Note */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                    Note / মন্তব্য (Optional)
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Note (Optional)
                   </label>
                   <input
                     type="text"
                     value={borrowMoreNote}
                     onChange={(e) => setBorrowMoreNote(e.target.value)}
                     placeholder="e.g. Additional emergency fund"
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] transition-colors text-sm font-medium outline-none"
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                   />
                 </div>
 
                 {/* Calculation Impact Preview */}
                 {Number(borrowMoreAmount) > 0 && (
-                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-1.5 text-xs animate-in fade-in duration-150">
+                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1.5 text-xs">
                     <div className="font-bold text-emerald-950 flex items-center gap-1.5">
                       <CheckCircle2 size={14} className="text-emerald-600" />
                       Summary After Adding:
@@ -1344,33 +1433,20 @@ export function Borrowings() {
                         Tk {Math.max(0, ((borrowMoreTarget.amount || 0) + (Number(borrowMoreAmount) || 0)) - (borrowMoreTarget.paidAmount || 0)).toLocaleString()}
                       </span>
                     </div>
-                    {borrowMoreAccount !== 'none' && (
-                      <div className="pt-1 border-t border-emerald-200/60 text-[11px] text-emerald-800 font-semibold">
-                        + Tk {Number(borrowMoreAmount).toLocaleString()} will be deposited into {getAccountName(borrowMoreAccount)}
-                      </div>
-                    )}
                   </div>
                 )}
-              </form>
-            </div>
 
-            <div className="p-4 border-t border-gray-100 bg-gray-50 shrink-0 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsBorrowMoreModalOpen(false)}
-                className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="borrow-more-form"
-                disabled={!(Number(borrowMoreAmount) > 0)}
-                className="px-6 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <Plus size={16} />
-                Confirm & Add / ধার যোগ করুন
-              </button>
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={!(Number(borrowMoreAmount) > 0)}
+                    className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Plus size={16} />
+                    Confirm & Add
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

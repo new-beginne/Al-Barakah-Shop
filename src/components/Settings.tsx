@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { db, ServiceRate, ExpenseService, Account, BalanceLog } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { exportDB, importInto } from 'dexie-export-import';
@@ -32,11 +33,17 @@ import {
   History,
   Check,
   AlertCircle,
-  HardDrive
+  HardDrive,
+  Zap,
+  Package
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AuthModal } from './AuthModal';
-import { useNavigate } from 'react-router-dom';
+import { 
+  initDefaultServicesAndMappings, 
+  linkServiceToInventoryItem, 
+  unlinkServiceFromInventory 
+} from '../services/serviceMappingService';
 import { format } from 'date-fns';
 import { requestPersistentStorage } from '../lib/storagePersistence';
 import { 
@@ -75,6 +82,16 @@ export function Settings() {
   const services = useLiveQuery(() => db.services.toArray()) || [];
   // Expense Services
   const expenseServices = useLiveQuery(() => db.expenseServices.toArray()) || [];
+  // Inventory Items & Links
+  const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
+  const serviceItemLinks = useLiveQuery(() => db.serviceItemLinks.toArray()) || [];
+
+  // Service Form Extended States for Stock Pairing
+  const [serviceFormCategory, setServiceFormCategory] = useState('Printing');
+  const [serviceFormPrice, setServiceFormPrice] = useState('');
+  const [serviceFormCost, setServiceFormCost] = useState('');
+  const [serviceFormInventoryItemId, setServiceFormInventoryItemId] = useState<number | 'none'>('none');
+  const [serviceFormDeductQty, setServiceFormDeductQty] = useState('1');
 
   // Deletion Confirmation Modal State
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -103,8 +120,10 @@ export function Settings() {
   const [balanceNote, setBalanceNote] = useState('');
   const [isSubmittingBalance, setIsSubmittingBalance] = useState(false);
 
+  // Initialize defaults on mount
   useEffect(() => {
     initDefaultAccounts();
+    initDefaultServicesAndMappings();
   }, []);
 
   // Filter accounts strictly to the 4 options
@@ -194,6 +213,11 @@ export function Settings() {
     setServiceModalType(type);
     setEditingServiceId(null);
     setServiceFormName('');
+    setServiceFormCategory('Printing');
+    setServiceFormPrice('');
+    setServiceFormCost('');
+    setServiceFormInventoryItemId('none');
+    setServiceFormDeductQty('1');
     setIsServiceModalOpen(true);
   };
 
@@ -201,6 +225,29 @@ export function Settings() {
     setServiceModalType(type);
     setEditingServiceId(item.id || null);
     setServiceFormName(item.name);
+
+    if (type === 'sell') {
+      const found = services.find(s => s.id === item.id);
+      setServiceFormCategory(found?.category || 'Printing');
+      setServiceFormPrice(found?.defaultPrice ? String(found.defaultPrice) : '');
+      setServiceFormCost(found?.defaultCost ? String(found.defaultCost) : '');
+
+      // Check linked inventory item from service or serviceItemLinks
+      if (found?.linkedInventoryItemId) {
+        setServiceFormInventoryItemId(found.linkedInventoryItemId);
+        setServiceFormDeductQty(String(found.deductQuantity || 1));
+      } else {
+        const link = serviceItemLinks.find(l => l.serviceName.toLowerCase().trim() === item.name.toLowerCase().trim());
+        if (link && link.inventoryItemId) {
+          setServiceFormInventoryItemId(link.inventoryItemId);
+          setServiceFormDeductQty(String(link.quantityPerUnit || 1));
+        } else {
+          setServiceFormInventoryItemId('none');
+          setServiceFormDeductQty('1');
+        }
+      }
+    }
+
     setIsServiceModalOpen(true);
   };
 
@@ -212,21 +259,54 @@ export function Settings() {
     const cleanName = serviceFormName.trim();
 
     if (serviceModalType === 'sell') {
+      const pPrice = parseFloat(serviceFormPrice) || 0;
+      const pCost = parseFloat(serviceFormCost) || 0;
+      const deductQty = Math.max(1, Number(serviceFormDeductQty) || 1);
+
+      let linkedInvItem = undefined;
+      if (typeof serviceFormInventoryItemId === 'number' && serviceFormInventoryItemId > 0) {
+        linkedInvItem = inventoryItems.find(i => i.id === serviceFormInventoryItemId);
+      }
+
       if (editingServiceId) {
         await db.services.update(editingServiceId, {
           name: cleanName,
+          category: serviceFormCategory || 'Printing',
+          defaultPrice: pPrice,
+          defaultCost: pCost,
+          linkedInventoryItemId: linkedInvItem?.id,
+          linkedInventoryItemName: linkedInvItem?.name,
+          deductQuantity: linkedInvItem ? deductQty : undefined,
           updatedAt: now,
         });
+
+        // Sync with db.serviceItemLinks
+        if (linkedInvItem && linkedInvItem.id) {
+          await linkServiceToInventoryItem(cleanName, linkedInvItem.id, deductQty, editingServiceId);
+        } else {
+          await unlinkServiceFromInventory(cleanName, editingServiceId);
+        }
+
         setSuccessMsg(`Sales service "${cleanName}" updated.`);
       } else {
         const newService: ServiceRate = {
           name: cleanName,
-          defaultCost: 0,
-          defaultPrice: 0,
+          category: serviceFormCategory || 'Printing',
+          defaultCost: pCost,
+          defaultPrice: pPrice,
+          linkedInventoryItemId: linkedInvItem?.id,
+          linkedInventoryItemName: linkedInvItem?.name,
+          deductQuantity: linkedInvItem ? deductQty : undefined,
           createdAt: now,
           updatedAt: now,
         };
-        await db.services.add(newService);
+        const newId = await db.services.add(newService);
+
+        // Sync with db.serviceItemLinks
+        if (linkedInvItem && linkedInvItem.id) {
+          await linkServiceToInventoryItem(cleanName, linkedInvItem.id, deductQty, newId as number);
+        }
+
         setSuccessMsg(`Sales service "${cleanName}" added.`);
       }
     } else {
@@ -235,14 +315,14 @@ export function Settings() {
           name: cleanName,
           updatedAt: now,
         });
-        setSuccessMsg(`Expense service "${cleanName}" updated.`);
+        setSuccessMsg(`Expense category "${cleanName}" updated.`);
       } else {
         await db.expenseServices.add({
           name: cleanName,
           createdAt: now,
           updatedAt: now,
         });
-        setSuccessMsg(`Expense service "${cleanName}" added.`);
+        setSuccessMsg(`Expense category "${cleanName}" added.`);
       }
     }
 
@@ -605,6 +685,19 @@ export function Settings() {
                 />
               </div>
 
+              {serviceSubTab === 'sell' && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/inventory/rules')}
+                  className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 px-3.5 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-2xs transition-all shrink-0 cursor-pointer"
+                  title="Configure automatic paper and stock deduction rules for services"
+                >
+                  <Zap size={15} className="text-amber-600 fill-amber-500/20" />
+                  <span className="hidden md:inline">Auto-Deduct Stock Rules</span>
+                  <span className="md:hidden">Stock Rules</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => openAddServiceModal(serviceSubTab)}
@@ -617,64 +710,96 @@ export function Settings() {
             </div>
           </div>
 
-          {/* Services Table Card (Exact same layout as Borrowings.tsx table) */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Services Table Card */}
+          <div className="bg-white rounded-2xl shadow-xs border border-gray-100 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm whitespace-nowrap">
-                <thead className="bg-gray-50/50 text-gray-500 font-bold border-b border-gray-100">
+              <table className="w-full text-left text-xs sm:text-sm whitespace-nowrap">
+                <thead className="bg-gray-50/80 text-gray-500 font-bold border-b border-gray-100 text-[11px] uppercase tracking-wider">
                   <tr>
-                    <th className="px-6 py-4">Service Name</th>
-                    <th className="px-6 py-4">Type</th>
-                    <th className="px-6 py-4">Added Date</th>
-                    <th className="px-6 py-4 text-right">Action</th>
+                    <th className="px-5 py-3.5">Service Name</th>
+                    {serviceSubTab === 'sell' ? (
+                      <>
+                        <th className="px-5 py-3.5">Category & Rate</th>
+                        <th className="px-5 py-3.5">Auto-Cut Material</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="px-5 py-3.5">Type</th>
+                        <th className="px-5 py-3.5">Added Date</th>
+                      </>
+                    )}
+                    <th className="px-5 py-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {serviceSubTab === 'sell' ? (
                     filteredSalesServices.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
-                          <SlidersHorizontal size={40} className="mx-auto text-gray-300 mb-2" />
-                          <p className="font-bold text-sm">No sales services found</p>
-                          <p className="text-xs text-gray-400 mt-1">Click "Add Sales Service" to register preset services.</p>
+                        <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                          <SlidersHorizontal size={36} className="mx-auto text-gray-300 mb-2" />
+                          <p className="font-bold text-xs">No sales services found</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">Click "Add Sales Service" to register preset services.</p>
                         </td>
                       </tr>
                     ) : (
-                      filteredSalesServices.map((s) => (
-                        <tr key={s.id} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="px-6 py-4">
-                            <span className="font-bold text-gray-900">{s.name}</span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-                              Sales Preset
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-xs text-gray-500">
-                            {s.createdAt ? format(new Date(s.createdAt), 'dd/MM/yyyy') : 'Preset'}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => openEditServiceModal('sell', s)}
-                                className="p-2 text-gray-600 hover:text-[#084b3e] hover:bg-emerald-50 rounded-xl transition-colors cursor-pointer"
-                                title="Edit service"
-                              >
-                                <Edit2 size={16} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteTarget({ id: s.id!, type: 'sell', name: s.name })}
-                                className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
-                                title="Delete service"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                      filteredSalesServices.map((s) => {
+                        const directLink = s.linkedInventoryItemId ? inventoryItems.find(i => i.id === s.linkedInventoryItemId) : null;
+                        const fallbackLink = !directLink ? serviceItemLinks.find(l => l.serviceName.toLowerCase().trim() === s.name.toLowerCase().trim()) : null;
+                        const invItem = directLink || (fallbackLink ? inventoryItems.find(i => i.id === fallbackLink.inventoryItemId) : null);
+                        const mult = s.deductQuantity || fallbackLink?.quantityPerUnit || 1;
+
+                        return (
+                          <tr key={s.id} className="hover:bg-gray-50/60 transition-colors">
+                            <td className="px-5 py-3.5">
+                              <span className="font-bold text-gray-900 text-xs sm:text-sm">{s.name}</span>
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-gray-100 text-gray-700">
+                                  {s.category || 'Printing'}
+                                </span>
+                                {s.defaultPrice ? (
+                                  <span className="text-xs font-mono font-bold text-emerald-800">
+                                    Tk {s.defaultPrice}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3.5">
+                              {invItem ? (
+                                <div className="flex items-center gap-1.5 text-xs">
+                                  <span className="font-bold text-gray-800">{invItem.name}</span>
+                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200/60">
+                                    {mult} {invItem.unit}/sale
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400 font-normal">—</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3.5 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditServiceModal('sell', s)}
+                                  className="p-1.5 text-gray-600 hover:text-[#084b3e] hover:bg-emerald-50 rounded-xl transition-colors cursor-pointer"
+                                  title="Edit service"
+                                >
+                                  <Edit2 size={15} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteTarget({ id: s.id!, type: 'sell', name: s.name })}
+                                  className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                                  title="Delete service"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )
                   ) : (
                     filteredExpenseServices.length === 0 ? (
@@ -1158,29 +1283,15 @@ export function Settings() {
       {/* MODAL 1: ADD / EDIT PRESET SERVICE */}
       {/* ========================================================================= */}
       {isServiceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-150">
-            <div className="bg-[#084b3e] text-white p-5 flex justify-between items-center">
-              <div>
-                <h3 className="font-black text-lg">
-                  {editingServiceId ? 'Edit Preset Service' : 'Add Preset Service'}
-                </h3>
-                <p className="text-xs text-emerald-100 font-medium mt-0.5">
-                  {serviceModalType === 'sell' ? 'Sales service catalog' : 'Expense category service'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsServiceModalOpen(false)}
-                className="text-emerald-200 hover:text-white transition-colors cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setIsServiceModalOpen(false)}>
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">
+              {editingServiceId ? 'Edit Preset Service' : 'Add Preset Service'}
+            </h3>
 
-            <form onSubmit={handleSaveService} className="p-6 space-y-4">
+            <form onSubmit={handleSaveService} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Service Name <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -1189,22 +1300,98 @@ export function Settings() {
                   placeholder={serviceModalType === 'sell' ? 'e.g. Passport Photo, NID Print' : 'e.g. Electricity Bill, Paper Roll'}
                   value={serviceFormName}
                   onChange={(e) => setServiceFormName(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
                   autoFocus
                 />
               </div>
 
-              <div className="flex gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsServiceModalOpen(false)}
-                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
+              {serviceModalType === 'sell' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                        Category
+                      </label>
+                      <select
+                        value={serviceFormCategory}
+                        onChange={(e) => setServiceFormCategory(e.target.value)}
+                        className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none cursor-pointer transition-all"
+                      >
+                        <option value="Printing">Printing</option>
+                        <option value="Digital Studio">Digital Studio</option>
+                        <option value="Govt/NID Service">Govt/NID Service</option>
+                        <option value="Online Service">Online Service</option>
+                        <option value="General">General</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                        Default Price (Tk)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="0.00"
+                        value={serviceFormPrice}
+                        onChange={(e) => setServiceFormPrice(e.target.value)}
+                        className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Package size={16} className="text-[#075b4d]" />
+                      <span className="text-xs font-black text-emerald-950">
+                        Auto-Cut Stock Material
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-emerald-900 uppercase tracking-wider mb-1">
+                          Stock Item to Deduct on Sale
+                        </label>
+                        <select
+                          value={serviceFormInventoryItemId}
+                          onChange={(e) => setServiceFormInventoryItemId(e.target.value === 'none' ? 'none' : Number(e.target.value))}
+                          className="w-full h-[42px] px-3 bg-white border border-emerald-200 rounded-xl text-xs font-bold text-gray-900 outline-none focus:ring-2 focus:ring-[#075b4d]/20"
+                        >
+                          <option value="none">None (No inventory deduction)</option>
+                          {inventoryItems.map(item => (
+                            <option key={item.id} value={item.id}>
+                              {item.name} ({item.currentStock} {item.unit} in stock)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {serviceFormInventoryItemId !== 'none' && (
+                        <div>
+                          <label className="block text-[10px] font-bold text-emerald-900 uppercase tracking-wider mb-1">
+                            Quantity to Deduct per 1 Service Sold
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="any"
+                            value={serviceFormDeductQty}
+                            onChange={(e) => setServiceFormDeductQty(e.target.value)}
+                            className="w-full h-[42px] px-3 bg-white border border-emerald-200 rounded-xl text-xs font-black outline-none font-mono"
+                            placeholder="1"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="pt-2">
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-sm cursor-pointer"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer active:translate-y-px flex items-center justify-center"
                 >
                   {editingServiceId ? 'Update Service' : 'Save Service'}
                 </button>
@@ -1218,31 +1405,19 @@ export function Settings() {
       {/* MODAL 2: ADD BALANCE */}
       {/* ========================================================================= */}
       {isAddBalanceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-150">
-            <div className="bg-[#084b3e] text-white p-5 flex justify-between items-center">
-              <div>
-                <h3 className="font-black text-lg">Add Account Balance</h3>
-                <p className="text-xs text-emerald-100 font-medium mt-0.5">Deposit cash or add funds to a wallet</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddBalanceModalOpen(false)}
-                className="text-emerald-200 hover:text-white transition-colors cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setIsAddBalanceModalOpen(false)}>
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">Add Account Balance</h3>
 
-            <form onSubmit={handleAddBalanceSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleAddBalanceSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Select Account
                 </label>
                 <select
                   value={selectedAccountOption}
                   onChange={(e) => setSelectedAccountOption(e.target.value as any)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none cursor-pointer"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none cursor-pointer transition-all"
                 >
                   <option value="cash">Cash in Hand</option>
                   <option value="bkash">bKash</option>
@@ -1252,7 +1427,7 @@ export function Settings() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Amount (Tk) <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -1263,13 +1438,13 @@ export function Settings() {
                   placeholder="e.g. 5000"
                   value={balanceAmount}
                   onChange={(e) => setBalanceAmount(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-black focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none font-mono transition-all"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Note / Reference (Optional)
                 </label>
                 <input
@@ -1277,22 +1452,15 @@ export function Settings() {
                   placeholder="e.g. Bank cash withdrawal, owner deposit"
                   value={balanceNote}
                   onChange={(e) => setBalanceNote(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
                 />
               </div>
 
-              <div className="flex gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAddBalanceModalOpen(false)}
-                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
+              <div className="pt-2">
                 <button
                   type="submit"
                   disabled={isSubmittingBalance}
-                  className="flex-1 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center"
                 >
                   {isSubmittingBalance ? 'Adding...' : 'Deposit Balance'}
                 </button>
@@ -1306,25 +1474,13 @@ export function Settings() {
       {/* MODAL 3: CALIBRATE / SET EXACT BALANCE */}
       {/* ========================================================================= */}
       {isCalibrateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-150">
-            <div className="bg-[#084b3e] text-white p-5 flex justify-between items-center">
-              <div>
-                <h3 className="font-black text-lg">Calibrate / Set Exact Balance</h3>
-                <p className="text-xs text-emerald-100 font-medium mt-0.5">Override account balance to an exact amount</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCalibrateModalOpen(false)}
-                className="text-emerald-200 hover:text-white transition-colors cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setIsCalibrateModalOpen(false)}>
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">Calibrate Exact Balance</h3>
 
-            <form onSubmit={handleDirectCalibrateSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleDirectCalibrateSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Select Account
                 </label>
                 <select
@@ -1335,7 +1491,7 @@ export function Settings() {
                     const acc = accounts.find(a => a.id === accId);
                     setCalibrateNewBalance(acc ? String(acc.balance) : '0');
                   }}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none cursor-pointer"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none cursor-pointer transition-all"
                 >
                   <option value="cash">Cash in Hand</option>
                   <option value="bkash">bKash</option>
@@ -1345,7 +1501,7 @@ export function Settings() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Exact New Balance (Tk) <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -1355,13 +1511,13 @@ export function Settings() {
                   step="any"
                   value={calibrateNewBalance}
                   onChange={(e) => setCalibrateNewBalance(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-black focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none font-mono transition-all"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Reason / Adjustment Note
                 </label>
                 <input
@@ -1369,22 +1525,15 @@ export function Settings() {
                   placeholder="e.g. Daily cash physical count check"
                   value={calibrateNote}
                   onChange={(e) => setCalibrateNote(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
                 />
               </div>
 
-              <div className="flex gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsCalibrateModalOpen(false)}
-                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
+              <div className="pt-2">
                 <button
                   type="submit"
                   disabled={isSubmittingCalibrate}
-                  className="flex-1 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center"
                 >
                   {isSubmittingCalibrate ? 'Saving...' : 'Set Balance'}
                 </button>
@@ -1398,26 +1547,15 @@ export function Settings() {
       {/* MODAL 4: EDIT BALANCE HISTORY LOG */}
       {/* ========================================================================= */}
       {editingLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-150">
-            <div className="bg-[#084b3e] text-white p-5 flex justify-between items-center">
-              <div>
-                <h3 className="font-black text-lg">Edit Balance History Log</h3>
-                <p className="text-xs text-emerald-100 font-medium mt-0.5">Account: {editingLog.accountName}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingLog(null)}
-                className="text-emerald-200 hover:text-white transition-colors cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setEditingLog(null)}>
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-1 text-center">Edit Balance Log</h3>
+            <p className="text-center text-xs text-gray-500 font-semibold mb-6">Account: {editingLog.accountName}</p>
 
-            <form onSubmit={handleUpdateLogSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleUpdateLogSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                  Amount (Tk)
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                  Amount (Tk) *
                 </label>
                 <input
                   type="number"
@@ -1426,47 +1564,40 @@ export function Settings() {
                   step="any"
                   value={editLogAmount}
                   onChange={(e) => setEditLogAmount(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-black focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none font-mono transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                  Date
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                  Date *
                 </label>
                 <input
                   type="date"
                   required
                   value={editLogDate}
                   onChange={(e) => setEditLogDate(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Note
                 </label>
                 <input
                   type="text"
                   value={editLogNote}
                   onChange={(e) => setEditLogNote(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
                 />
               </div>
 
-              <div className="flex gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setEditingLog(null)}
-                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
+              <div className="pt-2">
                 <button
                   type="submit"
                   disabled={isSubmittingEditLog}
-                  className="flex-1 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center"
                 >
                   {isSubmittingEditLog ? 'Saving...' : 'Update Log'}
                 </button>
@@ -1480,30 +1611,26 @@ export function Settings() {
       {/* MODAL 5: DELETE HISTORY LOG CONFIRMATION */}
       {/* ========================================================================= */}
       {deletingLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="p-2.5 bg-rose-50 rounded-xl">
-                <AlertTriangle size={24} />
-              </div>
-              <div>
-                <h3 className="text-base font-black text-gray-900">Delete Balance Log Entry?</h3>
-                <p className="text-xs text-gray-500 font-medium">Log ID #{deletingLog.id} • {deletingLog.accountName}</p>
-              </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setDeletingLog(null)}>
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-2 border border-red-100">
+              <AlertTriangle size={28} strokeWidth={2.5} />
             </div>
+            <h3 className="font-bold text-xl text-[#182236]">Delete Balance Log?</h3>
+            <p className="text-xs text-gray-500 font-medium">Log ID #{deletingLog.id} • {deletingLog.accountName}</p>
 
-            <div className="p-3 bg-gray-50 rounded-xl text-xs space-y-1">
+            <div className="p-3 bg-[#f8f9fa] rounded-xl text-xs space-y-1 text-left border border-[#dce1e7]">
               <div>Amount: <span className="font-bold text-gray-900">Tk {deletingLog.amount.toLocaleString()}</span></div>
               <div>Date: <span className="font-bold text-gray-900">{deletingLog.date}</span></div>
               {deletingLog.note && <div>Note: <span className="text-gray-600">{deletingLog.note}</span></div>}
             </div>
 
-            <label className="flex items-start gap-2.5 cursor-pointer p-2 bg-amber-50 rounded-xl border border-amber-200">
+            <label className="flex items-start gap-2.5 cursor-pointer p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-left">
               <input
                 type="checkbox"
                 checked={revertBalanceOnDelete}
                 onChange={(e) => setRevertBalanceOnDelete(e.target.checked)}
-                className="mt-0.5 rounded text-[#084b3e] focus:ring-[#084b3e]"
+                className="mt-0.5 rounded text-[#075b4d] focus:ring-[#075b4d]"
               />
               <div className="text-xs text-amber-950">
                 <span className="font-bold">Revert Account Balance:</span>
@@ -1515,7 +1642,7 @@ export function Settings() {
               <button
                 type="button"
                 onClick={() => setDeletingLog(null)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -1523,9 +1650,9 @@ export function Settings() {
                 type="button"
                 disabled={isDeletingLog}
                 onClick={handleDeleteLogConfirm}
-                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
               >
-                {isDeletingLog ? 'Deleting...' : 'Delete Log'}
+                {isDeletingLog ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
@@ -1536,19 +1663,13 @@ export function Settings() {
       {/* MODAL 6: DELETE PRESET SERVICE CONFIRMATION */}
       {/* ========================================================================= */}
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="p-2.5 bg-rose-50 rounded-xl">
-                <AlertTriangle size={24} />
-              </div>
-              <div>
-                <h3 className="text-base font-black text-gray-900">Delete Preset Service?</h3>
-                <p className="text-xs text-gray-500 font-medium">This item will be removed from your catalog.</p>
-              </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setDeleteTarget(null)}>
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-2 border border-red-100">
+              <AlertTriangle size={28} strokeWidth={2.5} />
             </div>
-
-            <p className="text-xs text-gray-600 font-medium">
+            <h3 className="font-bold text-xl text-[#182236]">Delete Preset Service?</h3>
+            <p className="text-sm text-gray-500 font-medium">
               Are you sure you want to delete <span className="font-bold text-gray-900">"{deleteTarget.name}"</span>?
             </p>
 
@@ -1556,14 +1677,14 @@ export function Settings() {
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={confirmDelete}
-                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-sm cursor-pointer"
+                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer"
               >
                 Delete
               </button>
@@ -1576,17 +1697,13 @@ export function Settings() {
       {/* MODAL 7: CONFIRM RESTORE BACKUP */}
       {/* ========================================================================= */}
       {pendingRestoreFile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3 text-blue-600">
-              <div className="p-2.5 bg-blue-50 rounded-xl">
-                <Upload size={24} />
-              </div>
-              <div>
-                <h3 className="text-base font-black text-gray-900">Restore from File?</h3>
-                <p className="text-xs text-gray-500 font-medium">{pendingRestoreFile.name}</p>
-              </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setPendingRestoreFile(null)}>
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-2 border border-blue-100">
+              <Upload size={28} strokeWidth={2.5} />
             </div>
+            <h3 className="font-bold text-xl text-[#182236]">Restore from File?</h3>
+            <p className="text-xs text-gray-500 font-medium">{pendingRestoreFile.name}</p>
 
             <p className="text-xs text-gray-600 leading-relaxed font-medium">
               This will merge and restore transactions, customers, dues, and service records from the selected backup file into your IndexedDB database.
@@ -1596,14 +1713,14 @@ export function Settings() {
               <button
                 type="button"
                 onClick={() => setPendingRestoreFile(null)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={confirmRestore}
-                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-sm cursor-pointer"
+                className="flex-1 py-3 bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer"
               >
                 Restore Now
               </button>

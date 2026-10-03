@@ -25,15 +25,15 @@ const DEFAULT_INVENTORY_ITEMS: Omit<InventoryItem, 'id' | 'createdAt' | 'updated
     note: 'High-gloss heavy paper for portrait & certificates'
   },
   {
-    name: 'A4 Bond Paper 80gsm (Double A)',
+    name: 'A4 Plain Paper (Double A 80gsm)',
     category: 'Plain Paper',
-    currentStock: 6,
-    unit: 'reams',
-    minAlertStock: 2,
-    unitCost: 480,
-    sellingPrice: 600,
+    currentStock: 500,
+    unit: 'sheets',
+    minAlertStock: 50,
+    unitCost: 1.2,
+    sellingPrice: 5,
     supplier: 'Stationery Market',
-    note: 'For photocopy and standard document print'
+    note: 'Standard 80gsm paper for photocopy, print, and office documents'
   },
   {
     name: 'Epson 003 Black Ink (65ml)',
@@ -105,6 +105,21 @@ export async function initDefaultInventory(): Promise<void> {
         lastRestockedDate: meta.date
       }));
       await db.inventory.bulkAdd(itemsToInsert);
+    } else {
+      // Auto-migrate legacy A4 paper measured in reams to sheets so sales deduct sheets accurately
+      const allInv = await db.inventory.toArray();
+      for (const item of allInv) {
+        if (item.unit === 'reams' && item.name.toLowerCase().includes('a4') && item.currentStock <= 25) {
+          const convertedStock = Math.max(50, item.currentStock * 500);
+          await db.inventory.update(item.id!, {
+            unit: 'sheets',
+            currentStock: convertedStock,
+            minAlertStock: Math.max(50, item.minAlertStock * 50),
+            unitCost: item.unitCost ? Math.round((item.unitCost / 500) * 100) / 100 : 1.2,
+            updatedAt: new Date().toISOString()
+          });
+        }
+      }
     }
   } catch (err) {
     console.error('Failed to initialize default inventory:', err);

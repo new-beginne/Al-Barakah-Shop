@@ -737,42 +737,26 @@ export function StoreProfile() {
 
       {/* Delete Account Modal */}
       {isDeleteModalOpen && (
-        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-rose-100 flex justify-between items-center bg-rose-50/70 shrink-0">
-              <div className="flex items-center gap-2 text-rose-700 font-black text-base">
-                <ShieldAlert size={20} />
-                <span>Permanently Delete Account</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDeleteModalOpen(false)}
-                className="w-8 h-8 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setIsDeleteModalOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-3 border border-red-100">
+              <ShieldAlert size={28} strokeWidth={2.5} />
             </div>
+            <h3 className="font-bold text-xl text-[#182236] mb-1 text-center">Permanently Delete Account</h3>
+            <p className="text-xs text-rose-600 font-semibold mb-5 text-center">Warning: This action cannot be undone</p>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-4">
-              <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200 text-xs text-rose-900 space-y-2">
-                <div className="font-black text-sm flex items-center gap-1.5 text-rose-950">
-                  <AlertTriangle size={16} className="text-rose-600 shrink-0" />
-                  Warning: This action cannot be undone
-                </div>
-                <p className="leading-relaxed font-medium">
-                  Proceeding will permanently wipe the following records:
-                </p>
+            <div className="space-y-4">
+              <div className="p-3.5 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-900 space-y-1.5">
+                <p className="font-bold">Proceeding will permanently wipe:</p>
                 <ul className="list-disc pl-5 space-y-1 font-medium text-rose-800">
-                  <li>Cloud records: Sales, expenses, dues, MFS & reports</li>
-                  <li>Store profile and authentication credentials ({user?.email})</li>
-                  <li>All local IndexedDB offline storage on this device</li>
+                  <li>Sales, expenses, dues, MFS & reports</li>
+                  <li>Store profile ({user?.email})</li>
+                  <li>Local IndexedDB offline storage</li>
                 </ul>
               </div>
 
               {deleteError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-2">
                   <AlertCircle size={16} className="text-rose-600 shrink-0" />
                   <span>{deleteError}</span>
                 </div>
@@ -780,7 +764,7 @@ export function StoreProfile() {
 
               <form id="delete-account-form" onSubmit={handleDeleteAccountSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                     Type <span className="text-rose-600 font-mono font-black">DELETE</span> to confirm:
                   </label>
                   <input
@@ -789,12 +773,12 @@ export function StoreProfile() {
                     value={deleteConfirmationText}
                     onChange={(e) => setDeleteConfirmationText(e.target.value)}
                     placeholder="DELETE"
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono font-bold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all text-center tracking-wider"
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-mono font-bold text-[#1d2939] focus:bg-white focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 transition-all text-center tracking-wider"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                     Account Password:
                   </label>
                   <div className="relative">
@@ -804,48 +788,46 @@ export function StoreProfile() {
                       value={deletePassword}
                       onChange={(e) => setDeletePassword(e.target.value)}
                       placeholder="Enter your account password"
-                      className="w-full pl-3.5 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all"
+                      className="w-full h-[47px] pl-4 pr-10 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-semibold text-[#1d2939] focus:bg-white focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowDeletePassword(!showDeletePassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
                     >
                       {showDeletePassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
                 </div>
-              </form>
-            </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 shrink-0">
-              <button
-                type="button"
-                disabled={isDeletingAccount}
-                onClick={() => setIsDeleteModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="delete-account-form"
-                disabled={isDeletingAccount}
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
-              >
-                {isDeletingAccount ? (
-                  <>
-                    <RefreshCw size={14} className="animate-spin" />
-                    <span>Deleting account...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 size={14} />
-                    <span>Delete Everything</span>
-                  </>
-                )}
-              </button>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={isDeletingAccount}
+                    onClick={() => setIsDeleteModalOpen(false)}
+                    className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDeletingAccount}
+                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isDeletingAccount ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Deleting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 size={14} />
+                        <span>Delete Account</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

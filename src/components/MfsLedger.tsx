@@ -1123,26 +1123,17 @@ export function MfsLedger() {
       {/* Adjust Balance Modal */}
       {isAdjustModalOpen && (
         <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" 
+          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" 
           onClick={() => setIsAdjustModalOpen(false)}
         >
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
-              <h3 className="font-black text-lg text-gray-900">
-                Adjust {adjustOperator} Balance
-              </h3>
-              <button 
-                type="button"
-                onClick={() => setIsAdjustModalOpen(false)} 
-                className="text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">
+              Adjust {adjustOperator} Balance
+            </h3>
             
             <form onSubmit={handleSaveAdjustment} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Operator
                 </label>
                 <select
@@ -1152,7 +1143,7 @@ export function MfsLedger() {
                     setAdjustOperator(newOp);
                     setAdjustNewBalance(balances[newOp].toString());
                   }}
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none focus:border-[#084b3e]"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none cursor-pointer transition-all"
                 >
                   {OPERATORS.map(op => (
                     <option key={op} value={op}>{op}</option>
@@ -1161,8 +1152,8 @@ export function MfsLedger() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">
-                  New Exact Balance (Tk)
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                  New Exact Balance (Tk) *
                 </label>
                 <input 
                   type="number" 
@@ -1170,37 +1161,31 @@ export function MfsLedger() {
                   required 
                   value={adjustNewBalance} 
                   onChange={e => setAdjustNewBalance(e.target.value)} 
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl font-black outline-none font-mono focus:border-[#084b3e]" 
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl font-black text-base text-[#1d2939] outline-none font-mono focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 transition-all" 
                   autoFocus 
                 />
-                <span className="text-[10px] text-gray-400 mt-1 block">
-                  Current recorded balance: Tk {balances[adjustOperator].toLocaleString()}
+                <span className="text-[11px] text-gray-500 font-semibold mt-1.5 block">
+                  Current recorded balance: <strong className="text-gray-900">Tk {balances[adjustOperator].toLocaleString()}</strong>
                 </span>
               </div>
               
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wider">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Reason for Adjustment
                 </label>
                 <input 
                   type="text" 
                   value={adjustNote} 
                   onChange={e => setAdjustNote(e.target.value)} 
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-[#084b3e]" 
+                  placeholder="e.g. Daily audit correction"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 transition-all" 
                 />
               </div>
 
-              <div className="pt-2 flex items-center gap-2">
-                <button 
-                  type="button"
-                  onClick={() => setIsAdjustModalOpen(false)}
-                  className="flex-1 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
+              <div className="pt-2">
                 <button 
                   type="submit" 
-                  className="flex-1 bg-[#084b3e] text-white font-bold py-2.5 rounded-xl hover:bg-[#0c5e4e] transition-colors shadow-sm cursor-pointer text-xs"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
                 >
                   Update Balance
                 </button>
@@ -1213,29 +1198,29 @@ export function MfsLedger() {
       {/* Delete Confirmation Modal */}
       {deleteTarget && (
         <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" 
+          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" 
           onClick={() => setDeleteTarget(null)}
         >
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center shadow-xl" onClick={e => e.stopPropagation()}>
-            <div className="w-14 h-14 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3 border border-rose-100">
-              <AlertTriangle size={24} strokeWidth={2.5} />
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-2 border border-red-100">
+              <AlertTriangle size={28} strokeWidth={2.5} />
             </div>
-            <h3 className="font-black text-lg text-gray-900 mb-1">Delete Transaction?</h3>
-            <p className="text-xs text-gray-500 mb-4 font-medium">
-              This will delete the {deleteTarget.operator} {deleteTarget.type} transaction of <span className="font-black text-gray-900 font-mono">Tk {deleteTarget.amount.toLocaleString()}</span> and automatically revert account balances.
+            <h3 className="font-bold text-xl text-[#182236]">Delete Transaction?</h3>
+            <p className="text-sm text-gray-500 font-medium">
+              This will delete the {deleteTarget.operator} {deleteTarget.type} transaction of <span className="font-bold text-gray-900 font-mono">Tk {deleteTarget.amount.toLocaleString()}</span> and automatically revert account balances.
             </p>
-            <div className="flex gap-2.5">
+            <div className="flex gap-3 pt-2">
               <button 
                 type="button"
                 onClick={() => setDeleteTarget(null)} 
-                className="flex-1 py-2.5 font-bold text-xs text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors cursor-pointer"
+                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button 
                 type="button"
                 onClick={handleConfirmDelete} 
-                className="flex-1 py-2.5 font-bold text-xs text-white bg-rose-600 rounded-xl hover:bg-rose-700 transition-colors shadow-sm cursor-pointer"
+                className="flex-1 py-3 font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors shadow-sm cursor-pointer"
               >
                 Yes, Delete
               </button>

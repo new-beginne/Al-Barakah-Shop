@@ -265,7 +265,7 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                       <span>Cash-In</span>
                     </div>
                     <p className="text-base font-black text-emerald-950 mt-0.5">
-                      ৳{(summary?.cashInTotal || 0).toLocaleString()}
+                      Tk {(summary?.cashInTotal || 0).toLocaleString()}
                     </p>
                     <p className="text-[10px] text-emerald-700">{summary?.cashInCount || 0} transactions</p>
                   </div>
@@ -277,7 +277,7 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                       <span>Cash-Out</span>
                     </div>
                     <p className="text-base font-black text-blue-950 mt-0.5">
-                      ৳{(summary?.cashOutTotal || 0).toLocaleString()}
+                      Tk {(summary?.cashOutTotal || 0).toLocaleString()}
                     </p>
                     <p className="text-[10px] text-blue-700">{summary?.cashOutCount || 0} transactions</p>
                   </div>
@@ -289,7 +289,7 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                       <span>Profit Earned</span>
                     </div>
                     <p className="text-base font-black text-amber-950 mt-0.5">
-                      ৳{(summary?.totalProfit || 0).toLocaleString()}
+                      Tk {(summary?.totalProfit || 0).toLocaleString()}
                     </p>
                     <p className="text-[10px] text-amber-700">Commission & fees</p>
                   </div>
@@ -301,7 +301,7 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                       <span>Expected SIM</span>
                     </div>
                     <p className="text-base font-black text-purple-950 mt-0.5">
-                      ৳{calculations.expectedSim.toLocaleString()}
+                      Tk {calculations.expectedSim.toLocaleString()}
                     </p>
                     <p className="text-[10px] text-purple-700">In database record</p>
                   </div>
@@ -314,7 +314,7 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                   {/* Physical SIM Balance Input */}
                   <div className="bg-white p-4 rounded-2xl border-2 border-emerald-500/40 shadow-xs space-y-1.5">
                     <label className="block text-xs font-extrabold text-gray-900 flex items-center justify-between">
-                      <span>1. Actual SIM Balance (৳) *</span>
+                      <span>1. Actual SIM Balance (Tk) *</span>
                       <span className="text-[10px] text-emerald-700 font-semibold">From SMS / USSD</span>
                     </label>
                     <input
@@ -334,7 +334,7 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                   {/* Physical Cash Drawer Count */}
                   <div className="bg-white p-4 rounded-2xl border-2 border-blue-500/40 shadow-xs space-y-1.5">
                     <label className="block text-xs font-extrabold text-gray-900 flex items-center justify-between">
-                      <span>2. Drawer Cash Count (৳)</span>
+                      <span>2. Drawer Cash Count (Tk)</span>
                       <span className="text-[10px] text-blue-700 font-semibold">Paper Banknotes</span>
                     </label>
                     <input
@@ -382,8 +382,8 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                           </span>
                           <h4 className="text-lg font-black">
                             {calculations.status === 'Balanced' && 'Exact Match! Account is Balanced.'}
-                            {calculations.status === 'Surplus' && `Surplus: +৳${Math.abs(calculations.simDiscrepancy).toLocaleString()} Extra`}
-                            {calculations.status === 'Shortage' && `Shortage Warning: -৳${Math.abs(calculations.simDiscrepancy).toLocaleString()} Missing`}
+                            {calculations.status === 'Surplus' && `Surplus: +Tk ${Math.abs(calculations.simDiscrepancy).toLocaleString()} Extra`}
+                            {calculations.status === 'Shortage' && `Shortage Warning: -Tk ${Math.abs(calculations.simDiscrepancy).toLocaleString()} Missing`}
                           </h4>
                         </div>
                       </div>
@@ -391,7 +391,7 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                       <div className="text-right">
                         <span className="text-xs font-semibold opacity-75">Combined Net Total:</span>
                         <p className="text-xl font-black">
-                          ৳{(calculations.simCount + calculations.cashCount).toLocaleString()}
+                          Tk {(calculations.simCount + calculations.cashCount).toLocaleString()}
                         </p>
                       </div>
                     </div>
@@ -399,16 +399,16 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                     <div className="mt-3 pt-3 border-t border-black/10 grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                       <div>
                         <span className="opacity-70">Physical SIM:</span>{' '}
-                        <strong>৳{calculations.simCount.toLocaleString()}</strong>
+                        <strong>Tk {calculations.simCount.toLocaleString()}</strong>
                       </div>
                       <div>
                         <span className="opacity-70">System Target:</span>{' '}
-                        <strong>৳{calculations.expectedSim.toLocaleString()}</strong>
+                        <strong>Tk {calculations.expectedSim.toLocaleString()}</strong>
                       </div>
                       <div>
                         <span className="opacity-70">Discrepancy:</span>{' '}
                         <strong className={calculations.simDiscrepancy < 0 ? 'text-red-700' : 'text-emerald-700'}>
-                          {calculations.simDiscrepancy >= 0 ? '+' : ''}{calculations.simDiscrepancy} ৳
+                          {calculations.simDiscrepancy >= 0 ? '+' : ''}{calculations.simDiscrepancy} Tk
                         </strong>
                       </div>
                     </div>
@@ -487,14 +487,14 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                                 ? 'bg-red-100 text-red-800' 
                                 : 'bg-blue-100 text-blue-800'
                             }`}>
-                              {c.status}: {c.discrepancy >= 0 ? '+' : ''}{c.discrepancy} ৳
+                              {c.status}: {c.discrepancy >= 0 ? '+' : ''}{c.discrepancy} Tk
                             </span>
                           </div>
 
                           <div className="text-xs text-gray-600 flex items-center gap-4">
-                            <span>SIM: <strong>৳{c.simClosingBalance.toLocaleString()}</strong></span>
-                            <span>Drawer Cash: <strong>৳{c.drawerCashCount.toLocaleString()}</strong></span>
-                            <span>Total: <strong className="text-[#084b3e]">৳{c.totalCalculatedBalance.toLocaleString()}</strong></span>
+                            <span>SIM: <strong>Tk {c.simClosingBalance.toLocaleString()}</strong></span>
+                            <span>Drawer Cash: <strong>Tk {c.drawerCashCount.toLocaleString()}</strong></span>
+                            <span>Total: <strong className="text-[#084b3e]">Tk {c.totalCalculatedBalance.toLocaleString()}</strong></span>
                           </div>
 
                           {c.note && (

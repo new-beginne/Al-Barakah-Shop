@@ -153,7 +153,7 @@ export async function saveMfsDailyClosing(data: {
     module: 'MFS',
     entityId: id,
     title: `MFS Closing: ${data.operator} (${status})`,
-    details: `Discrepancy: ${discrepancy >= 0 ? '+' : ''}${discrepancy} ৳ (SIM: ৳${data.simClosingBalance}, Drawer: ৳${data.drawerCashCount})`
+    details: `Discrepancy: ${discrepancy >= 0 ? '+' : ''}${discrepancy} Tk (SIM: Tk ${data.simClosingBalance}, Drawer: Tk ${data.drawerCashCount})`
   });
 
   return id;

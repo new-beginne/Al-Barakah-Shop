@@ -51,10 +51,10 @@ export class ErrorBoundary extends (Component as any)<Props, State> {
 
             <div>
               <h2 className="text-xl font-black text-gray-900 tracking-tight">
-                কিছু একটি অপ্রত্যাশিত সমস্যা হয়েছে
+                An Unexpected Error Occurred
               </h2>
               <p className="text-xs sm:text-sm text-gray-500 font-medium mt-1">
-                আপনার লোকাল ডাটাবেজে সমস্ত হিসাব ও ক্যাশ ব্যালেন্স সম্পূর্ণ সুরক্ষিত আছে। অনুগ্রহ করে পেজটি রিলোড করুন।
+                Your data and balances are safely stored in your local database. Please reload the page to continue.
               </p>
             </div>
 
@@ -71,7 +71,7 @@ export class ErrorBoundary extends (Component as any)<Props, State> {
                 className="flex-1 py-3 px-4 bg-[#084b3e] hover:bg-[#0c5e4e] text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
               >
                 <RefreshCw size={15} />
-                <span>পেজ রিলোড করুন</span>
+                <span>Reload Page</span>
               </button>
               <button
                 type="button"
@@ -79,7 +79,7 @@ export class ErrorBoundary extends (Component as any)<Props, State> {
                 className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Home size={15} />
-                <span>হোমে যান</span>
+                <span>Go to Home</span>
               </button>
             </div>
           </div>

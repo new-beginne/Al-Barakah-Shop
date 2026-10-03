@@ -32,6 +32,11 @@ export interface Sale {
   discount?: number;
   customerName?: string;
   customerPhone?: string;
+  consumedItems?: Array<{
+    inventoryItemId: number;
+    inventoryItemName: string;
+    quantity: number;
+  }>;
 }
 
 export interface MfsTransaction {
@@ -76,6 +81,22 @@ export interface Due {
   category?: string;
   cost?: number;
   profit?: number;
+  consumedItems?: Array<{
+    inventoryItemId: number;
+    inventoryItemName: string;
+    quantity: number;
+  }>;
+}
+
+export interface ServiceItemLink {
+  id?: number;
+  serviceId?: number;
+  serviceName: string;
+  inventoryItemId: number;
+  inventoryItemName: string;
+  quantityPerUnit: number; // Consumption multiplier per sale quantity
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Expense {
@@ -98,6 +119,9 @@ export interface ServiceRate {
   category?: string;
   defaultCost: number;
   defaultPrice: number;
+  linkedInventoryItemId?: number;
+  linkedInventoryItemName?: string;
+  deductQuantity?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -169,6 +193,7 @@ export interface Borrowing {
   time?: string;
   createdAt?: string;
   updatedAt?: string;
+  customerId?: number;
   lenderName: string;
   phone?: string;
   amount: number;
@@ -255,6 +280,7 @@ export class AlBarakahDB extends Dexie {
   deletedRecords!: Table<DeletedRecord>;
   inventory!: Table<InventoryItem>;
   mfsClosings!: Table<MfsClosing>;
+  serviceItemLinks!: Table<ServiceItemLink>;
 
   constructor() {
     super('AlBarakahDB');
@@ -349,6 +375,25 @@ export class AlBarakahDB extends Dexie {
       inventory: '++id, name, category, currentStock',
       mfsClosings: '++id, date, operator, status'
     });
+    this.version(14).stores({
+      sales: '++id, date, category, serviceName, amount, paymentMethod',
+      mfs: '++id, date, operator, type',
+      dues: '++id, customerName, phone, status',
+      expenses: '++id, date, category',
+      services: '++id, name, category',
+      salesCategories: '++id, name',
+      expenseServices: '++id, name',
+      customers: '++id, name, phone',
+      accounts: 'id, name, type',
+      balanceLogs: '++id, date, accountId, type',
+      notifications: '++id, date, isRead, type',
+      borrowings: '++id, lenderName, phone, status, dueDate',
+      activityLogs: '++id, date, timestamp, action, module',
+      deletedRecords: '++id, table, remoteId',
+      inventory: '++id, name, category, currentStock',
+      mfsClosings: '++id, date, operator, status',
+      serviceItemLinks: '++id, serviceName, inventoryItemId'
+    });
   }
 }
 
@@ -377,7 +422,8 @@ export const SYNCED_TABLES = new Set([
   'borrowings',
   'services',
   'inventory',
-  'mfsClosings'
+  'mfsClosings',
+  'serviceItemLinks'
 ]);
 
 // In-memory + persistent set of modified tables

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { db, Sale, getRecordMetadata } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from '../services/accountService';
 import { logSaleDelete, recordActivityLog } from '../services/activityLogService';
@@ -22,11 +22,22 @@ import {
   Layers,
   DollarSign,
   Tag,
-  ChevronRight
+  ChevronRight,
+  Zap,
+  Package
 } from 'lucide-react';
 import { formatDateStr } from '../utils/dateFormatter';
+import { 
+  deductInventoryForService, 
+  restoreInventoryForSale, 
+  getServiceStockImpact, 
+  initDefaultServicesAndMappings,
+  linkServiceToInventoryItem,
+  ServiceStockImpact 
+} from '../services/serviceMappingService';
 
 export function SalesEntry() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
   // Modals & Feedback
@@ -52,6 +63,11 @@ export function SalesEntry() {
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [note, setNote] = useState('');
 
+  // Interactive Stock Selection State
+  const [selectedStockItemId, setSelectedStockItemId] = useState<number | 'auto' | 'none'>('auto');
+  const [stockDeductMultiplier, setStockDeductMultiplier] = useState<string>('1');
+  const [saveAsDefaultLink, setSaveAsDefaultLink] = useState(false);
+
   // Due / Customer Form State
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -65,6 +81,51 @@ export function SalesEntry() {
   const customers = useLiveQuery(() => db.customers.toArray()) || [];
   const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
   const dues = useLiveQuery(() => db.dues.toArray()) || [];
+  const serviceItemLinks = useLiveQuery(() => db.serviceItemLinks.toArray()) || [];
+
+  // Initialize standard studio services and mappings on first load
+  useEffect(() => {
+    initDefaultServicesAndMappings();
+  }, []);
+
+  // Stock deduction impact preview state
+  const [stockImpact, setStockImpact] = useState<ServiceStockImpact>({ isLinked: false, links: [] });
+
+  // Current service name (derived from selection or custom input)
+  const currentServiceName = useMemo(() => {
+    if (selectedServiceId === 'other') {
+      return customServiceName.trim();
+    }
+    const found = services.find(s => s.id?.toString() === selectedServiceId);
+    return found ? found.name : '';
+  }, [selectedServiceId, customServiceName, services]);
+
+  // Compute live stock impact whenever service, quantity, or mappings change
+  useEffect(() => {
+    let isCancelled = false;
+    if (!currentServiceName) {
+      setStockImpact({ isLinked: false, links: [] });
+      return;
+    }
+    const q = Math.max(1, parseInt(quantity) || 1);
+    const effectiveItem = selectedStockItemId === 'auto' ? undefined : selectedStockItemId;
+    const effectiveMult = Number(stockDeductMultiplier) || 1;
+
+    getServiceStockImpact(currentServiceName, q, effectiveItem, effectiveMult).then(impact => {
+      if (!isCancelled) {
+        setStockImpact(impact);
+      }
+    }).catch(() => {
+      if (!isCancelled) setStockImpact({ isLinked: false, links: [] });
+    });
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentServiceName, quantity, selectedStockItemId, stockDeductMultiplier, serviceItemLinks, inventoryItems, services]);
+
+  const openMappingModalForService = (_sName?: string) => {
+    navigate('/inventory/rules');
+  };
 
   // Today metrics
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -109,6 +170,10 @@ export function SalesEntry() {
   const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedServiceId(val);
+    setSelectedStockItemId('auto');
+    setStockDeductMultiplier('1');
+    setSaveAsDefaultLink(false);
+
     const q = Math.max(1, parseInt(quantity) || 1);
     
     if (val === 'other') {
@@ -125,6 +190,10 @@ export function SalesEntry() {
         setUnitPrice(uPrice);
         setUnitCost(uCost);
         setCategory(found.category || 'General');
+
+        if (found.deductQuantity) {
+          setStockDeductMultiplier(String(found.deductQuantity));
+        }
 
         if (uPrice) {
           setAmount((parseFloat(uPrice) * q).toString());
@@ -197,6 +266,9 @@ export function SalesEntry() {
     setCustomerName('');
     setCustomerPhone('');
     setDueAmount('');
+    setSelectedStockItemId('auto');
+    setStockDeductMultiplier('1');
+    setSaveAsDefaultLink(false);
   };
 
   // Submit sale
@@ -256,10 +328,21 @@ export function SalesEntry() {
     try {
       const isPureDue = paymentMethod === 'Due' && calculatedPaidAmount === 0;
       const isPartialDue = paymentMethod === 'Due' && calculatedPaidAmount > 0 && calculatedDueAmount > 0;
+      const qtyToDeduct = Math.max(1, parseInt(quantity) || 1);
+
+      // Smart inventory deduction based on matched or explicitly chosen stock item
+      const effectiveStockItem = selectedStockItemId === 'auto' ? undefined : selectedStockItemId;
+      const effectiveMult = Number(stockDeductMultiplier) || 1;
+      const consumedItems = await deductInventoryForService(finalServiceName, qtyToDeduct, effectiveStockItem, effectiveMult);
+
+      // If user checked "Remember as default stock item", persist it
+      if (saveAsDefaultLink && typeof selectedStockItemId === 'number' && selectedStockItemId > 0) {
+        await linkServiceToInventoryItem(finalServiceName, selectedStockItemId, effectiveMult);
+      }
 
       if (isPureDue) {
         // Pure Due: ONLY add to db.dues! Do NOT add to db.sales, expenses, or profit!
-        const dueId = await db.transaction('rw', db.dues, db.inventory, async () => {
+        const dueId = await db.transaction('rw', [db.dues, db.inventory, db.serviceItemLinks], async () => {
           const id = await db.dues.add({
             date,
             time,
@@ -274,22 +357,10 @@ export function SalesEntry() {
             profit: currentProfit,
             referenceType: 'sale',
             note: note.trim(),
+            consumedItems,
             createdAt,
             updatedAt
           });
-
-          // Auto-decrement inventory stock if item matches
-          const qtyToDeduct = parseInt(quantity) || 1;
-          const matchedInv = inventoryItems.find(inv => 
-            inv.name.toLowerCase().trim() === finalServiceName.toLowerCase().trim()
-          );
-          if (matchedInv && matchedInv.id) {
-            const currentStock = Number(matchedInv.currentStock || 0);
-            await db.inventory.update(matchedInv.id, {
-              currentStock: Math.max(0, currentStock - qtyToDeduct),
-              updatedAt: new Date().toISOString()
-            });
-          }
 
           return id;
         });
@@ -298,8 +369,8 @@ export function SalesEntry() {
           action: 'CREATE',
           module: 'Dues',
           title: `Due Entry: Tk ${parsedAmount.toLocaleString()} for ${customerName.trim()}`,
-          details: `Service: ${finalServiceName} • Recorded as Due. Will be added to Sales & Profit when cleared.`,
-          meta: { customerName: customerName.trim(), phone: customerPhone.trim(), amount: parsedAmount, serviceName: finalServiceName }
+          details: `Service: ${finalServiceName} • Recorded as Due.${consumedItems.length > 0 ? ` Stock deducted: ${consumedItems.map(c => `${c.quantity}x ${c.inventoryItemName}`).join(', ')}.` : ''}`,
+          meta: { customerName: customerName.trim(), phone: customerPhone.trim(), amount: parsedAmount, serviceName: finalServiceName, consumedItems }
         });
 
         const savedSaleWithId: Sale = {
@@ -307,10 +378,11 @@ export function SalesEntry() {
           id: dueId,
           amount: parsedAmount,
           paidAmount: 0,
-          dueAmount: parsedAmount
+          dueAmount: parsedAmount,
+          consumedItems
         };
         setReceiptSale(savedSaleWithId);
-        setSuccessMsg(`Recorded Due of Tk ${parsedAmount.toLocaleString()} for ${customerName.trim()}. (Will be added to sales when cleared).`);
+        setSuccessMsg(`Recorded Due of Tk ${parsedAmount.toLocaleString()} for ${customerName.trim()}.${consumedItems.length > 0 ? ` (Deducted stock: ${consumedItems.map(c => `${c.quantity} ${c.inventoryItemName}`).join(', ')})` : ''}`);
         setTimeout(() => setSuccessMsg(''), 4000);
 
         resetForm();
@@ -324,7 +396,7 @@ export function SalesEntry() {
         const remainingProfit = Math.max(0, currentProfit - paidProfit);
         const remainingCost = Math.max(0, (parseFloat(cost) || 0) - paidCost);
 
-        const saleId = await db.transaction('rw', db.sales, db.dues, db.accounts, db.balanceLogs, db.inventory, async () => {
+        const saleId = await db.transaction('rw', [db.sales, db.dues, db.accounts, db.balanceLogs, db.inventory, db.serviceItemLinks], async () => {
           const id = await db.sales.add({
             date,
             time,
@@ -343,7 +415,8 @@ export function SalesEntry() {
             dueAmount: calculatedDueAmount,
             quantity: parseInt(quantity) || 1,
             unitPrice: unitPrice ? parseFloat(unitPrice) : undefined,
-            unitCost: unitCost ? parseFloat(unitCost) : undefined
+            unitCost: unitCost ? parseFloat(unitCost) : undefined,
+            consumedItems
           });
 
           await db.dues.add({
@@ -360,24 +433,12 @@ export function SalesEntry() {
             profit: remainingProfit,
             referenceType: 'sale',
             note: note.trim() ? `${note.trim()} (Partial paid Tk ${calculatedPaidAmount})` : `Partial paid Tk ${calculatedPaidAmount}`,
+            consumedItems,
             createdAt,
             updatedAt
           });
 
           await adjustAccountBalance('cash', calculatedPaidAmount);
-
-          // Auto-decrement inventory stock if item matches
-          const qtyToDeduct = parseInt(quantity) || 1;
-          const matchedInv = inventoryItems.find(inv => 
-            inv.name.toLowerCase().trim() === finalServiceName.toLowerCase().trim()
-          );
-          if (matchedInv && matchedInv.id) {
-            const currentStock = Number(matchedInv.currentStock || 0);
-            await db.inventory.update(matchedInv.id, {
-              currentStock: Math.max(0, currentStock - qtyToDeduct),
-              updatedAt: new Date().toISOString()
-            });
-          }
 
           return id;
         });
@@ -386,8 +447,8 @@ export function SalesEntry() {
           action: 'CREATE',
           module: 'Sales',
           title: `Partial Sale Tk ${calculatedPaidAmount.toLocaleString()} & Due Tk ${calculatedDueAmount.toLocaleString()} for ${customerName.trim()}`,
-          details: `Service: ${finalServiceName}. Paid amount added to sales & cash.`,
-          meta: { customerName: customerName.trim(), paidAmount: calculatedPaidAmount, dueAmount: calculatedDueAmount }
+          details: `Service: ${finalServiceName}. Paid amount added to sales & cash.${consumedItems.length > 0 ? ` Stock: ${consumedItems.map(c => `${c.quantity}x ${c.inventoryItemName}`).join(', ')}.` : ''}`,
+          meta: { customerName: customerName.trim(), paidAmount: calculatedPaidAmount, dueAmount: calculatedDueAmount, consumedItems }
         });
 
         const savedSaleWithId: Sale = {
@@ -395,33 +456,24 @@ export function SalesEntry() {
           id: saleId,
           amount: parsedAmount,
           paidAmount: calculatedPaidAmount,
-          dueAmount: calculatedDueAmount
+          dueAmount: calculatedDueAmount,
+          consumedItems
         };
         setReceiptSale(savedSaleWithId);
-        setSuccessMsg(`Recorded payment Tk ${calculatedPaidAmount.toLocaleString()} & Due Tk ${calculatedDueAmount.toLocaleString()}.`);
+        setSuccessMsg(`Recorded payment Tk ${calculatedPaidAmount.toLocaleString()} & Due Tk ${calculatedDueAmount.toLocaleString()}.${consumedItems.length > 0 ? ` (Deducted stock: ${consumedItems.map(c => `${c.quantity} ${c.inventoryItemName}`).join(', ')})` : ''}`);
         setTimeout(() => setSuccessMsg(''), 4000);
 
         resetForm();
         return;
       } else {
         // Standard 100% paid sale
-        const saleId = await db.transaction('rw', db.sales, db.accounts, db.balanceLogs, db.inventory, async () => {
-          const id = await db.sales.add(newSale);
+        const saleId = await db.transaction('rw', [db.sales, db.accounts, db.balanceLogs, db.inventory, db.serviceItemLinks], async () => {
+          const id = await db.sales.add({
+            ...newSale,
+            consumedItems
+          });
           const accountId = mapPaymentMethodToAccountId(paymentMethod);
           await adjustAccountBalance(accountId, parsedAmount);
-
-          // Auto-decrement inventory stock if item matches
-          const qtyToDeduct = parseInt(quantity) || 1;
-          const matchedInv = inventoryItems.find(inv => 
-            inv.name.toLowerCase().trim() === finalServiceName.toLowerCase().trim()
-          );
-          if (matchedInv && matchedInv.id) {
-            const currentStock = Number(matchedInv.currentStock || 0);
-            await db.inventory.update(matchedInv.id, {
-              currentStock: Math.max(0, currentStock - qtyToDeduct),
-              updatedAt: new Date().toISOString()
-            });
-          }
 
           return id;
         });
@@ -430,13 +482,13 @@ export function SalesEntry() {
           action: 'CREATE',
           module: 'Sales',
           title: `Sale: ${finalServiceName} - Tk ${parsedAmount.toLocaleString()}`,
-          details: `Category: ${category} • Paid via ${paymentMethod}`,
-          meta: { saleId, amount: parsedAmount, paymentMethod }
+          details: `Category: ${category} • Paid via ${paymentMethod}${consumedItems.length > 0 ? ` • Stock: ${consumedItems.map(c => `${c.quantity}x ${c.inventoryItemName}`).join(', ')}` : ''}`,
+          meta: { saleId, amount: parsedAmount, paymentMethod, consumedItems }
         });
 
-        const savedSaleWithId = { ...newSale, id: saleId as number };
+        const savedSaleWithId = { ...newSale, id: saleId as number, consumedItems };
         setReceiptSale(savedSaleWithId);
-        setSuccessMsg(`Sale of Tk ${parsedAmount.toLocaleString()} saved successfully.`);
+        setSuccessMsg(`Sale of Tk ${parsedAmount.toLocaleString()} saved successfully.${consumedItems.length > 0 ? ` (Deducted stock: ${consumedItems.map(c => `${c.quantity} ${c.inventoryItemName}`).join(', ')})` : ''}`);
         setTimeout(() => setSuccessMsg(''), 4000);
 
         resetForm();
@@ -481,18 +533,12 @@ export function SalesEntry() {
           }
         }
 
-        // Restore inventory stock if matched
-        const matchedInv = inventoryItems.find(inv => 
-          inv.name.toLowerCase().trim() === deleteTarget.serviceName.toLowerCase().trim()
+        // Restore inventory stock using smart restoration
+        await restoreInventoryForSale(
+          deleteTarget.consumedItems, 
+          deleteTarget.serviceName, 
+          Number(deleteTarget.quantity) || 1
         );
-        if (matchedInv && matchedInv.id) {
-          const qtyToRestore = Number(deleteTarget.quantity) || 1;
-          const currentStock = Number(matchedInv.currentStock || 0);
-          await db.inventory.update(matchedInv.id, {
-            currentStock: currentStock + qtyToRestore,
-            updatedAt: new Date().toISOString()
-          });
-        }
       });
       await logSaleDelete(deleteTarget);
       if (detailsSale && detailsSale.id === id) {
@@ -538,14 +584,26 @@ export function SalesEntry() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-12 h-12 bg-[#084b3e] rounded-2xl flex items-center justify-center text-white shrink-0 shadow-md">
-          <ShoppingCart size={24} />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 bg-[#084b3e] rounded-2xl flex items-center justify-center text-white shrink-0 shadow-md">
+            <ShoppingCart size={24} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-gray-900 tracking-tight">Sales</h1>
+            <p className="text-sm text-gray-500 font-medium">Record sales & manage transactions</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight">Sales</h1>
-          <p className="text-sm text-gray-500 font-medium">Record sales & manage transactions</p>
-        </div>
+
+        <button
+          type="button"
+          onClick={() => openMappingModalForService()}
+          className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer self-start sm:self-auto"
+          title="Configure automatic paper and stock deduction rules for services"
+        >
+          <Zap size={14} className="text-amber-600 fill-amber-500/20" />
+          <span>Service Stock Rules</span>
+        </button>
       </div>
 
       {/* 3 Summary Stats Cards */}
@@ -742,6 +800,127 @@ export function SalesEntry() {
                   placeholder="Enter custom service name..."
                   className="w-full px-4 py-3 sm:py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none text-base font-medium"
                 />
+              </div>
+            )}
+
+            {/* Interactive Smart Stock Material Pairing & Auto-Cut */}
+            {currentServiceName && (
+              <div className="mt-3.5 p-3.5 bg-gray-50/90 border border-gray-200/90 rounded-2xl space-y-3 animate-in fade-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-200/60 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-[#084b3e]/10 text-[#084b3e] flex items-center justify-center shrink-0">
+                      <Package size={14} />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                        <span>Auto-Cut Stock Material</span>
+                        {selectedStockItemId === 'none' ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-gray-200 text-gray-700">No Deduction</span>
+                        ) : stockImpact.isLinked && stockImpact.links.length > 0 ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">Linked</span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">Custom / Unlinked</span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => openMappingModalForService(currentServiceName)}
+                    className="text-xs font-bold text-[#084b3e] hover:underline flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+                  >
+                    <Zap size={12} className="text-amber-500 fill-amber-400" />
+                    <span>Manage All Rules</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase tracking-wider">
+                      Stock Item to Deduct
+                    </label>
+                    <select
+                      value={selectedStockItemId}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === 'auto' || v === 'none') {
+                          setSelectedStockItemId(v);
+                        } else {
+                          setSelectedStockItemId(Number(v));
+                          setSaveAsDefaultLink(true);
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-900 outline-none focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e]"
+                    >
+                      <option value="auto">
+                        Auto-Match: {stockImpact.links.length > 0 ? stockImpact.links.map(l => `${l.inventoryItemName} (${l.currentStock} ${l.unit})`).join(', ') : 'Match automatically'}
+                      </option>
+                      <option value="none">None (Do not deduct any stock for this sale)</option>
+                      <optgroup label="Select Specific Inventory Item:">
+                        {inventoryItems.map(item => (
+                          <option key={item.id} value={item.id}>
+                            {item.name} ({item.currentStock} {item.unit} in stock)
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-1">
+                    <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase tracking-wider">
+                      Deduct / Service
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="1"
+                        step="any"
+                        disabled={selectedStockItemId === 'none'}
+                        value={stockDeductMultiplier}
+                        onChange={(e) => setStockDeductMultiplier(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-black text-gray-900 outline-none font-mono disabled:opacity-50"
+                        placeholder="1"
+                      />
+                      <span className="text-xs text-gray-500 font-bold whitespace-nowrap">
+                        = {Math.max(1, parseInt(quantity) || 1) * (Number(stockDeductMultiplier) || 1)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stock Live Feedback & Save Checkbox */}
+                {selectedStockItemId !== 'none' && stockImpact.links.length > 0 && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs pt-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-gray-500">Will deduct:</span>
+                      {stockImpact.links.map(l => (
+                        <span 
+                          key={l.inventoryItemId} 
+                          className={`px-2 py-0.5 rounded-lg font-mono font-bold text-xs border ${
+                            l.isOutOfStock 
+                              ? 'bg-rose-100 text-rose-800 border-rose-300' 
+                              : 'bg-emerald-50 text-[#084b3e] border-emerald-200'
+                          }`}
+                        >
+                          {l.totalDeduct} {l.unit} {l.inventoryItemName} (Stock: {l.currentStock} {l.unit})
+                        </span>
+                      ))}
+                    </div>
+
+                    {typeof selectedStockItemId === 'number' && (
+                      <label className="flex items-center gap-1.5 text-xs text-gray-700 font-bold cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={saveAsDefaultLink}
+                          onChange={(e) => setSaveAsDefaultLink(e.target.checked)}
+                          className="rounded text-[#084b3e] focus:ring-[#084b3e]"
+                        />
+                        <span>Remember for {currentServiceName}</span>
+                      </label>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

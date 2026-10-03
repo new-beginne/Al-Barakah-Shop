@@ -411,7 +411,7 @@ export function DataManagementSettings() {
                   All Delete: Local & Cloud Master Wipe
                 </h3>
                 <span className="text-[10px] font-black text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-200 uppercase tracking-wider">
-                  Complete Clear (একদম ক্লিয়ার)
+                  Complete Reset
                 </span>
               </div>
               <p className="text-xs text-rose-700 font-medium mt-0.5">
@@ -483,11 +483,11 @@ export function DataManagementSettings() {
                   </div>
                   <div>
                     <h4 className="font-black text-xs sm:text-sm text-sky-950">Clear All Cloud Data</h4>
-                    <span className="text-[10px] font-bold text-sky-700 block">শুধু ক্লাউড ডেটা মুছুন</span>
+                    <span className="text-[10px] font-bold text-sky-700 block">Cloud data only</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-sky-800/90 leading-relaxed font-medium">
-                  ফায়ারবেস ক্লাউডের সমস্ত ব্যাকআপ মুছে ফেলবে। আপনার এই ডিভাইসের লোকাল ডেটা (IndexedDB) ১০০% অক্ষত ও নিরাপদ থাকবে।
+                  Wipes all cloud backups in Firebase Firestore. Your local device records (IndexedDB) remain 100% intact and safe.
                 </p>
               </div>
 
@@ -513,11 +513,11 @@ export function DataManagementSettings() {
                   </div>
                   <div>
                     <h4 className="font-black text-xs sm:text-sm text-amber-950">Clear All Local Data</h4>
-                    <span className="text-[10px] font-bold text-amber-700 block">শুধু লোকাল ডেটা মুছুন</span>
+                    <span className="text-[10px] font-bold text-amber-700 block">Device data only</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-amber-800/90 leading-relaxed font-medium">
-                  এই ডিভাইসের সমস্ত লোকাল রেকর্ড মুছে ব্যালেন্স ০.০০ করবে। ফায়ারবেস ক্লাউডের অনলাইন ব্যাকআপ ১০০% নিরাপদ থাকবে।
+                  Wipes all local records on this device and resets balances to 0.00. Your online Firebase cloud backups remain 100% safe.
                 </p>
               </div>
 
@@ -542,11 +542,11 @@ export function DataManagementSettings() {
                   </div>
                   <div>
                     <h4 className="font-black text-xs sm:text-sm text-rose-950">All Delete: Local & Cloud</h4>
-                    <span className="text-[10px] font-bold text-rose-700 block">একদম সবকিছু ক্লিয়ার</span>
+                    <span className="text-[10px] font-bold text-rose-700 block">Complete Factory Reset</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-rose-800/90 leading-relaxed font-medium">
-                  লোকাল ডিভাইস এবং গুগল ফায়ারবেস ক্লাউড দুটোই সম্পূর্ণ মুছে ফেলবে (Factory Reset)। কোনো হিসাব থাকবে না।
+                  Permanently wipes both local device and Google Firebase cloud databases (Factory Reset). Completely fresh start.
                 </p>
               </div>
 
@@ -557,7 +557,7 @@ export function DataManagementSettings() {
                   className="w-full py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-rose-600/30 cursor-pointer"
                 >
                   <Trash2 size={15} />
-                  <span>All Delete: Both (সব ক্লিয়ার)</span>
+                  <span>All Delete: Both (Full Reset)</span>
                 </button>
               </div>
             </div>
@@ -992,9 +992,9 @@ export function DataManagementSettings() {
                   wipeMode === 'local' ? 'text-amber-700' :
                   'text-rose-600'
                 }`}>
-                  {wipeMode === 'cloud' ? 'গুগল ফায়ারবেস ক্লাউডের সমস্ত ব্যাকআপ মুছে ফেলুন' :
-                   wipeMode === 'local' ? 'ডিভাইসের লোকাল ডেটা সম্পূর্ণ মুছুন (ক্লাউড অক্ষত থাকবে)' :
-                   'লোকাল ও ক্লাউড দুটোই সম্পূর্ণ মুছে ফেলুন (একদম ক্লিয়ার)'}
+                  {wipeMode === 'cloud' ? 'Delete all cloud backups from Google Firebase Cloud Firestore' :
+                   wipeMode === 'local' ? 'Delete local device data completely (Cloud backup remains safe)' :
+                   'Permanently delete both local and cloud databases (Full Factory Reset)'}
                 </p>
               </div>
             </div>

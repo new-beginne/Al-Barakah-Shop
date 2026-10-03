@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, Customer, Sale, Due } from '../db/db';
+import { db, Customer, Sale, Due, Borrowing } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from '../services/accountService';
-import { logDueEdit, logDueClear } from '../services/activityLogService';
+import { logDueEdit, logDueClear, recordActivityLog } from '../services/activityLogService';
 import { 
   ArrowLeft, 
   Phone, 
@@ -25,9 +25,10 @@ import {
   ShoppingBag,
   Check,
   Loader2,
-  Receipt
+  Receipt,
+  HandCoins
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, addDays, differenceInDays } from 'date-fns';
 import { generateCustomerStatementPdf, CustomerTransactionItem } from '../utils/customerStatementPdf';
 import { formatDateStr } from '../utils/dateFormatter';
 
@@ -43,9 +44,11 @@ export function CustomerProfile() {
   );
   const allSales = useLiveQuery(() => db.sales.toArray()) || [];
   const allDues = useLiveQuery(() => db.dues.toArray()) || [];
+  const allBorrowings = useLiveQuery(() => db.borrowings.toArray()) || [];
+  const accounts = useLiveQuery(() => db.accounts.toArray()) || [];
 
   // Local UI states
-  const [activeTab, setActiveTab] = useState<'all' | 'sales' | 'dues'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'sales' | 'dues' | 'loans'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfSuccess, setPdfSuccess] = useState(false);
@@ -59,6 +62,50 @@ export function CustomerProfile() {
   const [collectMethod, setCollectMethod] = useState<'Cash' | 'bKash' | 'Nagad' | 'Rocket'>('Cash');
   const [collectNote, setCollectNote] = useState('');
   const [isSubmittingCollection, setIsSubmittingCollection] = useState(false);
+
+  // Borrow / Loan modal states
+  const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
+  const [borrowAmount, setBorrowAmount] = useState('');
+  const [borrowDate, setBorrowDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [borrowDurationDays, setBorrowDurationDays] = useState('30');
+  const [borrowDueDate, setBorrowDueDate] = useState(() => format(addDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [borrowAccount, setBorrowAccount] = useState('cash');
+  const [borrowNote, setBorrowNote] = useState('');
+  const [isSubmittingBorrow, setIsSubmittingBorrow] = useState(false);
+
+  const updateBorrowDurationDays = (daysStr: string, baseDateStr = borrowDate) => {
+    setBorrowDurationDays(daysStr);
+    const numDays = parseInt(daysStr, 10);
+    if (!isNaN(numDays) && numDays > 0) {
+      try {
+        const base = baseDateStr ? new Date(baseDateStr) : new Date();
+        setBorrowDueDate(format(addDays(base, numDays), 'yyyy-MM-dd'));
+      } catch {
+        setBorrowDueDate(format(addDays(new Date(), numDays), 'yyyy-MM-dd'));
+      }
+    }
+  };
+
+  const handleBorrowDateChange = (newBorrowDate: string) => {
+    setBorrowDate(newBorrowDate);
+    const numDays = parseInt(borrowDurationDays, 10) || 30;
+    try {
+      const base = newBorrowDate ? new Date(newBorrowDate) : new Date();
+      setBorrowDueDate(format(addDays(base, numDays), 'yyyy-MM-dd'));
+    } catch {}
+  };
+
+  const handleDirectDueDateChange = (newDueDate: string) => {
+    setBorrowDueDate(newDueDate);
+    if (newDueDate && borrowDate) {
+      try {
+        const diff = differenceInDays(new Date(newDueDate), new Date(borrowDate));
+        if (diff > 0) {
+          setBorrowDurationDays(String(diff));
+        }
+      } catch {}
+    }
+  };
 
   // Edit Customer modal states
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -231,6 +278,34 @@ export function CustomerProfile() {
       duesCount: unifiedTransactions.filter(t => t.dueAmount > 0).length,
     };
   }, [unifiedTransactions]);
+
+  // Customer Borrowings calculation
+  const customerBorrowings = useMemo(() => {
+    if (!customer) return [];
+    const custName = customer.name.trim().toLowerCase();
+    const custPhone = customer.phone?.trim();
+
+    return allBorrowings.filter(b => {
+      if (b.customerId && customer.id && b.customerId === customer.id) return true;
+      if (custPhone && b.phone && b.phone.trim() === custPhone) return true;
+      if (b.lenderName && b.lenderName.trim().toLowerCase() === custName) return true;
+      return false;
+    }).sort((a, b) => {
+      const dateA = `${a.date || ''} ${a.time || ''}`;
+      const dateB = `${b.date || ''} ${b.time || ''}`;
+      return dateB.localeCompare(dateA);
+    });
+  }, [customer, allBorrowings]);
+
+  const totalCustomerBorrowed = useMemo(() => {
+    return customerBorrowings.reduce((sum, b) => sum + (b.amount || 0), 0);
+  }, [customerBorrowings]);
+
+  const totalCustomerRepaid = useMemo(() => {
+    return customerBorrowings.reduce((sum, b) => sum + (b.paidAmount || 0), 0);
+  }, [customerBorrowings]);
+
+  const activeCustomerLoanBalance = Math.max(0, totalCustomerBorrowed - totalCustomerRepaid);
 
   // Filtered by active tab and search query
   const displayedTransactions = useMemo(() => {
@@ -459,6 +534,68 @@ export function CustomerProfile() {
     }
   };
 
+  // Handle Direct Borrow / Loan Submission
+  const handleConfirmBorrow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customer) return;
+
+    const parsedAmount = parseFloat(borrowAmount) || 0;
+    if (parsedAmount <= 0) {
+      setErrorMsg('Please enter a valid loan amount');
+      setTimeout(() => setErrorMsg(''), 4000);
+      return;
+    }
+
+    setIsSubmittingBorrow(true);
+    try {
+      const now = new Date();
+      const entryDate = borrowDate || format(now, 'yyyy-MM-dd');
+      const newId = await db.borrowings.add({
+        date: entryDate,
+        time: format(now, 'hh:mm:ss a'),
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        customerId: customer.id,
+        lenderName: customer.name.trim(),
+        phone: customer.phone ? customer.phone.trim() : undefined,
+        amount: parsedAmount,
+        paidAmount: 0,
+        dueDate: borrowDueDate,
+        status: 'Unpaid',
+        note: borrowNote.trim() || undefined,
+        receiveAccount: borrowAccount !== 'none' ? borrowAccount : undefined
+      });
+
+      if (borrowAccount !== 'none' && parsedAmount > 0) {
+        await adjustAccountBalance(borrowAccount, parsedAmount);
+      }
+
+      await recordActivityLog({
+        action: 'CREATE',
+        module: 'Borrowings',
+        title: `Borrowing Tk ${parsedAmount.toLocaleString()} from ${customer.name}`,
+        details: `Recorded from Customer Profile. Received in ${borrowAccount} (Due: ${borrowDueDate || 'N/A'}, Date: ${entryDate})`,
+        meta: { borrowingId: newId, customerId: customer.id, lenderName: customer.name, amount: parsedAmount, receiveAccount: borrowAccount }
+      });
+
+      setIsBorrowModalOpen(false);
+      setBorrowAmount('');
+      const today = format(new Date(), 'yyyy-MM-dd');
+      setBorrowDate(today);
+      setBorrowDurationDays('30');
+      setBorrowDueDate(format(addDays(new Date(), 30), 'yyyy-MM-dd'));
+      setBorrowNote('');
+      setSuccessMsg(`Recorded borrowing of Tk ${parsedAmount.toLocaleString()} from ${customer.name} successfully.`);
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      console.error('Error creating borrowing:', err);
+      setErrorMsg('Failed to record borrowing');
+      setTimeout(() => setErrorMsg(''), 4000);
+    } finally {
+      setIsSubmittingBorrow(false);
+    }
+  };
+
   // Open Edit Modal
   const handleOpenEdit = () => {
     if (!customer) return;
@@ -544,6 +681,23 @@ export function CustomerProfile() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => {
+              setBorrowAmount('');
+              setBorrowDate(format(new Date(), 'yyyy-MM-dd'));
+              setBorrowDueDate('');
+              setBorrowNote('');
+              setBorrowAccount('cash');
+              setIsBorrowModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+            title="Record loan or borrowing from this customer"
+          >
+            <HandCoins size={14} strokeWidth={2.5} />
+            <span>Borrow / Loan</span>
+          </button>
+
           {hasDue && (
             <button
               type="button"
@@ -696,8 +850,8 @@ export function CustomerProfile() {
           )}
         </div>
 
-        {/* Minimal 3-Metric Clean Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Minimal Metric Clean Grid */}
+        <div className={`grid grid-cols-1 ${customerBorrowings.length > 0 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-3`}>
           {/* Total Purchases */}
           <div className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-100">
             <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">
@@ -740,6 +894,25 @@ export function CustomerProfile() {
               {hasDue ? 'Unsettled balance' : 'Zero balance'}
             </span>
           </div>
+
+          {/* Loan from Customer */}
+          {customerBorrowings.length > 0 && (
+            <div className={`p-3.5 rounded-xl border ${
+              activeCustomerLoanBalance > 0 
+                ? 'bg-amber-50/70 border-amber-200 text-amber-900' 
+                : 'bg-gray-50/70 border-gray-100 text-gray-900'
+            }`}>
+              <span className={`text-[11px] font-semibold uppercase tracking-wider block ${activeCustomerLoanBalance > 0 ? 'text-amber-700' : 'text-gray-500'}`}>
+                Active Loan
+              </span>
+              <div className={`text-lg font-black mt-0.5 ${activeCustomerLoanBalance > 0 ? 'text-amber-800' : 'text-gray-900'}`}>
+                Tk {activeCustomerLoanBalance.toLocaleString()}
+              </div>
+              <span className="text-[11px] text-gray-400">
+                {customerBorrowings.length} {customerBorrowings.length === 1 ? 'loan' : 'loans'} recorded
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Customer Notes if available */}
@@ -757,11 +930,11 @@ export function CustomerProfile() {
         {/* Controls Bar: Tabs & Search */}
         <div className="p-3 sm:p-4 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 print:hidden">
           {/* Tabs */}
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-full sm:w-auto">
+          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-full sm:w-auto overflow-x-auto">
             <button
               type="button"
               onClick={() => setActiveTab('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'all'
                   ? 'bg-white text-gray-900 shadow-xs'
                   : 'text-gray-600 hover:text-gray-900'
@@ -772,7 +945,7 @@ export function CustomerProfile() {
             <button
               type="button"
               onClick={() => setActiveTab('sales')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'sales'
                   ? 'bg-white text-gray-900 shadow-xs'
                   : 'text-gray-600 hover:text-gray-900'
@@ -783,13 +956,24 @@ export function CustomerProfile() {
             <button
               type="button"
               onClick={() => setActiveTab('dues')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'dues'
                   ? 'bg-white text-gray-900 shadow-xs'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               Dues ({metrics.duesCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('loans')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'loans'
+                  ? 'bg-white text-gray-900 shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Loans ({customerBorrowings.length})
             </button>
           </div>
 
@@ -815,8 +999,126 @@ export function CustomerProfile() {
           </div>
         </div>
 
-        {/* Minimal Table */}
-        {displayedTransactions.length > 0 ? (
+        {/* Table Content */}
+        {activeTab === 'loans' ? (
+          customerBorrowings.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs whitespace-nowrap">
+                <thead className="bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                  <tr>
+                    <th className="py-3 px-4">Date</th>
+                    <th className="py-3 px-4">Lender</th>
+                    <th className="py-3 px-4 text-right">Loan Amount</th>
+                    <th className="py-3 px-4 text-right">Paid Back</th>
+                    <th className="py-3 px-4 text-right">Due Balance</th>
+                    <th className="py-3 px-4">Due Date</th>
+                    <th className="py-3 px-4 text-center">Status</th>
+                    <th className="py-3 px-4">Note</th>
+                    <th className="py-3 px-4 text-center print:hidden">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {customerBorrowings.map(b => {
+                    const dueAmt = Math.max(0, (b.amount || 0) - (b.paidAmount || 0));
+                    return (
+                      <tr key={b.id} className="hover:bg-gray-50/60 transition-colors">
+                        <td className="py-3 px-4 text-gray-600 font-bold">
+                          {formatDateStr(b.date)}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-gray-900">{b.lenderName}</div>
+                          {b.phone && <div className="text-[10px] text-gray-400 font-mono">{b.phone}</div>}
+                        </td>
+                        <td className="py-3 px-4 text-right font-black text-gray-900">
+                          Tk {(b.amount || 0).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-emerald-700">
+                          Tk {(b.paidAmount || 0).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold">
+                          {dueAmt > 0 ? (
+                            <span className="text-rose-600 font-black">
+                              Tk {dueAmt.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-emerald-600 font-bold">Tk 0</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-gray-600">
+                          {b.dueDate ? formatDateStr(b.dueDate) : '—'}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            b.status === 'Paid'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : b.status === 'Partial'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-800'
+                          }`}>
+                            {b.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-gray-500 max-w-xs truncate text-[11px]">
+                          {b.note || '—'}
+                        </td>
+                        <td className="py-3 px-4 text-center print:hidden">
+                          <Link
+                            to="/borrowings"
+                            className="px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-bold transition-colors inline-block"
+                          >
+                            Manage
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-gray-50/80 font-bold text-gray-900 border-t border-gray-200">
+                    <td colSpan={2} className="py-3 px-4 uppercase text-[11px] text-gray-500">
+                      Total ({customerBorrowings.length} records)
+                    </td>
+                    <td className="py-3 px-4 text-right font-black">
+                      Tk {totalCustomerBorrowed.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 text-right font-black text-emerald-700">
+                      Tk {totalCustomerRepaid.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 text-right font-black text-rose-600">
+                      Tk {activeCustomerLoanBalance.toLocaleString()}
+                    </td>
+                    <td colSpan={4}></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          ) : (
+            <div className="p-12 text-center">
+              <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-3 text-amber-600">
+                <HandCoins size={24} />
+              </div>
+              <h4 className="font-bold text-gray-900 text-sm mb-1">No Loans Recorded</h4>
+              <p className="text-xs text-gray-500 mb-4 max-w-sm mx-auto">
+                No borrowing or loan records from {customer.name} have been created yet.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setBorrowAmount('');
+                  setBorrowDate(format(new Date(), 'yyyy-MM-dd'));
+                  setBorrowDueDate('');
+                  setBorrowNote('');
+                  setBorrowAccount('cash');
+                  setIsBorrowModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs cursor-pointer"
+              >
+                <Plus size={14} />
+                <span>Record Loan from {customer.name}</span>
+              </button>
+            </div>
+          )
+        ) : displayedTransactions.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs whitespace-nowrap">
               <thead className="bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">
@@ -946,34 +1248,25 @@ export function CustomerProfile() {
       {/* COLLECT DUE MODAL (MINIMAL & FAST) */}
       {isCollectModalOpen && (
         <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn"
+          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
           onClick={() => setIsCollectModalOpen(false)}
         >
           <div 
-            className="bg-white rounded-2xl w-full max-w-sm overflow-hidden border border-gray-100 shadow-xl"
+            className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-              <div>
-                <h3 className="font-bold text-gray-900 text-sm">Collect Due Payment</h3>
-                <p className="text-[11px] text-gray-500">{customer.name}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCollectModalOpen(false)}
-                className="text-gray-400 hover:text-gray-700 p-1 rounded-lg"
-              >
-                <X size={16} />
-              </button>
-            </div>
+            <h3 className="font-bold text-xl text-[#182236] mb-1 text-center">Collect Due Payment</h3>
+            <p className="text-xs text-gray-500 font-semibold mb-5 text-center">
+              Customer: <span className="text-gray-900 font-bold">{customer.name}</span>
+            </p>
 
-            <form onSubmit={handleConfirmCollect} className="p-4 space-y-3.5">
+            <form onSubmit={handleConfirmCollect} className="space-y-4">
               {/* Outstanding Due Highlight */}
-              <div className="flex items-center justify-between p-3 bg-rose-50/70 border border-rose-100 rounded-xl">
+              <div className="flex items-center justify-between p-3.5 bg-rose-50/70 border border-rose-100 rounded-xl">
                 <div>
                   <span className="text-[10px] font-bold text-rose-600 uppercase">Outstanding Due</span>
-                  <div className="text-base font-black text-rose-700">
+                  <div className="text-lg font-black text-rose-700">
                     Tk {metrics.currentDue.toLocaleString()}
                   </div>
                 </div>
@@ -1006,8 +1299,8 @@ export function CustomerProfile() {
               {/* Amount and Discount Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Received Amount / নগদ (Tk) *
+                  <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                    Received Amount (Tk) *
                   </label>
                   <input
                     type="number"
@@ -1017,15 +1310,15 @@ export function CustomerProfile() {
                     value={collectAmount}
                     onChange={e => setCollectAmount(e.target.value)}
                     placeholder="0.00"
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-900 outline-none focus:border-[#084b3e]"
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
                     autoFocus
                   />
                   <p className="text-[10px] text-gray-400 mt-1">Cash drawer entry</p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-amber-900 mb-1 flex items-center justify-between">
-                    <span>Discount / ছাড় (Tk)</span>
+                  <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span>Discount (Tk)</span>
                     <span className="text-[10px] font-medium text-amber-700 bg-amber-100/70 px-1.5 py-0.2 rounded">Optional</span>
                   </label>
                   <input
@@ -1035,7 +1328,7 @@ export function CustomerProfile() {
                     value={collectDiscount}
                     onChange={e => setCollectDiscount(e.target.value)}
                     placeholder="0.00"
-                    className="w-full px-3.5 py-2.5 border border-amber-200 bg-amber-50/50 rounded-xl text-sm font-bold text-amber-950 outline-none focus:border-amber-500"
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-amber-950 outline-none focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-500/10 transition-all font-mono"
                   />
                   <p className="text-[10px] text-amber-700 mt-1">Waived from due</p>
                 </div>
@@ -1048,18 +1341,18 @@ export function CustomerProfile() {
                 const tot = cAmt + dAmt;
                 const rem = Math.max(0, metrics.currentDue - tot);
                 return (
-                  <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-1 text-xs">
+                  <div className="p-3.5 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl space-y-1 text-xs">
                     <div className="flex justify-between items-center text-gray-600 font-semibold">
                       <span>Cash Received:</span>
                       <span className="font-bold text-gray-900">Tk {cAmt.toLocaleString()}</span>
                     </div>
                     {dAmt > 0 && (
                       <div className="flex justify-between items-center text-amber-800 font-semibold">
-                        <span>Discount / ছাড়:</span>
+                        <span>Discount:</span>
                         <span className="font-bold text-amber-900">- Tk {dAmt.toLocaleString()}</span>
                       </div>
                     )}
-                    <div className="border-t border-gray-200 pt-1 flex justify-between items-center font-bold">
+                    <div className="border-t border-[#dce1e7] pt-1 flex justify-between items-center font-bold">
                       <span className="text-gray-800">Total Cleared from Due:</span>
                       <span className="text-emerald-700 font-black">Tk {tot.toLocaleString()}</span>
                     </div>
@@ -1075,7 +1368,7 @@ export function CustomerProfile() {
 
               {/* Method */}
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Payment Method
                 </label>
                 <div className="grid grid-cols-4 gap-1.5">
@@ -1084,10 +1377,10 @@ export function CustomerProfile() {
                       key={m}
                       type="button"
                       onClick={() => setCollectMethod(m)}
-                      className={`py-1.5 text-center rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      className={`h-[40px] text-center rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                         collectMethod === m
-                          ? 'bg-[#084b3e] text-white border-[#084b3e]'
-                          : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                          ? 'bg-[#075b4d] text-white border-[#075b4d]'
+                          : 'bg-[#f8f9fa] text-gray-700 border-[#dce1e7] hover:bg-gray-100'
                       }`}
                     >
                       {m}
@@ -1098,7 +1391,7 @@ export function CustomerProfile() {
 
               {/* Note */}
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Remarks / Note
                 </label>
                 <input
@@ -1106,26 +1399,18 @@ export function CustomerProfile() {
                   value={collectNote}
                   onChange={e => setCollectNote(e.target.value)}
                   placeholder="Optional note..."
-                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700 outline-none focus:bg-white focus:border-[#084b3e]"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-gray-800 outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                 />
               </div>
 
-              {/* Buttons */}
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCollectModalOpen(false)}
-                  disabled={isSubmittingCollection}
-                  className="flex-1 py-2 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 cursor-pointer"
-                >
-                  Cancel
-                </button>
+              {/* Submit Button */}
+              <div className="pt-2">
                 <button
                   type="submit"
                   disabled={isSubmittingCollection || ((parseFloat(collectAmount) || 0) + (parseFloat(collectDiscount) || 0) <= 0)}
-                  className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
-                  {isSubmittingCollection ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  {isSubmittingCollection ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
                   <span>Confirm (Tk {(parseFloat(collectAmount) || 0).toLocaleString()} Paid)</span>
                 </button>
               </div>
@@ -1137,27 +1422,18 @@ export function CustomerProfile() {
       {/* EDIT CUSTOMER MODAL */}
       {isEditModalOpen && (
         <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn"
+          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
           onClick={() => setIsEditModalOpen(false)}
         >
           <div 
-            className="bg-white rounded-2xl w-full max-w-sm overflow-hidden border border-gray-100 shadow-xl"
+            className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
-            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-              <h3 className="font-bold text-gray-900 text-sm">Edit Profile</h3>
-              <button
-                type="button"
-                onClick={() => setIsEditModalOpen(false)}
-                className="text-gray-400 hover:text-gray-700 p-1 rounded-lg"
-              >
-                <X size={16} />
-              </button>
-            </div>
+            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">Edit Customer Profile</h3>
 
-            <form onSubmit={handleSaveEdit} className="p-4 space-y-3">
+            <form onSubmit={handleSaveEdit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Customer Name *
                 </label>
                 <input
@@ -1165,60 +1441,170 @@ export function CustomerProfile() {
                   required
                   value={editName}
                   onChange={e => setEditName(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-900 outline-none focus:border-[#084b3e]"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Phone Number
                 </label>
                 <input
                   type="tel"
                   value={editPhone}
                   onChange={e => setEditPhone(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-xs text-gray-900 outline-none focus:border-[#084b3e]"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
+                  placeholder="01XXXXXXXXX"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Address
                 </label>
                 <input
                   type="text"
                   value={editAddress}
                   onChange={e => setEditAddress(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-xs text-gray-900 outline-none focus:border-[#084b3e]"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
                   Notes
                 </label>
                 <input
                   type="text"
                   value={editNotes}
                   onChange={e => setEditNotes(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-xs text-gray-900 outline-none focus:border-[#084b3e]"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditModalOpen(false)}
-                  className="flex-1 py-2 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200"
-                >
-                  Cancel
-                </button>
+              <div className="pt-2">
                 <button
                   type="submit"
-                  className="flex-1 py-2 text-xs font-bold text-white bg-[#084b3e] hover:bg-[#0c5e4e] rounded-xl cursor-pointer shadow-xs"
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
                 >
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Record Borrowing / Loan Modal */}
+      {isBorrowModalOpen && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setIsBorrowModalOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">
+              Add New Borrowing
+            </h3>
+
+            <form onSubmit={handleConfirmBorrow} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                  Lender Name
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={customer.name}
+                  className="w-full h-[47px] px-4 bg-gray-100 border border-[#dce1e7] rounded-xl font-bold text-gray-700 outline-none text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                  Amount (Tk) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="any"
+                  autoFocus
+                  value={borrowAmount}
+                  onChange={(e) => setBorrowAmount(e.target.value)}
+                  placeholder="0"
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl font-bold outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Borrow Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={borrowDate}
+                    onChange={(e) => handleBorrowDateChange(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium outline-none text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                    Due In (Days)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={borrowDurationDays}
+                    onChange={(e) => updateBorrowDurationDays(e.target.value)}
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl font-bold outline-none text-sm text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all font-mono"
+                    placeholder="30"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                  Receive In Account
+                </label>
+                <select
+                  value={borrowAccount}
+                  onChange={(e) => setBorrowAccount(e.target.value)}
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium outline-none text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all cursor-pointer"
+                >
+                  <option value="cash">Cash Drawer</option>
+                  {accounts.filter(a => a.id !== 'cash').map(a => (
+                    <option key={a.id} value={a.id}>{a.name} ({a.type.toUpperCase()})</option>
+                  ))}
+                  <option value="none">Do not adjust account balance</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
+                  Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={borrowNote}
+                  onChange={(e) => setBorrowNote(e.target.value)}
+                  placeholder="Reason or notes..."
+                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium outline-none text-[#1d2939] focus:border-[#075b4d] focus:bg-white focus:ring-2 focus:ring-[#075b4d]/10 transition-all"
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmittingBorrow || !(parseFloat(borrowAmount) > 0)}
+                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSubmittingBorrow ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <span>Save Borrowing</span>
+                  )}
                 </button>
               </div>
             </form>
