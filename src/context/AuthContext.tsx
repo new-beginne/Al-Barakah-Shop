@@ -31,10 +31,12 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   isOnline: boolean;
+  isOfflineMode: boolean;
   syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
   lastSynced: string | null;
   isBalanceVisible: boolean;
   toggleBalanceVisibility: () => void;
+  loginOffline: (storeName?: string, phone?: string) => Promise<{ success: boolean }>;
   registerWithStore: (storeName: string, phone: string, password: string) => Promise<{ success: boolean; error?: string }>;
   loginWithPhone: (phone: string, password: string) => Promise<{ success: boolean; error?: string }>;
   updateStorePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
@@ -57,28 +59,79 @@ function phoneToEmail(phone: string): string {
   return `${clean}@albarakah.app`;
 }
 
+function createOfflineUser(p: UserProfile): User {
+  return {
+    uid: p.uid,
+    email: phoneToEmail(p.phone || '01700000000'),
+    displayName: p.storeName,
+    photoURL: p.photoURL || null,
+    phoneNumber: p.phone,
+    emailVerified: true,
+    isAnonymous: false,
+    metadata: {} as any,
+    providerData: [],
+    refreshToken: '',
+    tenantId: null,
+    delete: async () => {},
+    getIdToken: async () => '',
+    getIdTokenResult: async () => ({} as any),
+    reload: async () => {},
+    toJSON: () => ({}),
+  } as unknown as User;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [isOfflineMode, setIsOfflineMode] = useState<boolean>(() => {
+    return localStorage.getItem('albarakah_offline_session') === 'true';
+  });
+
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem('albarakah_user_profile');
       const parsed = saved ? JSON.parse(saved) : null;
       const cachedPhoto = localStorage.getItem('albarakah_shop_photo');
-      if (parsed && !parsed.photoURL && cachedPhoto) {
-        parsed.photoURL = cachedPhoto;
-      } else if (!parsed && cachedPhoto) {
-        return {
-          uid: 'guest',
-          storeName: 'Al-Barakah Digital Studio',
-          phone: '',
-          photoURL: cachedPhoto
-        };
+      if (parsed) {
+        if (!parsed.photoURL && cachedPhoto) parsed.photoURL = cachedPhoto;
+        return parsed;
       }
-      return parsed;
+      return {
+        uid: 'offline_owner',
+        storeName: 'Al-Barakah Digital Studio',
+        phone: '01700000000',
+        photoURL: cachedPhoto || '/logo.png?v=2'
+      };
     } catch {
-      return null;
+      return {
+        uid: 'offline_owner',
+        storeName: 'Al-Barakah Digital Studio',
+        phone: '01700000000',
+        photoURL: '/logo.png?v=2'
+      };
     }
   });
+
+  const [user, setUser] = useState<User | null>(() => {
+    const isOffline = localStorage.getItem('albarakah_offline_session') === 'true';
+    if (isOffline) {
+      try {
+        const saved = localStorage.getItem('albarakah_user_profile');
+        const parsed = saved ? JSON.parse(saved) : {
+          uid: 'offline_owner',
+          storeName: 'Al-Barakah Digital Studio',
+          phone: '01700000000'
+        };
+        return createOfflineUser(parsed);
+      } catch {
+        return createOfflineUser({
+          uid: 'offline_owner',
+          storeName: 'Al-Barakah Digital Studio',
+          phone: '01700000000'
+        });
+      }
+    }
+    return null;
+  });
+
   const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
@@ -86,8 +139,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return localStorage.getItem('albarakah_last_synced') || null;
   });
 
-  const [isBalanceVisible, setIsBalanceVisible] = useState(false);
-  const toggleBalanceVisibility = () => setIsBalanceVisible(prev => !prev);
+  const [isBalanceVisible, setIsBalanceVisible] = useState(() => {
+    try {
+      const saved = localStorage.getItem('albarakah_balance_visible');
+      return saved !== null ? saved === 'true' : true; // Default to true in production!
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleBalanceVisibility = () => {
+    setIsBalanceVisible(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('albarakah_balance_visible', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   // Check network status & auto-sync events
   useEffect(() => {
@@ -218,13 +289,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSyncStatus('synced');
         }
       } else {
-        // User logged out
-        setUser(null);
-        setProfile(null);
-        localStorage.removeItem('albarakah_user_profile');
-        if (previousActiveUid) {
-          localStorage.removeItem('albarakah_active_uid');
-          await clearLocalDatabaseForAccountSwitch(true);
+        // User not logged in to Firebase
+        const isOffline = localStorage.getItem('albarakah_offline_session') === 'true';
+        if (isOffline) {
+          try {
+            const savedProfile = localStorage.getItem('albarakah_user_profile');
+            const p: UserProfile = savedProfile ? JSON.parse(savedProfile) : {
+              uid: 'offline_owner',
+              storeName: 'Al-Barakah Digital Studio',
+              phone: '01700000000',
+              photoURL: '/logo.png?v=2'
+            };
+            setProfile(p);
+            setUser(createOfflineUser(p));
+            setIsOfflineMode(true);
+          } catch {
+            setUser(null);
+            setProfile(null);
+            setIsOfflineMode(false);
+          }
+        } else {
+          setUser(null);
+          setProfile(null);
+          setIsOfflineMode(false);
         }
       }
       setLoading(false);
@@ -543,6 +630,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: true };
   };
 
+  const loginOffline = async (storeName: string = 'Al-Barakah Digital Studio', phone: string = '01700000000') => {
+    const cleanPhone = sanitizePhone(phone) || '01700000000';
+    const cleanName = storeName.trim() || 'Al-Barakah Digital Studio';
+    const cachedPhoto = localStorage.getItem('albarakah_shop_photo');
+    const newProfile: UserProfile = {
+      uid: 'offline_owner',
+      storeName: cleanName,
+      phone: cleanPhone,
+      photoURL: cachedPhoto || '/logo.png?v=2',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    localStorage.setItem('albarakah_offline_session', 'true');
+    localStorage.setItem('albarakah_active_uid', 'offline_owner');
+    localStorage.setItem('albarakah_user_profile', JSON.stringify(newProfile));
+
+    setProfile(newProfile);
+    setUser(createOfflineUser(newProfile));
+    setIsOfflineMode(true);
+    setSyncStatus('synced');
+
+    return { success: true };
+  };
+
   const logout = async () => {
     try {
       // 1. If online and has pending local changes, quickly push to cloud for current user before logging out
@@ -554,25 +666,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      await signOut(auth);
+      localStorage.removeItem('albarakah_offline_session');
+      setIsOfflineMode(false);
+
+      if (auth.currentUser) {
+        await signOut(auth);
+      }
       setUser(null);
       setProfile(null);
       localStorage.removeItem('albarakah_user_profile');
       localStorage.removeItem('albarakah_active_uid');
       localStorage.removeItem('albarakah_offline_auth');
-      localStorage.removeItem('albarakah_shop_photo');
-      window.dispatchEvent(new Event('albarakah-photo-changed'));
-
-      // 2. CRITICAL: Clear local database so no user financial data remains on the device!
-      await clearLocalDatabaseForAccountSwitch(true);
+      // Local database is PRESERVED so offline shop records are never lost on logout
       setSyncStatus('idle');
     } catch (err) {
       console.error('Logout error:', err);
+      localStorage.removeItem('albarakah_offline_session');
+      setIsOfflineMode(false);
       setUser(null);
       setProfile(null);
-      localStorage.removeItem('albarakah_user_profile');
-      localStorage.removeItem('albarakah_active_uid');
-      await clearLocalDatabaseForAccountSwitch(true);
       setSyncStatus('idle');
     }
   };
@@ -651,10 +763,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       loading,
       isOnline,
+      isOfflineMode,
       syncStatus,
       lastSynced,
       isBalanceVisible,
       toggleBalanceVisibility,
+      loginOffline,
       registerWithStore,
       loginWithPhone,
       updateStorePassword,

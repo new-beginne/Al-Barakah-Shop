@@ -16,12 +16,13 @@ import { ShortcutsModal } from './components/ShortcutsModal';
 import { Inventory } from './components/Inventory';
 import { StockDeductionRules } from './components/StockDeductionRules';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { WifiOff, Cloud, RefreshCw, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { WifiOff, Cloud, RefreshCw, Eye, EyeOff, ShieldCheck, Download } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { NotificationCenter } from './components/NotificationCenter';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { usePwaInstall } from './hooks/usePwaInstall';
 
 import { useAppNotifications } from './hooks/useAppNotifications';
 import { initDefaultAccounts } from './services/accountService';
@@ -35,6 +36,7 @@ interface TopHeaderProps {
 function TopHeader({ onOpenShortcuts }: TopHeaderProps) {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const { user, profile, isOnline, syncStatus, triggerSync, isBalanceVisible, toggleBalanceVisibility } = useAuth();
+  const { isInstallable, installApp } = usePwaInstall();
   const navigate = useNavigate();
 
   return (
@@ -64,6 +66,19 @@ function TopHeader({ onOpenShortcuts }: TopHeaderProps) {
 
         <div className="flex items-center gap-2.5 sm:gap-3">
           
+          {/* PWA Install Button */}
+          {isInstallable && (
+            <button
+              type="button"
+              onClick={installApp}
+              title="Install app on mobile or computer"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs cursor-pointer animate-pulse"
+            >
+              <Download size={13} />
+              <span className="hidden sm:inline">Install</span>
+            </button>
+          )}
+
           {/* Offline badge */}
           {!isOnline && (
             <div className="flex items-center gap-1.5 bg-red-50 text-red-700 px-2.5 sm:px-3 py-1 rounded-full border border-red-200 text-[11px] font-bold uppercase tracking-wider shadow-sm animate-pulse">

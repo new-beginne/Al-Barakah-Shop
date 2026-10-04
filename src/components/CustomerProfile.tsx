@@ -29,7 +29,7 @@ import {
   HandCoins
 } from 'lucide-react';
 import { format, addDays, differenceInDays } from 'date-fns';
-import { generateCustomerStatementPdf, CustomerTransactionItem } from '../utils/customerStatementPdf';
+import { generateCustomerStatementPdf, printCustomerStatement, CustomerTransactionItem } from '../utils/customerStatementPdf';
 import { formatDateStr } from '../utils/dateFormatter';
 
 export function CustomerProfile() {
@@ -331,11 +331,11 @@ export function CustomerProfile() {
   }, [unifiedTransactions, activeTab, searchQuery]);
 
   // Handle PDF Export
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     if (!customer) return;
     setIsExportingPdf(true);
     try {
-      generateCustomerStatementPdf({
+      await generateCustomerStatementPdf({
         customer,
         transactions: unifiedTransactions,
         totalPurchases: metrics.totalPurchases,
@@ -356,8 +356,22 @@ export function CustomerProfile() {
   };
 
   // Handle Direct Print
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!customer) return;
+    try {
+      await printCustomerStatement({
+        customer,
+        transactions: unifiedTransactions,
+        totalPurchases: metrics.totalPurchases,
+        totalPaid: metrics.totalPaid,
+        totalDueGiven: metrics.totalPurchases,
+        currentBalanceDue: metrics.currentDue,
+        periodLabel: 'All Records',
+      });
+    } catch (err) {
+      console.error('Print error:', err);
+      window.print();
+    }
   };
 
   // Handle Collect Due Submission
@@ -724,10 +738,10 @@ export function CustomerProfile() {
             type="button"
             onClick={handleExportPdf}
             disabled={isExportingPdf}
-            className="p-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-700 transition-colors cursor-pointer shadow-xs"
+            className="p-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-700 transition-colors cursor-pointer shadow-xs disabled:opacity-75"
             title="Download PDF Statement"
           >
-            {isExportingPdf ? <Loader2 size={15} className="animate-spin text-gray-500" /> : <Download size={15} />}
+            <Download size={15} />
           </button>
 
           <button

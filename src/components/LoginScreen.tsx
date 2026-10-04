@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
   Lock, Phone, Store, Eye, EyeOff, ShieldCheck, 
-  CheckCircle2, AlertCircle, RefreshCw, KeyRound, WifiOff, LogIn, UserPlus
+  CheckCircle2, AlertCircle, RefreshCw, KeyRound, WifiOff, LogIn, UserPlus,
+  Zap, ArrowRight
 } from 'lucide-react';
 
 export function LoginScreen() {
-  const { loginWithPhone, registerWithStore, isOnline } = useAuth();
+  const { loginWithPhone, registerWithStore, loginOffline, isOnline } = useAuth();
 
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [storeName, setStoreName] = useState('Al-Barakah Digital Studio');
@@ -18,6 +19,23 @@ export function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  const handleOpenOffline = async () => {
+    setLoading(true);
+    setErrorMessage('');
+    const res = await loginOffline('Al-Barakah Digital Studio & Online Service', '01700000000');
+    setLoading(false);
+    if (res.success) {
+      setSuccessMessage('Store opened successfully! Welcome...');
+    }
+  };
+
+  const handleDemoFill = () => {
+    setPhone('01700000000');
+    setPassword('123456');
+    setTab('login');
+    setErrorMessage('');
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -219,7 +237,7 @@ export function LoginScreen() {
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 flex flex-col gap-2">
                 <button
                   type="submit"
                   disabled={loading}
@@ -236,6 +254,15 @@ export function LoginScreen() {
                       <span>Login & Open Store</span>
                     </>
                   )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDemoFill}
+                  className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 text-[#084b3e] border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Zap size={14} className="text-amber-500 fill-amber-500" />
+                  <span>Fill Demo Account Info (01700000000)</span>
                 </button>
               </div>
             </form>
@@ -353,6 +380,31 @@ export function LoginScreen() {
               </div>
             </form>
           )}
+
+          {/* Direct Offline Access Card */}
+          <div className="mt-5 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl shadow-xs">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-black text-[#084b3e]">
+                <Zap size={15} className="text-emerald-600 fill-emerald-600" />
+                <span>Direct Offline Store Mode</span>
+              </div>
+              <span className="text-[10px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-full font-bold">
+                100% Local
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-600 mb-3 leading-relaxed">
+              Run all business accounts locally in your device's IndexedDB database without internet or passwords.
+            </p>
+            <button
+              type="button"
+              onClick={handleOpenOffline}
+              disabled={loading}
+              className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 active:scale-[0.99] text-white rounded-xl text-xs font-extrabold transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            >
+              <span>Enter Store Directly (Offline)</span>
+              <ArrowRight size={14} />
+            </button>
+          </div>
 
           {/* Security Guarantee Note */}
           <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-center gap-2 text-[11px] font-semibold text-gray-500">

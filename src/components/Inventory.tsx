@@ -4,13 +4,15 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, InventoryItem, InventoryCategory, InventoryUnit } from '../db/db';
 import { 
   initDefaultInventory, addInventoryItem, updateInventoryItem, 
-  deleteInventoryItem, restockInventoryItem, consumeInventoryItem 
+  deleteInventoryItem, restockInventoryItem, consumeInventoryItem,
+  restockInventoryWithPayment, addInventoryItemWithPayment, PurchaseFundingSource
 } from '../services/inventoryService';
+import { format, addDays } from 'date-fns';
 import { 
   Package, AlertTriangle, Plus, Search, 
   TrendingDown, CheckCircle2, X, Edit2, 
   Trash2, DollarSign, Check, Loader2, ArrowUpDown, Zap,
-  PlusCircle, MinusCircle
+  PlusCircle, MinusCircle, Banknote, Smartphone, HandCoins, FileText
 } from 'lucide-react';
 
 const CATEGORIES: InventoryCategory[] = [
@@ -49,10 +51,21 @@ export function Inventory() {
   const [formSupplier, setFormSupplier] = useState('');
   const [formNote, setFormNote] = useState('');
 
+  // Payment / Funding states for Add Item
+  const [addFundingSource, setAddFundingSource] = useState<PurchaseFundingSource>('cash');
+  const [addLenderName, setAddLenderName] = useState('');
+  const [addLenderPhone, setAddLenderPhone] = useState('');
+  const [addDueDate, setAddDueDate] = useState(() => format(addDays(new Date(), 30), 'yyyy-MM-dd'));
+
   // Form states for Restock
   const [restockQty, setRestockQty] = useState('');
   const [restockCost, setRestockCost] = useState('');
   const [restockNote, setRestockNote] = useState('');
+  // Payment / Funding states for Restock
+  const [restockFundingSource, setRestockFundingSource] = useState<PurchaseFundingSource>('cash');
+  const [restockLenderName, setRestockLenderName] = useState('');
+  const [restockLenderPhone, setRestockLenderPhone] = useState('');
+  const [restockDueDate, setRestockDueDate] = useState(() => format(addDays(new Date(), 30), 'yyyy-MM-dd'));
 
   // Form states for Consume
   const [consumeQty, setConsumeQty] = useState('');
@@ -65,6 +78,7 @@ export function Inventory() {
   const items = useLiveQuery(() => db.inventory.toArray(), []) || [];
   const services = useLiveQuery(() => db.services.toArray(), []) || [];
   const serviceItemLinks = useLiveQuery(() => db.serviceItemLinks.toArray(), []) || [];
+  const accounts = useLiveQuery(() => db.accounts.toArray(), []) || [];
 
   // Auto initialize defaults if empty
   useEffect(() => {
@@ -87,6 +101,9 @@ export function Inventory() {
     setFormSellingPrice(item.sellingPrice ? String(item.sellingPrice) : '');
     setFormSupplier(item.supplier || '');
     setFormNote(item.note || '');
+    setAddFundingSource('cash');
+    setAddLenderName('');
+    setAddLenderPhone('');
     setIsAddModalOpen(true);
   };
 
@@ -102,6 +119,9 @@ export function Inventory() {
     setFormSellingPrice('');
     setFormSupplier('');
     setFormNote('');
+    setAddFundingSource('cash');
+    setAddLenderName('');
+    setAddLenderPhone('');
   };
 
   const handleSaveItem = async (e: React.FormEvent) => {
@@ -131,18 +151,29 @@ export function Inventory() {
         });
         showToast('success', `Item "${formName}" updated.`);
       } else {
-        await addInventoryItem({
-          name: formName.trim(),
-          category: formCategory,
-          currentStock,
-          unit: formUnit,
-          minAlertStock,
-          unitCost,
-          sellingPrice,
-          supplier: formSupplier.trim() || undefined,
-          note: formNote.trim() || undefined,
-        });
-        showToast('success', `Item "${formName}" added.`);
+        const totalCost = Math.round(currentStock * unitCost);
+        await addInventoryItemWithPayment(
+          {
+            name: formName.trim(),
+            category: formCategory,
+            currentStock,
+            unit: formUnit,
+            minAlertStock,
+            unitCost,
+            sellingPrice,
+            supplier: formSupplier.trim() || undefined,
+            note: formNote.trim() || undefined,
+          },
+          {
+            source: addFundingSource,
+            totalCost,
+            lenderName: addLenderName.trim() || formSupplier.trim() || undefined,
+            lenderPhone: addLenderPhone.trim() || undefined,
+            dueDate: addDueDate,
+            note: formNote.trim() || undefined
+          }
+        );
+        showToast('success', `Product "${formName}" added successfully!`);
       }
       closeFormModal();
     } catch (err: any) {
@@ -159,15 +190,39 @@ export function Inventory() {
       return;
     }
 
-    const newCost = restockCost ? Number(restockCost) : undefined;
+    const unitCost = restockCost ? Number(restockCost) : (restockItem.unitCost || 0);
+    const totalCost = Math.round(addQty * unitCost);
 
     try {
-      await restockInventoryItem(restockItem.id, addQty, newCost, restockNote);
-      showToast('success', `Restocked +${addQty} ${restockItem.unit}.`);
+      await restockInventoryWithPayment(
+        restockItem.id,
+        addQty,
+        unitCost,
+        {
+          source: restockFundingSource,
+          totalCost,
+          lenderName: restockLenderName.trim() || undefined,
+          lenderPhone: restockLenderPhone.trim() || undefined,
+          dueDate: restockDueDate,
+          note: restockNote.trim() || undefined
+        },
+        restockNote.trim() || undefined
+      );
+
+      const sourceLabel = restockFundingSource === 'cash' ? 'Paid via Cash'
+        : restockFundingSource === 'loan' ? 'Added to Loan/Borrowing'
+        : restockFundingSource === 'due' ? 'Added to Supplier Credit'
+        : restockFundingSource === 'none' ? 'No balance change'
+        : `Paid via ${restockFundingSource.toUpperCase()}`;
+
+      showToast('success', `Restocked +${addQty} ${restockItem.unit} (Total: Tk ${totalCost.toLocaleString()}, ${sourceLabel})`);
       setRestockItem(null);
       setRestockQty('');
       setRestockCost('');
       setRestockNote('');
+      setRestockFundingSource('cash');
+      setRestockLenderName('');
+      setRestockLenderPhone('');
     } catch (err: any) {
       showToast('error', err?.message || 'Failed to restock item.');
     }
@@ -272,6 +327,27 @@ export function Inventory() {
             <Zap size={14} className="text-amber-600 fill-amber-500/20" />
             <span className="hidden sm:inline">Service Stock Rules</span>
             <span className="sm:hidden">Rules</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (items.length > 0) {
+                setRestockItem(items[0]);
+                setRestockQty('');
+                setRestockCost('');
+                setRestockNote('');
+                setRestockFundingSource('cash');
+              } else {
+                showToast('error', 'Please add an inventory item first.');
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-[#084b3e] border border-emerald-200/90 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+            title="Purchase and restock store inventory items"
+          >
+            <PlusCircle size={14} className="text-[#084b3e]" />
+            <span className="hidden sm:inline">Purchase / Restock</span>
+            <span className="sm:hidden">Restock</span>
           </button>
 
           <button
@@ -749,6 +825,172 @@ export function Inventory() {
                 />
               </div>
 
+              {/* Funding Source for initial stock purchase when adding new item */}
+              {!editingItem && (Number(formStock) || 0) > 0 && (Number(formUnitCost) || 0) > 0 && (
+                <div className="pt-2 border-t border-gray-100 space-y-2.5">
+                  <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex justify-between items-center text-xs">
+                    <span className="font-bold text-gray-700">Initial Stock Purchase Cost:</span>
+                    <span className="text-base font-black text-emerald-900">
+                      Tk {(Math.round((Number(formStock) || 0) * (Number(formUnitCost) || 0))).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                      Payment / Funding Source *
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAddFundingSource('cash')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
+                          addFundingSource === 'cash'
+                            ? 'bg-[#084b3e] text-white border-[#084b3e] shadow-sm'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <Banknote size={16} />
+                        <span>Cash</span>
+                        <span className="text-[10px] opacity-80 font-normal">
+                          Tk {accounts.find(a => a.id === 'cash')?.balance || 0}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAddFundingSource('bkash')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
+                          addFundingSource === 'bkash'
+                            ? 'bg-pink-600 text-white border-pink-600 shadow-sm'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <Smartphone size={16} />
+                        <span>bKash</span>
+                        <span className="text-[10px] opacity-80 font-normal">
+                          Tk {accounts.find(a => a.id === 'bkash')?.balance || 0}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAddFundingSource('nagad')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
+                          addFundingSource === 'nagad'
+                            ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <Smartphone size={16} />
+                        <span>Nagad</span>
+                        <span className="text-[10px] opacity-80 font-normal">
+                          Tk {accounts.find(a => a.id === 'nagad')?.balance || 0}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAddFundingSource('rocket')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
+                          addFundingSource === 'rocket'
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <Smartphone size={16} />
+                        <span>Rocket</span>
+                        <span className="text-[10px] opacity-80 font-normal">
+                          Tk {accounts.find(a => a.id === 'rocket')?.balance || 0}
+                        </span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setAddFundingSource('loan')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
+                          addFundingSource === 'loan'
+                            ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <HandCoins size={16} />
+                        <span>Loan / Borrowing</span>
+                        <span className="text-[10px] opacity-80 font-normal">Borrowing</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAddFundingSource('due')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
+                          addFundingSource === 'due'
+                            ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <FileText size={16} />
+                        <span>Supplier Due</span>
+                        <span className="text-[10px] opacity-80 font-normal">Payable</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAddFundingSource('none')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
+                          addFundingSource === 'none'
+                            ? 'bg-gray-700 text-white border-gray-700 shadow-sm'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <Check size={16} />
+                        <span>No Balance Change</span>
+                        <span className="text-[10px] opacity-80 font-normal">Direct</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {(addFundingSource === 'loan' || addFundingSource === 'due') && (
+                    <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2 animate-fadeIn text-xs">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                          {addFundingSource === 'loan' ? 'Lender / Person Name *' : 'Supplier Name *'}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={addLenderName}
+                          onChange={(e) => setAddLenderName(e.target.value)}
+                          placeholder={addFundingSource === 'loan' ? 'e.g. John Doe / Uncle' : (formSupplier || 'e.g. Paper Depot')}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg font-bold text-gray-900 outline-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">Phone Number (Optional)</label>
+                          <input
+                            type="tel"
+                            value={addLenderPhone}
+                            onChange={(e) => setAddLenderPhone(e.target.value)}
+                            placeholder="017xxxxxxxx"
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">Repayment Due Date</label>
+                          <input
+                            type="date"
+                            value={addDueDate}
+                            onChange={(e) => setAddDueDate(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="pt-2">
                 <button
                   type="submit"
@@ -776,6 +1018,29 @@ export function Inventory() {
             <p className="text-center text-xs text-gray-500 font-semibold mb-5">{restockItem.name}</p>
 
             <form onSubmit={handleSaveRestock} className="space-y-4">
+              {/* Allow switching item being restocked if user desires */}
+              {items.length > 1 && (
+                <div>
+                  <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                    Select Product to Restock
+                  </label>
+                  <select
+                    value={restockItem.id}
+                    onChange={(e) => {
+                      const selected = items.find(it => it.id === Number(e.target.value));
+                      if (selected) setRestockItem(selected);
+                    }}
+                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all cursor-pointer"
+                  >
+                    {items.map(it => (
+                      <option key={it.id} value={it.id}>
+                        {it.name} (Current Stock: {it.currentStock} {it.unit})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="p-3 bg-[#f8f9fa] rounded-xl border border-[#dce1e7] text-xs text-gray-800 flex justify-between items-center">
                 <span className="font-medium text-gray-600">Current Stock:</span>
                 <strong className="text-emerald-800 font-black text-sm">{restockItem.currentStock} {restockItem.unit}</strong>
@@ -808,6 +1073,180 @@ export function Inventory() {
                   onChange={(e) => setRestockCost(e.target.value)}
                   placeholder={`Current: Tk ${restockItem.unitCost}`}
                   className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all font-mono"
+                />
+              </div>
+
+              {/* Total Calculated Purchase Cost */}
+              {Number(restockQty || 0) > 0 && (
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex justify-between items-center text-xs">
+                  <span className="font-bold text-gray-700">Total Purchase Cost:</span>
+                  <span className="text-base font-black text-emerald-900">
+                    Tk {(Math.round(Number(restockQty || 0) * (restockCost ? Number(restockCost) : Number(restockItem.unitCost || 0)))).toLocaleString()}
+                  </span>
+                </div>
+              )}
+
+              {/* Funding Source Selector */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                  Select Payment / Fund Source *
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRestockFundingSource('cash')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      restockFundingSource === 'cash'
+                        ? 'bg-[#084b3e] text-white border-[#084b3e] shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Banknote size={16} />
+                    <span>Cash</span>
+                    <span className="text-[10px] opacity-80 font-normal">Tk {accounts.find(a => a.id === 'cash')?.balance || 0}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRestockFundingSource('bkash')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      restockFundingSource === 'bkash'
+                        ? 'bg-pink-600 text-white border-pink-600 shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Smartphone size={16} />
+                    <span>bKash</span>
+                    <span className="text-[10px] opacity-80 font-normal">Tk {accounts.find(a => a.id === 'bkash')?.balance || 0}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRestockFundingSource('nagad')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      restockFundingSource === 'nagad'
+                        ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Smartphone size={16} />
+                    <span>Nagad</span>
+                    <span className="text-[10px] opacity-80 font-normal">Tk {accounts.find(a => a.id === 'nagad')?.balance || 0}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRestockFundingSource('rocket')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      restockFundingSource === 'rocket'
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Smartphone size={16} />
+                    <span>Rocket</span>
+                    <span className="text-[10px] opacity-80 font-normal">Tk {accounts.find(a => a.id === 'rocket')?.balance || 0}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setRestockFundingSource('loan')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      restockFundingSource === 'loan'
+                        ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <HandCoins size={16} />
+                    <span>Loan / Borrowing</span>
+                    <span className="text-[10px] opacity-80 font-normal">Borrowing</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRestockFundingSource('due')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      restockFundingSource === 'due'
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <FileText size={16} />
+                    <span>Supplier Due</span>
+                    <span className="text-[10px] opacity-80 font-normal">Payable</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRestockFundingSource('none')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      restockFundingSource === 'none'
+                        ? 'bg-gray-700 text-white border-gray-700 shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Check size={16} />
+                    <span>No Account Deduct</span>
+                    <span className="text-[10px] opacity-80 font-normal">No Change</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Conditional Inputs for Loan or Due */}
+              {(restockFundingSource === 'loan' || restockFundingSource === 'due') && (
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5 animate-fadeIn">
+                  <div className="text-xs font-black text-amber-900">
+                    {restockFundingSource === 'loan' ? '🤝 Loan / Borrowing Details' : '📝 Supplier Credit Details'}
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                      {restockFundingSource === 'loan' ? 'Lender / Person Name *' : 'Supplier Name *'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={restockLenderName}
+                      onChange={(e) => setRestockLenderName(e.target.value)}
+                      placeholder={restockFundingSource === 'loan' ? 'e.g. John Doe / Brother' : (restockItem.supplier || 'e.g. Dhaka Paper House')}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-900 outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-700 mb-1">Phone Number (Optional)</label>
+                      <input
+                        type="tel"
+                        value={restockLenderPhone}
+                        onChange={(e) => setRestockLenderPhone(e.target.value)}
+                        placeholder="017xxxxxxxx"
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-900 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-700 mb-1">Repayment Date</label>
+                      <input
+                        type="date"
+                        value={restockDueDate}
+                        onChange={(e) => setRestockDueDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-900 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
+                  Note (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={restockNote}
+                  onChange={(e) => setRestockNote(e.target.value)}
+                  placeholder="e.g. Invoice / memo number..."
+                  className="w-full h-[43px] px-3.5 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-xs font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] outline-none"
                 />
               </div>
 

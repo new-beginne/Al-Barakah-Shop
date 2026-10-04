@@ -1,5 +1,18 @@
 import { db, InventoryItem, InventoryCategory, InventoryUnit, getRecordMetadata } from '../db/db';
 import { recordActivityLog } from './activityLogService';
+import { adjustAccountBalance } from './accountService';
+import { format, addDays } from 'date-fns';
+
+export type PurchaseFundingSource = 'cash' | 'bkash' | 'nagad' | 'rocket' | 'loan' | 'due' | 'none';
+
+export interface PurchaseFundingDetails {
+  source: PurchaseFundingSource;
+  totalCost: number;
+  lenderName?: string;
+  lenderPhone?: string;
+  dueDate?: string;
+  note?: string;
+}
 
 const DEFAULT_INVENTORY_ITEMS: Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt'>[] = [
   {
@@ -225,4 +238,202 @@ export async function consumeInventoryItem(id: number, reduceQty: number, reason
   });
 
   return true;
+}
+
+/**
+ * Restock an item with funding/payment tracking
+ */
+export async function restockInventoryWithPayment(
+  itemId: number,
+  addQty: number,
+  unitCost: number,
+  funding: PurchaseFundingDetails,
+  restockNote?: string
+): Promise<void> {
+  const item = await db.inventory.get(itemId);
+  if (!item) return;
+
+  const meta = getRecordMetadata();
+  const updatedStock = Number(item.currentStock || 0) + Number(addQty);
+
+  // 1. Update inventory
+  await db.inventory.update(itemId, {
+    currentStock: updatedStock,
+    unitCost: unitCost > 0 ? unitCost : item.unitCost,
+    lastRestockedDate: meta.date,
+    updatedAt: meta.updatedAt,
+    note: restockNote ? `${item.note ? item.note + ' | ' : ''}${restockNote}` : item.note
+  });
+
+  const totalCost = funding.totalCost > 0 ? funding.totalCost : Math.round(Number(addQty) * Number(unitCost));
+
+  // 2. Process funding source
+  if (totalCost > 0) {
+    if (funding.source === 'cash' || funding.source === 'bkash' || funding.source === 'nagad' || funding.source === 'rocket') {
+      // Deduct from wallet / cash
+      await adjustAccountBalance(funding.source, -totalCost);
+
+      const paymentMethodTitle = funding.source === 'cash' ? 'Cash' : funding.source === 'bkash' ? 'bKash' : funding.source === 'nagad' ? 'Nagad' : 'Rocket';
+      await db.expenses.add({
+        date: meta.date,
+        time: meta.time,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        title: `Stock Purchase: ${item.name} (+${addQty} ${item.unit})`,
+        category: 'Inventory / Materials',
+        amount: totalCost,
+        paymentMethod: paymentMethodTitle,
+        note: `Restocked ${addQty} ${item.unit} @ Tk ${unitCost} (${paymentMethodTitle})`
+      });
+
+      await db.balanceLogs.add({
+        date: meta.date,
+        time: meta.time,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        accountId: funding.source,
+        accountName: paymentMethodTitle,
+        type: 'edit',
+        amount: -totalCost,
+        previousBalance: 0,
+        newBalance: 0,
+        note: `Purchased stock: ${item.name} (+${addQty} ${item.unit})`
+      });
+    } else if (funding.source === 'loan') {
+      // Loan / Borrowing taken to purchase stock
+      const lender = funding.lenderName?.trim() || 'Loan / Borrowing (Stock Purchase)';
+      await db.borrowings.add({
+        date: meta.date,
+        time: meta.time,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        lenderName: lender,
+        phone: funding.lenderPhone?.trim() || '',
+        amount: totalCost,
+        paidAmount: 0,
+        dueDate: funding.dueDate || format(addDays(new Date(), 30), 'yyyy-MM-dd'),
+        status: 'Unpaid',
+        note: `Loan for stock purchase: ${item.name} (+${addQty} ${item.unit})`
+      });
+    } else if (funding.source === 'due') {
+      // Bought on Credit from Supplier
+      const supplierName = funding.lenderName?.trim() || (item.supplier ? `${item.supplier} (Supplier Due)` : 'Supplier Credit (Due)');
+      await db.borrowings.add({
+        date: meta.date,
+        time: meta.time,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        lenderName: supplierName,
+        phone: funding.lenderPhone?.trim() || '',
+        amount: totalCost,
+        paidAmount: 0,
+        dueDate: funding.dueDate || format(addDays(new Date(), 30), 'yyyy-MM-dd'),
+        status: 'Unpaid',
+        note: `Supplier Due for stock: ${item.name} (+${addQty} ${item.unit})`
+      });
+    }
+  }
+
+  // 3. Activity log
+  const fundingText = funding.source === 'cash' ? 'Cash' 
+    : funding.source === 'loan' ? 'Loan / Borrowing'
+    : funding.source === 'due' ? 'Supplier Credit (Due)'
+    : funding.source === 'none' ? 'No balance change'
+    : funding.source.toUpperCase();
+
+  await recordActivityLog({
+    action: 'EDIT',
+    module: 'System',
+    entityId: itemId,
+    title: `Restocked ${item.name} (+${addQty} ${item.unit})`,
+    details: `Cost: Tk ${totalCost.toLocaleString()} paid via ${fundingText}. New stock: ${updatedStock} ${item.unit}`
+  });
+}
+
+export async function addInventoryItemWithPayment(
+  item: Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt'>,
+  funding: PurchaseFundingDetails
+): Promise<number> {
+  const meta = getRecordMetadata();
+  const id = await db.inventory.add({
+    ...item,
+    createdAt: meta.createdAt,
+    updatedAt: meta.updatedAt,
+    lastRestockedDate: item.lastRestockedDate || meta.date
+  });
+
+  const totalCost = funding.totalCost > 0 ? funding.totalCost : Math.round(Number(item.currentStock || 0) * Number(item.unitCost || 0));
+
+  if (totalCost > 0 && Number(item.currentStock || 0) > 0) {
+    if (funding.source === 'cash' || funding.source === 'bkash' || funding.source === 'nagad' || funding.source === 'rocket') {
+      await adjustAccountBalance(funding.source, -totalCost);
+      const paymentMethodTitle = funding.source === 'cash' ? 'Cash' : funding.source === 'bkash' ? 'bKash' : funding.source === 'nagad' ? 'Nagad' : 'Rocket';
+
+      await db.expenses.add({
+        date: meta.date,
+        time: meta.time,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        title: `New Stock Purchase: ${item.name} (${item.currentStock} ${item.unit})`,
+        category: 'Inventory / Materials',
+        amount: totalCost,
+        paymentMethod: paymentMethodTitle,
+        note: `Initial stock ${item.currentStock} ${item.unit} @ Tk ${item.unitCost} (${paymentMethodTitle})`
+      });
+
+      await db.balanceLogs.add({
+        date: meta.date,
+        time: meta.time,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        accountId: funding.source,
+        accountName: paymentMethodTitle,
+        type: 'edit',
+        amount: -totalCost,
+        previousBalance: 0,
+        newBalance: 0,
+        note: `Initial stock purchase: ${item.name} (${item.currentStock} ${item.unit})`
+      });
+    } else if (funding.source === 'loan') {
+      const lender = funding.lenderName?.trim() || 'Loan / Borrowing (Stock Purchase)';
+      await db.borrowings.add({
+        date: meta.date,
+        time: meta.time,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        lenderName: lender,
+        phone: funding.lenderPhone?.trim() || '',
+        amount: totalCost,
+        paidAmount: 0,
+        dueDate: funding.dueDate || format(addDays(new Date(), 30), 'yyyy-MM-dd'),
+        status: 'Unpaid',
+        note: `Loan for new stock: ${item.name} (${item.currentStock} ${item.unit})`
+      });
+    } else if (funding.source === 'due') {
+      const supplierName = funding.lenderName?.trim() || (item.supplier ? `${item.supplier} (Supplier Due)` : 'Supplier Credit (Due)');
+      await db.borrowings.add({
+        date: meta.date,
+        time: meta.time,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        lenderName: supplierName,
+        phone: funding.lenderPhone?.trim() || '',
+        amount: totalCost,
+        paidAmount: 0,
+        dueDate: funding.dueDate || format(addDays(new Date(), 30), 'yyyy-MM-dd'),
+        status: 'Unpaid',
+        note: `Supplier Due for stock: ${item.name} (${item.currentStock} ${item.unit})`
+      });
+    }
+  }
+
+  await recordActivityLog({
+    action: 'CREATE',
+    module: 'System',
+    entityId: id,
+    title: `Added inventory item: ${item.name}`,
+    details: `Initial stock: ${item.currentStock} ${item.unit}. Cost: Tk ${totalCost}`
+  });
+
+  return id;
 }

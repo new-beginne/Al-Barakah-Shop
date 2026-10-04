@@ -1,7 +1,8 @@
+import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { Customer } from '../db/db';
+import { getLogoBase64 } from './pdfExport';
 
 export interface CustomerTransactionItem {
   id: string | number;
@@ -18,7 +19,7 @@ export interface CustomerTransactionItem {
   status?: string;
 }
 
-interface CustomerStatementPdfOptions {
+export interface CustomerStatementPdfOptions {
   customer: Customer;
   transactions: CustomerTransactionItem[];
   totalPurchases: number;
@@ -28,237 +29,465 @@ interface CustomerStatementPdfOptions {
   periodLabel?: string;
 }
 
-export function generateCustomerStatementPdf(options: CustomerStatementPdfOptions) {
+function escapeHtml(str: string): string {
+  return (str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+export function buildCustomerStatementHtml(options: CustomerStatementPdfOptions, logoUrl: string): string {
   const {
     customer,
     transactions,
     totalPurchases,
     totalPaid,
-    totalDueGiven,
     currentBalanceDue,
-    periodLabel = 'All Time'
+    periodLabel = 'All Records'
   } = options;
 
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
+  const phoneAddress = `Phone: ${customer.phone || 'N/A'}${customer.address ? ` • Address: ${customer.address}` : ''}`;
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const nowStr = format(new Date(), 'dd/MM/yyyy, hh:mm a');
-
-  // --- Brand Header (Clean Left & Right Layout) ---
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(8, 75, 62); // Brand Emerald #084b3e
-  doc.text('AL-BARAKAH DIGITAL STUDIO & ONLINE SERVICE', 14, 15);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(100, 116, 139);
-  doc.text('Digital Photo Studio • Printing • Online & Govt Services • MFS Banking', 14, 20);
-
-  // Right: Document Title
-  const rightX = pageWidth - 14;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42);
-  doc.text('CUSTOMER STATEMENT', rightX, 15, { align: 'right' });
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Period: ${periodLabel}`, rightX, 20, { align: 'right' });
-  doc.text(`Generated: ${nowStr}`, rightX, 24.5, { align: 'right' });
-
-  // Clean horizontal divider
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.4);
-  doc.line(14, 28, pageWidth - 14, 28);
-
-  // --- Customer Info Card ---
-  const boxY = 32;
-  const boxHeight = 18;
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, boxY, pageWidth - 28, boxHeight, 2, 2, 'FD');
-
-  // Left: Customer details
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42);
-  doc.text(customer.name, 18, boxY + 6);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Phone: ${customer.phone || 'N/A'}${customer.address ? ` • Address: ${customer.address}` : ''}`, 18, boxY + 12);
-
-  // Right: Account ID
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(8, 75, 62);
-  doc.text(`Account ID: #CUS-${customer.id || 'N/A'}`, rightX - 4, boxY + 6, { align: 'right' });
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(100, 116, 139);
-  doc.text(`${transactions.length} Total Activity Records`, rightX - 4, boxY + 12, { align: 'right' });
-
-  // --- Clean 3-Metric Summary Bar ---
-  const barY = boxY + boxHeight + 4;
-  const barHeight = 14;
-  const barWidth = pageWidth - 28;
-
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, barY, barWidth, barHeight, 2, 2, 'FD');
-
-  const colWidth = barWidth / 3;
-
-  // Metric 1: Total Purchases
-  const m1X = 14 + 6;
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(100, 116, 139);
-  doc.text('TOTAL PURCHASES', m1X, barY + 4.5);
-  doc.setFontSize(10.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(`Tk ${totalPurchases.toLocaleString('en-US')}`, m1X, barY + 9.8);
-
-  // Vertical divider 1
-  doc.setDrawColor(226, 232, 240);
-  doc.line(14 + colWidth, barY + 2.5, 14 + colWidth, barY + barHeight - 2.5);
-
-  // Metric 2: Total Paid
-  const m2X = 14 + colWidth + 6;
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(100, 116, 139);
-  doc.text('TOTAL PAID / CLEARED', m2X, barY + 4.5);
-  doc.setFontSize(10.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(22, 101, 52);
-  doc.text(`Tk ${totalPaid.toLocaleString('en-US')}`, m2X, barY + 9.8);
-
-  // Vertical divider 2
-  doc.line(14 + (colWidth * 2), barY + 2.5, 14 + (colWidth * 2), barY + barHeight - 2.5);
-
-  // Metric 3: Current Due
-  const m3X = 14 + (colWidth * 2) + 6;
-  const hasDue = currentBalanceDue > 0;
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(100, 116, 139);
-  doc.text('OUTSTANDING DUE', m3X, barY + 4.5);
-  doc.setFontSize(10.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(hasDue ? 220 : 22, hasDue ? 38 : 101, hasDue ? 38 : 52);
-  doc.text(`Tk ${currentBalanceDue.toLocaleString('en-US')}`, m3X, barY + 9.8);
-
-  // --- Transactions Ledger Table (Simple & Clean) ---
-  const tableStartY = barY + barHeight + 5;
-
-  const tableRows = transactions.map((t, index) => {
-    const dateStr = `${t.date}${t.time ? ` ${t.time}` : ''}`;
-    const desc = t.title;
+  const tableRowsHtml = transactions.map((t, index) => {
+    const dateTime = `${t.date}${t.time ? ` ${t.time}` : ''}`;
     const typeLabel = t.type === 'due' ? 'Due' : t.type === 'payment' ? 'Payment' : 'Sale';
-    const amtStr = `Tk ${t.amount.toLocaleString()}`;
-    const paidStr = `Tk ${t.paidAmount.toLocaleString()}`;
-    const dueStr = t.dueAmount > 0 ? `Tk ${t.dueAmount.toLocaleString()}` : '—';
-    const statusStr = t.status || (t.dueAmount > 0 ? 'Due' : 'Paid');
+    const dueFormatted = t.dueAmount > 0 ? `Tk ${t.dueAmount.toLocaleString()}` : '—';
+    const dueColor = t.dueAmount > 0 ? '#c62828' : '#4a5568';
 
-    return [
-      (index + 1).toString(),
-      dateStr,
-      desc,
-      typeLabel,
-      amtStr,
-      paidStr,
-      dueStr,
-      statusStr,
-    ];
-  });
+    return `<tr>
+      <td>${index + 1}</td>
+      <td>${escapeHtml(dateTime)}</td>
+      <td>${escapeHtml(typeLabel)}</td>
+      <td>${escapeHtml(t.title)}</td>
+      <td class="text-right">Tk ${t.amount.toLocaleString()}</td>
+      <td class="text-right" style="color: #2e7d32; font-weight: 500;">Tk ${t.paidAmount.toLocaleString()}</td>
+      <td class="text-right" style="color: ${dueColor}; font-weight: 600;">${dueFormatted}</td>
+    </tr>`;
+  }).join('\n');
 
-  autoTable(doc, {
-    startY: tableStartY,
-    head: [['#', 'Date & Time', 'Particulars / Service', 'Type', 'Total', 'Paid', 'Due', 'Status']],
-    body: tableRows.length > 0 ? tableRows : [['—', '—', 'No recorded transactions for this customer', '—', '—', '—', '—', '—']],
-    theme: 'plain',
-    styles: {
-      fontSize: 8,
-      cellPadding: { top: 2.8, bottom: 2.8, left: 3, right: 3 },
-      textColor: [30, 41, 59],
-      lineColor: [241, 245, 249],
-      lineWidth: 0.2,
-    },
-    headStyles: {
-      fillColor: [8, 75, 62], // Brand Emerald #084b3e
-      textColor: [255, 255, 255],
-      fontStyle: 'bold',
-      fontSize: 8,
-      cellPadding: { top: 3.2, bottom: 3.2, left: 3, right: 3 },
-    },
-    alternateRowStyles: {
-      fillColor: [250, 252, 252],
-    },
-    columnStyles: {
-      0: { cellWidth: 8, halign: 'center' },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 'auto' },
-      3: { cellWidth: 20, halign: 'center' },
-      4: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
-      5: { cellWidth: 20, halign: 'right', textColor: [22, 101, 52] },
-      6: { cellWidth: 20, halign: 'right', textColor: [220, 38, 38], fontStyle: 'bold' },
-      7: { cellWidth: 18, halign: 'center' },
-    },
-    margin: { left: 14, right: 14 },
-  });
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Statement - ${escapeHtml(customer.name)}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;500;600;700&display=swap');
 
-  const finalY = (doc as any).lastAutoTable.finalY || tableStartY + 20;
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
 
-  // --- Signatures & Footers across all pages ---
-  const totalPages = doc.getNumberOfPages();
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
+        body {
+            background-color: #ffffff;
+            padding: 0;
+            color: #2d3748;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
 
-    // Bottom Footer
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.3);
-    doc.line(14, pageHeight - 12, pageWidth - 14, pageHeight - 12);
+        /* Printable A4 Page Container */
+        .page-container {
+            max-width: 850px;
+            margin: 0 auto;
+            background: #ffffff;
+            min-height: 1050px;
+            padding: 40px;
+            position: relative;
+            box-shadow: none;
+            border-radius: 0;
+            overflow: hidden;
+        }
 
-    doc.setFontSize(7.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(148, 163, 184);
-    doc.text('Al-Barakah Digital Studio & Online Service — Customer Statement', 14, pageHeight - 7.5);
-    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 7.5, { align: 'right' });
+        /* Perfectly Centered Background Watermark */
+        .watermark-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            z-index: 0;
+        }
 
-    // On last page, add signature boxes
-    if (i === totalPages) {
-      const remainingSpace = pageHeight - finalY;
-      const sigY = remainingSpace > 35 ? pageHeight - 24 : pageHeight - 20;
+        .watermark-container img {
+            width: 60%;
+            max-width: 450px;
+            opacity: 0.06;
+            object-fit: contain;
+            display: block;
+        }
 
-      if (remainingSpace > 28) {
-        doc.setFontSize(7.5);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(71, 85, 105);
+        .content-wrap {
+            position: relative;
+            z-index: 1;
+        }
 
-        // Customer Signature Line
-        doc.setDrawColor(203, 213, 225);
-        doc.line(14, sigY, 65, sigY);
-        doc.text('Customer Signature', 14, sigY + 4);
+        /* Header Section */
+        .header-top {
+            text-align: center;
+            margin-bottom: 15px;
+        }
 
-        // Authorized Signature Line
-        doc.line(pageWidth - 65, sigY, pageWidth - 14, sigY);
-        doc.text('Authorized Signature & Seal', pageWidth - 65, sigY + 4);
-      }
+        .logo-container {
+            display: inline-block;
+            margin-bottom: 8px;
+        }
+
+        .header-top img.main-logo {
+            height: 75px;
+            width: 75px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #005a36;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: inline-block;
+        }
+
+        .header-top h1 {
+            font-size: 22px;
+            color: #005a36;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }
+
+        .header-top .statement-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #2d3748;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 3px;
+        }
+
+        .header-top .statement-period {
+            font-size: 12px;
+            color: #4a5568;
+            font-weight: 500;
+        }
+
+        /* Divider Line */
+        .divider-line {
+            height: 3px;
+            background: linear-gradient(90deg, #005a36, #38a169, #005a36);
+            margin: 15px 0 25px 0;
+            border-radius: 2px;
+        }
+
+        /* Summary Bar */
+        .summary-bar {
+            background: #e6f4ea;
+            padding: 10px 16px;
+            border-radius: 6px;
+            margin-bottom: 25px;
+            border: 1px solid #c6e6d1;
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            font-weight: 600;
+            color: #005a36;
+        }
+
+        /* Table Styling */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+
+        tr {
+            page-break-inside: avoid;
+        }
+
+        th {
+            background: #005a36;
+            color: white;
+            padding: 10px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: left;
+        }
+
+        td {
+            padding: 10px 12px;
+            font-size: 13px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #4a5568;
+        }
+
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+
+        .total-row td {
+            background-color: #e6f2ed;
+            font-weight: 700;
+            color: #005a36;
+            border-top: 2px solid #005a36;
+            border-bottom: none;
+        }
+
+        /* Footer Signatures */
+        .footer-signatures {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 60px;
+            page-break-inside: avoid;
+        }
+
+        .sig-box {
+            text-align: center;
+            width: 200px;
+        }
+
+        .sig-line {
+            border-top: 1px dashed #718096;
+            margin-bottom: 6px;
+        }
+
+        .sig-box p {
+            font-size: 12px;
+            color: #4a5568;
+            font-weight: 500;
+        }
+
+        .courtesy {
+            text-align: center;
+            margin-top: 40px;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 12px;
+            font-size: 11px;
+            color: #a0aec0;
+            letter-spacing: 0.5px;
+            page-break-inside: avoid;
+        }
+
+        @media print {
+            body { background: none; padding: 0; }
+            .page-container { box-shadow: none; border: none; border-radius: 0; width: 100%; padding: 15mm 12mm; }
+            @page { size: A4; margin: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="page-container">
+    
+    <!-- Perfect Centered Watermark Background -->
+    <div class="watermark-container">
+        <img src="${logoUrl}" alt="Watermark">
+    </div>
+
+    <div class="content-wrap">
+        
+        <!-- Header Section -->
+        <div class="header-top">
+            <div class="logo-container">
+                <img src="${logoUrl}" alt="Al-Barakah Logo" class="main-logo">
+            </div>
+            <br>
+            <h1>AL-BARAKAH DIGITAL STUDIO & ONLINE SERVICE</h1>
+            <div class="statement-title" id="reportTitle">STATEMENT OF ACCOUNT — ${escapeHtml(customer.name.toUpperCase())}</div>
+            <div class="statement-period" id="reportPeriod">${escapeHtml(phoneAddress)} • Period: ${escapeHtml(periodLabel)}</div>
+        </div>
+        
+        <div class="divider-line"></div>
+
+        <!-- Summary Bar -->
+        <div class="summary-bar">
+            <span>Total Purchases: Tk ${totalPurchases.toLocaleString()}</span>
+            <span>Total Paid: Tk ${totalPaid.toLocaleString()}</span>
+            <span>Current Due: Tk ${currentBalanceDue.toLocaleString()}</span>
+            <span>Status: ${currentBalanceDue > 0 ? 'DUE PENDING' : 'CLEAR'}</span>
+        </div>
+
+        <!-- Data Table -->
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Date & Time</th>
+                    <th>Type</th>
+                    <th>Particulars</th>
+                    <th class="text-right">Total</th>
+                    <th class="text-right">Paid</th>
+                    <th class="text-right">Due Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tableRowsHtml || '<tr><td colspan="7" class="text-center" style="padding: 20px; color:#a0aec0;">No records found</td></tr>'}
+                <tr class="total-row">
+                    <td colspan="4">TOTAL (${transactions.length} items)</td>
+                    <td class="text-right">Tk ${totalPurchases.toLocaleString()}</td>
+                    <td class="text-right">Tk ${totalPaid.toLocaleString()}</td>
+                    <td class="text-right" style="color: ${currentBalanceDue > 0 ? '#c62828' : '#005a36'};">
+                        Tk ${currentBalanceDue.toLocaleString()}
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Signature Section -->
+        <div class="footer-signatures">
+            <div class="sig-box">
+                <div class="sig-line"></div>
+                <p>Customer Signature</p>
+            </div>
+            <div class="sig-box">
+                <div class="sig-line"></div>
+                <p>Authorized Signature & Seal</p>
+            </div>
+        </div>
+
+        <!-- Footer Courtesy -->
+        <div class="courtesy">
+            Al-Barakah Digital Studio & Online Service
+        </div>
+
+    </div>
+</div>
+
+</body>
+</html>`;
+}
+
+export async function generateCustomerStatementPdf(options: CustomerStatementPdfOptions) {
+  const logoDataUrl = await getLogoBase64();
+  const htmlContent = buildCustomerStatementHtml(options, logoDataUrl);
+
+  const cleanName = options.customer.name.replace(/[^a-zA-Z0-9]/g, '_');
+  const filename = `AlBarakah_${cleanName}_Statement_${format(new Date(), 'yyyyMMdd')}.pdf`;
+
+  // Use a completely isolated offscreen iframe so template CSS never touches the parent app
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.top = '0';
+  iframe.style.left = '-10000px';
+  iframe.style.width = '850px';
+  iframe.style.height = '1400px';
+  iframe.style.border = '0';
+  iframe.style.opacity = '1';
+  iframe.style.zIndex = '-99999';
+  iframe.style.pointerEvents = 'none';
+
+  document.body.appendChild(iframe);
+
+  try {
+    const frameDoc = iframe.contentWindow?.document;
+    if (!frameDoc) throw new Error('Could not initialize document sandbox');
+
+    frameDoc.open();
+    frameDoc.write(htmlContent);
+    frameDoc.close();
+
+    if (iframe.contentWindow?.document.fonts) {
+      await iframe.contentWindow.document.fonts.ready;
+    }
+
+    const ifrImages = Array.from(frameDoc.querySelectorAll('img'));
+    await Promise.all(
+      ifrImages.map((img) => {
+        if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+        });
+      })
+    );
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    const element = frameDoc.querySelector('.page-container') as HTMLElement || frameDoc.body;
+
+    const renderFunc = typeof html2canvas === 'function' ? html2canvas : (html2canvas as any).default;
+    const canvas = await renderFunc(element, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      windowWidth: 850
+    });
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+    let heightLeft = imgHeight;
+    let position = 0;
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.98);
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+    heightLeft -= pageHeight;
+
+    while (heightLeft > 0) {
+      position -= pageHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pageHeight;
+    }
+
+    pdf.save(filename);
+  } finally {
+    if (iframe.parentNode) {
+      iframe.parentNode.removeChild(iframe);
     }
   }
+}
 
-  const cleanName = customer.name.replace(/[^a-zA-Z0-9]/g, '_');
-  const filename = `AlBarakah_${cleanName}_Statement_${format(new Date(), 'yyyyMMdd')}.pdf`;
-  doc.save(filename);
+export async function printCustomerStatement(options: CustomerStatementPdfOptions) {
+  const logoDataUrl = await getLogoBase64();
+  const htmlContent = buildCustomerStatementHtml(options, logoDataUrl);
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+
+  const frameDoc = iframe.contentWindow?.document;
+  if (!frameDoc) return;
+
+  frameDoc.open();
+  frameDoc.write(htmlContent);
+  frameDoc.close();
+
+  const ifrImages = Array.from(frameDoc.querySelectorAll('img'));
+  await Promise.all(
+    ifrImages.map((img) => {
+      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+      });
+    })
+  );
+
+  iframe.contentWindow?.focus();
+  setTimeout(() => {
+    iframe.contentWindow?.print();
+    setTimeout(() => {
+      if (iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    }, 2000);
+  }, 250);
 }

@@ -9,7 +9,7 @@ import {
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { 
   ArrowUpRight, Wallet, Activity, ArrowRight, CircleDollarSign, 
-  ShoppingCart, TrendingUp, BarChart2, Package 
+  ShoppingCart, TrendingUp, BarChart2, Package, Coins 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -147,6 +147,20 @@ export function Dashboard() {
 
     return list;
   }, [allAccounts]);
+  // Net Liquid Cash: Hand Cash + bKash + Nagad + Rocket
+  const netLiquidCash = useMemo(() => {
+    const cash = (allAccounts.find(a => a.id === 'cash')?.balance ?? cashOnHand) || 0;
+    const bkash = allAccounts.find(a => a.id === 'bkash')?.balance || 0;
+    const nagad = allAccounts.find(a => a.id === 'nagad')?.balance || 0;
+    const rocket = allAccounts.find(a => a.id === 'rocket')?.balance || 0;
+    return cash + bkash + nagad + rocket;
+  }, [allAccounts, cashOnHand]);
+
+  const cashBal = (allAccounts.find(a => a.id === 'cash')?.balance ?? cashOnHand) || 0;
+  const bkashBal = allAccounts.find(a => a.id === 'bkash')?.balance || 0;
+  const nagadBal = allAccounts.find(a => a.id === 'nagad')?.balance || 0;
+  const rocketBal = allAccounts.find(a => a.id === 'rocket')?.balance || 0;
+
   const totalCapitalFunds = targetAccountsList.reduce((sum, a) => sum + (a.balance || 0), 0);
 
   const totalDues = allDues.reduce((acc, due) => acc + (due.totalAmount - due.paidAmount), 0);
@@ -338,8 +352,36 @@ export function Dashboard() {
       </div>
 
       {/* High Contrast Metric Cards - Clickable Navigation to Respective Pages */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-8">
         
+        {/* Net Cash (Net Balance: Cash + bKash + Nagad + Rocket) -> /mfs */}
+        <Link 
+          to="/mfs"
+          title="Click to view all accounts and MFS transactions (Net Liquid Cash: Cash + bKash + Nagad + Rocket)"
+          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-teal-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2.5 rounded-xl bg-teal-50 text-teal-600 group-hover:scale-110 group-hover:bg-teal-100 transition-all duration-300">
+              <Coins size={20} />
+            </div>
+            <div className="flex-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">
+                Net Balance
+              </span>
+            </div>
+            <ArrowUpRight size={16} className="text-teal-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-[#084b3e] transition-colors">
+              Tk {formatCurrency(netLiquidCash)}
+            </h2>
+            <p className="text-[10px] mt-1 text-teal-700 font-semibold flex items-center gap-1">
+              <span>Open MFS</span>
+              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
+            </p>
+          </div>
+        </Link>
+
         {/* Total Sales -> /sales */}
         <Link 
           to="/sales"
