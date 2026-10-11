@@ -4,13 +4,11 @@ import { db } from '../db/db';
 import { Link } from 'react-router-dom';
 import { 
   format, subDays, subMonths, startOfMonth, endOfMonth, 
-  startOfYear, endOfYear, parseISO, eachDayOfInterval, startOfDay, endOfDay 
+  startOfYear, endOfYear, parseISO, startOfDay, endOfDay 
 } from 'date-fns';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { 
   ArrowUpRight, Wallet, Activity, ArrowRight, CircleDollarSign, 
-  ShoppingCart, TrendingUp, BarChart2, Package, Coins, Calendar,
-  Flame, Layers, Sparkles
+  ShoppingCart, Package, Coins 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -18,8 +16,6 @@ export function Dashboard() {
   const [filterType, setFilterType] = useState('today');
   const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [chartType, setChartType] = useState<'line' | 'bar'>('line');
-  const [salesTrendMetric, setSalesTrendMetric] = useState<'both' | 'sales' | 'transactions'>('both');
   const { isBalanceVisible } = useAuth();
 
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -98,266 +94,99 @@ export function Dashboard() {
     .filter(e => e.date === today && (e.paymentMethod || 'Cash').toLowerCase().trim() === 'cash')
     .reduce((acc, e) => acc + e.amount, 0);
   const mfsCashImpact = todayMfs.reduce((acc, m) => {
-    // Cash-Out: Customer receives cash from drawer -> Cash in hand decreases
-    // Cash-In, Recharge, Send Money: Customer gives cash to shop -> Cash in hand increases (only what was actually paid in cash)
-    if (m.type === 'Cash-Out') {
+    const type = m.type.toLowerCase();
+    if (type === 'cash-out') {
       return acc - m.amount;
+    } else {
+      return acc + m.amount;
     }
-    if (m.type === 'Cash-In' || m.type === 'Recharge') {
-      const actualCash = m.isDue ? (m.paidAmount || 0) : m.amount;
-      return acc + actualCash;
-    }
-    if (
-      m.type === 'Send Money' ||
-      m.type === 'Send Money (Out)' || 
-      m.type === 'Send-Money-Out'
-    ) {
-      const actualCash = m.isDue ? (m.paidAmount || 0) : (m.amount + (m.charge || 0));
-      return acc + actualCash;
-    }
-    return acc;
   }, 0);
-  const cashOnHandTodayFlow = cashReceivedToday + mfsCashImpact - cashExpensesToday; 
-  const cashAccount = allAccounts.find(a => a.id === 'cash');
-  const cashOnHand = cashAccount ? cashAccount.balance : cashOnHandTodayFlow;
-  
-  // All active accounts (Cash, bKash, Nagad, Rocket)
-  const targetAccountsList = useMemo(() => {
-    const defaultAccountsOrder = ['cash', 'bkash', 'nagad', 'rocket'];
-    const list: Array<{ id: string; name: string; balance: number; type?: string }> = [];
-    
-    defaultAccountsOrder.forEach(id => {
-      const found = allAccounts.find(a => a.id === id);
-      if (found) {
-        list.push(found);
-      } else {
-        const defaultName = id === 'cash' ? 'Cash' : id === 'bkash' ? 'bKash' : id === 'nagad' ? 'Nagad' : 'Rocket';
-        list.push({ id, name: defaultName, balance: 0, type: id === 'cash' ? 'cash' : 'mfs' });
-      }
-    });
+  const netCashInflowToday = (cashReceivedToday + mfsCashImpact) - cashExpensesToday;
 
-    allAccounts.forEach(acc => {
-      if (acc.id === 'upay' || acc.id === 'bank') return;
-      if (!list.some(item => item.id === acc.id)) {
-        list.push(acc);
-      }
-    });
+  // Unpaid Dues Total (from allDues where status !== 'Paid')
+  const totalUnpaidDues = allDues
+    .filter(d => d.status !== 'Paid')
+    .reduce((acc, d) => acc + ((d.totalAmount || 0) - (d.paidAmount || 0)), 0);
 
-    return list;
-  }, [allAccounts]);
-  // Net Liquid Cash: Hand Cash + bKash + Nagad + Rocket
-  const netLiquidCash = useMemo(() => {
-    const cash = (allAccounts.find(a => a.id === 'cash')?.balance ?? cashOnHand) || 0;
-    const bkash = allAccounts.find(a => a.id === 'bkash')?.balance || 0;
-    const nagad = allAccounts.find(a => a.id === 'nagad')?.balance || 0;
-    const rocket = allAccounts.find(a => a.id === 'rocket')?.balance || 0;
-    return cash + bkash + nagad + rocket;
-  }, [allAccounts, cashOnHand]);
+  // Capital Funds in Accounts
+  const totalCapitalFunds = allAccounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
-  const cashBal = (allAccounts.find(a => a.id === 'cash')?.balance ?? cashOnHand) || 0;
-  const bkashBal = allAccounts.find(a => a.id === 'bkash')?.balance || 0;
-  const nagadBal = allAccounts.find(a => a.id === 'nagad')?.balance || 0;
-  const rocketBal = allAccounts.find(a => a.id === 'rocket')?.balance || 0;
-
-  const totalCapitalFunds = targetAccountsList.reduce((sum, a) => sum + (a.balance || 0), 0);
-
-  const totalDues = allDues.reduce((acc, due) => acc + (due.totalAmount - due.paidAmount), 0);
-
-  // Daily Chart Data derived directly from the active filter and transactions
-  const chartData = useMemo(() => {
-    if (filterType === 'today') {
-      // 2-hour timeline intervals across today: 08:00 to 22:00
-      const slots = [
-        { label: '08:00', startHour: 0, endHour: 8 },
-        { label: '10:00', startHour: 8, endHour: 10 },
-        { label: '12:00', startHour: 10, endHour: 12 },
-        { label: '14:00', startHour: 12, endHour: 14 },
-        { label: '16:00', startHour: 14, endHour: 16 },
-        { label: '18:00', startHour: 16, endHour: 18 },
-        { label: '20:00', startHour: 18, endHour: 20 },
-        { label: '22:00', startHour: 20, endHour: 24 },
-      ];
-
-      const getHourFromItem = (item: { createdAt?: string; time?: string }) => {
-        if (item.createdAt) {
-          const d = new Date(item.createdAt);
-          if (!isNaN(d.getTime())) return d.getHours();
-        }
-        if (item.time) {
-          const m = item.time.match(/(\d+):(\d+)(?::\d+)?\s*(AM|PM)/i);
-          if (m) {
-            let h = parseInt(m[1], 10);
-            const isPM = m[3].toUpperCase() === 'PM';
-            if (isPM && h < 12) h += 12;
-            if (!isPM && h === 12) h = 0;
-            return h;
-          }
-        }
-        return 12;
-      };
-
-      return slots.map(slot => {
-        const slotSales = todaySales.filter(s => {
-          const h = getHourFromItem(s);
-          return h >= slot.startHour && h < slot.endHour;
-        });
-        const slotExpenses = allExpenses.filter(e => {
-          if (e.date !== today) return false;
-          const h = getHourFromItem(e);
-          return h >= slot.startHour && h < slot.endHour;
-        });
-        const slotMfs = todayMfs.filter(m => {
-          const h = getHourFromItem(m);
-          return h >= slot.startHour && h < slot.endHour;
-        });
-
-        const sell = slotSales.reduce((sum, s) => sum + (s.amount || 0), 0);
-        const expense = slotExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-        const salesProfit = slotSales.reduce((sum, s) => sum + (s.profit || 0), 0);
-        const mfsProfit = slotMfs.reduce((sum, m) => sum + (m.profit || 0), 0);
-        const profit = (salesProfit + mfsProfit) - expense;
-
-        return {
-          name: slot.label,
-          fullDate: `Today at ${slot.label}`,
-          Sell: sell,
-          Expense: expense,
-          Profit: profit,
-        };
-      });
-    }
-
-    if (filterType === 'thisYear') {
-      const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-      ];
-      const currentYear = new Date().getFullYear();
-
-      return monthNames.map((monthName, idx) => {
-        const monthNumStr = String(idx + 1).padStart(2, '0');
-        const prefix = `${currentYear}-${monthNumStr}`;
-
-        const monthSales = allSales.filter(s => s.date && s.date.startsWith(prefix));
-        const monthExpenses = allExpenses.filter(e => e.date && e.date.startsWith(prefix));
-        const monthMfs = allMfs.filter(m => m.date && m.date.startsWith(prefix));
-
-        const sell = monthSales.reduce((sum, s) => sum + (s.amount || 0), 0);
-        const expense = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-        const salesProfit = monthSales.reduce((sum, s) => sum + (s.profit || 0), 0);
-        const mfsProfit = monthMfs.reduce((sum, m) => sum + (m.profit || 0), 0);
-        const profit = (salesProfit + mfsProfit) - expense;
-
-        return {
-          name: monthName,
-          fullDate: `${monthName} ${currentYear}`,
-          Sell: sell,
-          Expense: expense,
-          Profit: profit,
-        };
-      });
-    }
-
-    // For multi-day ranges (7 Days, 30 Days, Last Month, Custom):
-    let days: Date[] = [];
-    try {
-      const actualStart = startDate <= endDate ? startDate : endDate;
-      const actualEnd = startDate <= endDate ? endDate : startDate;
-      days = eachDayOfInterval({ start: actualStart, end: actualEnd });
-    } catch {
-      days = [new Date()];
-    }
-
-    // Sort strictly chronological: earliest on left to latest on right
-    days.sort((a, b) => a.getTime() - b.getTime());
-
-    return days.map(day => {
-      const dayStr = format(day, 'yyyy-MM-dd');
-      const daySales = filteredSales.filter(s => s.date === dayStr);
-      const dayExpenses = filteredExpenses.filter(e => e.date === dayStr);
-      const dayMfs = filteredMfs.filter(m => m.date === dayStr);
-
-      const sell = daySales.reduce((sum, s) => sum + (s.amount || 0), 0);
-      const expense = dayExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-      const salesProfit = daySales.reduce((sum, s) => sum + (s.profit || 0), 0);
-      const mfsProfit = dayMfs.reduce((sum, m) => sum + (m.profit || 0), 0);
-      const profit = (salesProfit + mfsProfit) - expense;
-
-      return {
-        name: format(day, 'dd/MM'),
-        fullDate: format(day, 'dd MMM yyyy'),
-        Sell: sell,
-        Expense: expense,
-        Profit: profit,
-      };
-    });
-  }, [filterType, todaySales, allExpenses, today, todayMfs, startDate, endDate, filteredSales, filteredExpenses, filteredMfs, allSales]);
-
-  // Dedicated 7-Day Daily Sales Trend & Transaction Activity Computation
-  const last7DaysSalesData = useMemo(() => {
-    const days: Date[] = [];
-    const todayDate = startOfDay(new Date());
-    for (let i = 6; i >= 0; i--) {
-      days.push(subDays(todayDate, i));
-    }
-
-    return days.map(day => {
-      const dayStr = format(day, 'yyyy-MM-dd');
-      const daySales = allSales.filter(s => s.date === dayStr);
-      
-      const salesAmount = daySales.reduce((sum, s) => sum + (s.amount || 0), 0);
-      const transactionCount = daySales.length;
-      const profit = daySales.reduce((sum, s) => sum + (s.profit || 0), 0);
-      const cost = daySales.reduce((sum, s) => sum + (s.cost || 0), 0);
-      const avgSale = transactionCount > 0 ? Math.round(salesAmount / transactionCount) : 0;
-
-      return {
-        dateStr: dayStr,
-        dayName: format(day, 'EEE'),
-        displayDate: format(day, 'dd MMM'),
-        fullDate: format(day, 'EEEE, dd MMM yyyy'),
-        isToday: dayStr === today,
-        salesAmount,
-        transactionCount,
-        profit,
-        cost,
-        avgSale,
-      };
-    });
-  }, [allSales, today]);
-
-  // Aggregated 7-Day Stats for Quick Visual Cards
-  const last7DaysStats = useMemo(() => {
-    const totalSales = last7DaysSalesData.reduce((acc, d) => acc + d.salesAmount, 0);
-    const totalTransactions = last7DaysSalesData.reduce((acc, d) => acc + d.transactionCount, 0);
-    const totalProfit = last7DaysSalesData.reduce((acc, d) => acc + d.profit, 0);
-    const avgDailySales = Math.round(totalSales / 7);
-    const avgOrderValue = totalTransactions > 0 ? Math.round(totalSales / totalTransactions) : 0;
-    
-    // Find highest sales day
-    let peakDay = last7DaysSalesData[0];
-    for (const d of last7DaysSalesData) {
-      if (d.salesAmount > (peakDay?.salesAmount || 0)) {
-        peakDay = d;
-      }
-    }
-
+  const targetAccountIds = ['cash', 'bkash', 'nagad', 'rocket'];
+  const targetAccountsList = targetAccountIds.map(id => {
+    const found = allAccounts.find(a => a.id.toLowerCase() === id.toLowerCase());
     return {
-      totalSales,
-      totalTransactions,
-      totalProfit,
-      avgDailySales,
-      avgOrderValue,
-      peakDay,
+      id,
+      name: found ? found.name : id.toUpperCase(),
+      balance: found ? found.balance : 0,
+      type: found ? found.type : 'other'
     };
-  }, [last7DaysSalesData]);
+  });
+
+  // Recent transactions list
+  const recentActivities = useMemo(() => {
+    const list: Array<{
+      key: string;
+      type: 'sale' | 'expense' | 'mfs';
+      title: string;
+      subtitle?: string;
+      amount: number;
+      profit?: number;
+      date: string;
+      time?: string;
+      timestamp: number;
+    }> = [];
+
+    allSales.slice(0, 10).forEach(s => {
+      list.push({
+        key: `sale-${s.id}`,
+        type: 'sale',
+        title: s.serviceName,
+        subtitle: s.customerName || s.paymentMethod,
+        amount: s.amount || 0,
+        profit: s.profit,
+        date: s.date,
+        time: s.time,
+        timestamp: new Date(`${s.date} ${s.time || '00:00:00'}`).getTime() || (s.id || 0)
+      });
+    });
+
+    allExpenses.slice(0, 10).forEach(e => {
+      list.push({
+        key: `exp-${e.id}`,
+        type: 'expense',
+        title: e.title,
+        subtitle: e.category,
+        amount: e.amount || 0,
+        date: e.date,
+        time: e.time,
+        timestamp: new Date(`${e.date} ${e.time || '00:00:00'}`).getTime() || (e.id || 0)
+      });
+    });
+
+    allMfs.slice(0, 10).forEach(m => {
+      list.push({
+        key: `mfs-${m.id}`,
+        type: 'mfs',
+        title: `${m.operator} ${m.type}`,
+        subtitle: m.recipientNumber || (m.profit ? `Profit: Tk ${m.profit}` : undefined),
+        amount: m.amount || 0,
+        profit: m.profit,
+        date: m.date,
+        time: m.time,
+        timestamp: new Date(`${m.date} ${m.time || '00:00:00'}`).getTime() || (m.id || 0)
+      });
+    });
+
+    list.sort((a, b) => b.timestamp - a.timestamp);
+    return list.slice(0, 8);
+  }, [allSales, allExpenses, allMfs]);
 
   const filterOptions = [
     { id: 'today', label: 'Today' },
     { id: 'last7', label: '7 Days' },
     { id: 'last30', label: '30 Days' },
     { id: 'lastMonth', label: 'Last Month' },
-    { id: 'thisYear', label: 'This Year (Monthly)' },
+    { id: 'thisYear', label: 'This Year' },
     { id: 'custom', label: 'Custom' },
   ];
 
@@ -377,7 +206,7 @@ export function Dashboard() {
               <button
                 key={opt.id}
                 onClick={() => setFilterType(opt.id)}
-                className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border rounded-md transition-all ${
+                className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border rounded-md transition-all cursor-pointer ${
                   filterType === opt.id 
                     ? 'bg-[#084b3e] text-white border-[#084b3e] shadow-md' 
                     : 'bg-white text-gray-500 border-gray-100 hover:border-[#084b3e] hover:text-gray-900'
@@ -408,163 +237,114 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* High Contrast Metric Cards - Clickable Navigation to Respective Pages */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-8">
-        
-        {/* Net Cash (Net Balance: Cash + bKash + Nagad + Rocket) -> /mfs */}
-        <Link 
-          to="/mfs"
-          title="Click to view all accounts and MFS transactions (Net Liquid Cash: Cash + bKash + Nagad + Rocket)"
-          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-teal-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
-        >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-teal-50 text-teal-600 group-hover:scale-110 group-hover:bg-teal-100 transition-all duration-300">
-              <Coins size={20} />
-            </div>
-            <div className="flex-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">
-                Net Balance
-              </span>
-            </div>
-            <ArrowUpRight size={16} className="text-teal-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-[#084b3e] transition-colors">
-              Tk {formatCurrency(netLiquidCash)}
-            </h2>
-            <p className="text-[10px] mt-1 text-teal-700 font-semibold flex items-center gap-1">
-              <span>Open MFS</span>
-              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
-            </p>
-          </div>
-        </Link>
-
-        {/* Total Sales -> /sales */}
+      {/* Metric Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {/* Card 1: Total Sales */}
         <Link 
           to="/sales"
-          title="Click to open Sales Entry"
-          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+          title="Click to view all Sales"
+          className="border border-gray-100 rounded-2xl p-5 sm:p-6 bg-white shadow-xs flex flex-col justify-between hover:shadow-md hover:border-gray-200 transition-all cursor-pointer group"
         >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:scale-110 group-hover:bg-emerald-100 transition-all duration-300">
-              <ShoppingCart size={20} />
-            </div>
-            <div className="flex-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">Total Sales</span>
-            </div>
-            <ArrowUpRight size={16} className="text-emerald-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-          </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-[#084b3e] transition-colors">Tk {formatCurrency(totalSalesRange)}</h2>
-            <p className="text-[10px] mt-1 text-emerald-700 font-semibold flex items-center gap-1">
-              <span>Open Sales</span>
-              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
-            </p>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Total Sales</span>
+              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <ShoppingCart size={16} />
+              </div>
+            </div>
+            <div className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
+              Tk {formatCurrency(filterType === 'today' ? totalProfitToday : totalSalesRange)}
+            </div>
+          </div>
+          <div className="pt-4 mt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500 font-medium">
+            <span>{filterType === 'today' ? `${todaySales.length} sales today` : `${filteredSales.length} sales in range`}</span>
+            <span className="text-blue-600 font-bold group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+              <span>View</span>
+              <ArrowRight size={12} />
+            </span>
           </div>
         </Link>
 
-        {/* Total Expenses -> /expenses */}
+        {/* Card 2: Total Expenses */}
         <Link 
           to="/expenses"
-          title="Click to open Expenses Entry"
-          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-rose-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+          title="Click to view all Expenses"
+          className="border border-gray-100 rounded-2xl p-5 sm:p-6 bg-white shadow-xs flex flex-col justify-between hover:shadow-md hover:border-gray-200 transition-all cursor-pointer group"
         >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 group-hover:scale-110 group-hover:bg-rose-100 transition-all duration-300">
-              <Wallet size={20} />
-            </div>
-            <div className="flex-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">Total Expenses</span>
-            </div>
-            <ArrowUpRight size={16} className="text-rose-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-          </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-rose-700 transition-colors">Tk {formatCurrency(totalExpensesRange)}</h2>
-            <p className="text-[10px] mt-1 text-rose-600 font-semibold flex items-center gap-1">
-              <span>Open Expenses</span>
-              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
-            </p>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Total Expenses</span>
+              <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Wallet size={16} />
+              </div>
+            </div>
+            <div className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
+              Tk {formatCurrency(filterType === 'today' ? expensesToday : totalExpensesRange)}
+            </div>
+          </div>
+          <div className="pt-4 mt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500 font-medium">
+            <span>{filterType === 'today' ? 'Today\'s spend' : `${filteredExpenses.length} entries`}</span>
+            <span className="text-rose-600 font-bold group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+              <span>View</span>
+              <ArrowRight size={12} />
+            </span>
           </div>
         </Link>
 
-        {/* Profit Card -> /reports */}
+        {/* Card 3: Gross Profit */}
         <Link 
           to="/reports"
-          title="Click to view Profit & Analytics Reports"
-          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-purple-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+          title="Click to view Profit & Loss Reports"
+          className="border border-gray-100 rounded-2xl p-5 sm:p-6 bg-white shadow-xs flex flex-col justify-between hover:shadow-md hover:border-gray-200 transition-all cursor-pointer group"
         >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600 group-hover:scale-110 group-hover:bg-purple-100 transition-all duration-300">
-              <TrendingUp size={20} />
-            </div>
-            <div className="flex-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">
-                {filterType === 'today' ? "Today's Profit" : "Total Profit"}
-              </span>
-            </div>
-            <ArrowUpRight size={16} className="text-purple-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-          </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-purple-700 transition-colors">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Gross Profit</span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-[#084b3e] flex items-center justify-center group-hover:scale-105 transition-transform">
+                <CircleDollarSign size={16} />
+              </div>
+            </div>
+            <div className="text-2xl sm:text-3xl font-black text-[#084b3e] tracking-tight">
               Tk {formatCurrency(filterType === 'today' ? netProfitToday : totalProfitRange)}
-            </h2>
-            <p className="text-[10px] mt-1 text-purple-600 font-semibold flex items-center gap-1">
-              <span>View Reports</span>
-              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
-            </p>
+            </div>
+          </div>
+          <div className="pt-4 mt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500 font-medium">
+            <span>Sales & MFS profit</span>
+            <span className="text-[#084b3e] font-bold group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+              <span>Reports</span>
+              <ArrowRight size={12} />
+            </span>
           </div>
         </Link>
 
-        {/* Cash On Hand -> /mfs */}
-        <Link 
-          to="/mfs"
-          title="Click to view MFS & Cash Transactions"
-          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-sky-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
-        >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-sky-50 text-sky-500 group-hover:scale-110 group-hover:bg-sky-100 transition-all duration-300">
-              <CircleDollarSign size={20} />
-            </div>
-            <div className="flex-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">Cash On Hand</span>
-            </div>
-            <ArrowUpRight size={16} className="text-sky-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-sky-600 transition-colors">Tk {formatCurrency(cashOnHand)}</h2>
-            <p className="text-[10px] mt-1 text-sky-600 font-semibold flex items-center gap-1">
-              <span>Open MFS</span>
-              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
-            </p>
-          </div>
-        </Link>
-
-        {/* Total Due -> /customers */}
+        {/* Card 4: Unpaid Dues */}
         <Link 
           to="/customers"
-          title="Click to view Customers & Due Management"
-          className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-rose-300 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+          title="Click to view Customer Dues"
+          className="border border-gray-100 rounded-2xl p-5 sm:p-6 bg-white shadow-xs flex flex-col justify-between hover:shadow-md hover:border-gray-200 transition-all cursor-pointer group"
         >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-rose-50 text-rose-500 group-hover:scale-110 group-hover:bg-rose-100 transition-all duration-300">
-              <Wallet size={20} />
-            </div>
-            <div className="flex-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover:text-gray-700 transition-colors">Total Due</span>
-            </div>
-            <ArrowUpRight size={16} className="text-rose-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-          </div>
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight group-hover:text-rose-600 transition-colors">Tk {formatCurrency(totalDues)}</h2>
-            <p className="text-[10px] mt-1 text-rose-600 font-semibold flex items-center gap-1">
-              <span>View Customers</span>
-              <ArrowRight size={11} className="group-hover:translate-x-1 transition-transform" />
-            </p>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Unpaid Dues</span>
+              <div className="w-8 h-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Coins size={16} />
+              </div>
+            </div>
+            <div className="text-2xl sm:text-3xl font-black text-orange-600 tracking-tight">
+              Tk {formatCurrency(totalUnpaidDues)}
+            </div>
+          </div>
+          <div className="pt-4 mt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500 font-medium">
+            <span>Customer receivables</span>
+            <span className="text-orange-600 font-bold group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+              <span>Collect</span>
+              <ArrowRight size={12} />
+            </span>
           </div>
         </Link>
       </div>
 
-      {/* Account Balances Quick Strip (4 Accounts: Cash, bKash, Nagad, Rocket) */}
+      {/* Account Balances Quick Strip (Cash, bKash, Nagad, Rocket) */}
       <div className="bg-white p-3 sm:p-4 rounded-2xl border border-gray-100 shadow-xs mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-gray-100">
           <div className="flex items-center gap-2">
@@ -624,459 +404,86 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Main Content: Pure Analytics & Charts */}
-      <div className="w-full flex flex-col gap-6">
-
-        {/* 1. Dedicated 7-Day Daily Sales Trend Line Chart Card */}
-        <div className="border border-emerald-100 rounded-2xl p-5 sm:p-6 bg-gradient-to-b from-white to-emerald-50/20 shadow-sm relative overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-black uppercase tracking-widest text-gray-900 flex items-center gap-2">
-                  <TrendingUp size={18} className="text-[#084b3e]" />
-                  <span>Daily Sales Trend (Last 7 Days)</span>
-                </h2>
-                <span className="text-[10px] font-bold bg-emerald-100 text-[#084b3e] px-2 py-0.5 rounded-full border border-emerald-200">
-                  Transaction Activity
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 mt-1 font-medium">
-                Day-by-day sales revenue and transaction count from {last7DaysSalesData[0]?.displayDate} to {last7DaysSalesData[last7DaysSalesData.length - 1]?.displayDate}
-              </p>
-            </div>
-
-            {/* Metric Mode Toggle */}
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 text-xs self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setSalesTrendMetric('both')}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
-                  salesTrendMetric === 'both'
-                    ? 'bg-white text-[#084b3e] shadow-xs'
-                    : 'text-gray-500 hover:text-gray-900'
-                }`}
-                title="View Revenue and Transaction Activity"
-              >
-                <Layers size={13} />
-                Both
-              </button>
-              <button
-                type="button"
-                onClick={() => setSalesTrendMetric('sales')}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
-                  salesTrendMetric === 'sales'
-                    ? 'bg-white text-[#084b3e] shadow-xs'
-                    : 'text-gray-500 hover:text-gray-900'
-                }`}
-                title="View Sales Revenue (Tk)"
-              >
-                <ShoppingCart size={13} />
-                Sales (Tk)
-              </button>
-              <button
-                type="button"
-                onClick={() => setSalesTrendMetric('transactions')}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
-                  salesTrendMetric === 'transactions'
-                    ? 'bg-white text-purple-700 shadow-xs'
-                    : 'text-gray-500 hover:text-gray-900'
-                }`}
-                title="View Transaction Count"
-              >
-                <Activity size={13} />
-                Transactions
-              </button>
-            </div>
+      {/* Recent Transactions & Activity (Clean, fast, no empty graphs!) */}
+      <div className="border border-gray-100 rounded-2xl p-5 sm:p-6 bg-white shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900 flex items-center gap-2">
+              <Activity size={18} className="text-[#084b3e]" />
+              Recent Activity & Transactions
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5 font-medium">
+              Latest sales, expenses, and mobile banking entries
+            </p>
           </div>
-
-          {/* Quick Metrics Strip for the 7-day period */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-5">
-            <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-xs flex flex-col justify-between">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                <ShoppingCart size={12} className="text-[#084b3e]" />
-                7-Day Revenue
-              </span>
-              <span className="text-lg font-black text-gray-900 mt-1">
-                Tk {isBalanceVisible ? last7DaysStats.totalSales.toLocaleString() : '****'}
-              </span>
-            </div>
-
-            <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-xs flex flex-col justify-between">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                <Activity size={12} className="text-purple-600" />
-                Total Transactions
-              </span>
-              <span className="text-lg font-black text-purple-700 mt-1">
-                {last7DaysStats.totalTransactions} <span className="text-xs font-semibold text-gray-500">entries</span>
-              </span>
-            </div>
-
-            <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-xs flex flex-col justify-between">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                <Calendar size={12} className="text-teal-600" />
-                Daily Average
-              </span>
-              <span className="text-lg font-black text-teal-800 mt-1">
-                Tk {isBalanceVisible ? last7DaysStats.avgDailySales.toLocaleString() : '****'}
-                <span className="text-[10px] font-medium text-gray-400">/day</span>
-              </span>
-            </div>
-
-            <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-xs flex flex-col justify-between">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                <Flame size={12} className="text-amber-500" />
-                Peak Sales Day
-              </span>
-              <span className="text-sm font-black text-gray-800 mt-1 truncate">
-                {last7DaysStats.peakDay?.displayDate || 'N/A'}{' '}
-                <span className="text-xs font-bold text-[#084b3e]">
-                  (Tk {isBalanceVisible ? (last7DaysStats.peakDay?.salesAmount || 0).toLocaleString() : '****'})
-                </span>
-              </span>
-            </div>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/reports"
+              className="text-xs font-bold text-[#084b3e] hover:underline flex items-center gap-1"
+            >
+              <span>View Full Reports</span>
+              <ArrowRight size={13} />
+            </Link>
           </div>
+        </div>
 
-          {/* Recharts LineChart */}
-          <div className="h-80 w-full min-h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart 
-                data={last7DaysSalesData} 
-                margin={{ top: 15, right: salesTrendMetric === 'both' ? 25 : 15, left: 0, bottom: 10 }}
-              >
-                <CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="3 3" />
-                
-                <XAxis 
-                  dataKey="displayDate" 
-                  axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                  tickLine={{ stroke: '#cbd5e1' }} 
-                  tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }} 
-                  padding={{ left: 20, right: 20 }}
-                  tickFormatter={(val, idx) => {
-                    const item = last7DaysSalesData[idx];
-                    return item ? `${item.dayName} (${val})` : val;
-                  }}
-                />
-                
-                {/* Left Y-Axis: Sales Revenue (Tk) */}
-                {(salesTrendMetric === 'both' || salesTrendMetric === 'sales') && (
-                  <YAxis 
-                    yAxisId="left"
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#084b3e', fontWeight: 600 }}
-                    tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
-                  />
-                )}
-
-                {/* Right Y-Axis: Transaction Count (Activity) */}
-                {(salesTrendMetric === 'both' || salesTrendMetric === 'transactions') && (
-                  <YAxis 
-                    yAxisId="right"
-                    orientation="right"
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#8b5cf6', fontWeight: 600 }} 
-                    allowDecimals={false}
-                    tickFormatter={(v) => `${v}`}
-                  />
-                )}
-                
-                <Tooltip 
-                  cursor={{ stroke: '#084b3e', strokeWidth: 1, strokeDasharray: '3 3' }} 
-                  content={({ active, payload }) => {
-                    if (!active || !payload || !payload.length) return null;
-                    const data = payload[0].payload;
-                    return (
-                      <div className="bg-white/95 backdrop-blur-md rounded-xl p-3.5 border border-emerald-100 shadow-xl text-xs space-y-2 min-w-[200px]">
-                        <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
-                          <span className="font-bold text-gray-900">{data.fullDate}</span>
-                          {data.isToday && (
-                            <span className="bg-emerald-100 text-[#084b3e] text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">
-                              Today
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-500 flex items-center gap-1.5">
-                              <span className="w-2.5 h-2.5 rounded-full bg-[#084b3e] inline-block" />
-                              Daily Sales:
-                            </span>
-                            <span className="font-black text-[#084b3e]">
-                              Tk {isBalanceVisible ? data.salesAmount.toLocaleString() : '****'}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-500 flex items-center gap-1.5">
-                              <span className="w-2.5 h-2.5 rounded-full bg-[#8b5cf6] inline-block" />
-                              Transactions:
-                            </span>
-                            <span className="font-bold text-purple-700">
-                              {data.transactionCount} activity logs
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-500 flex items-center gap-1.5">
-                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-                              Estimated Profit:
-                            </span>
-                            <span className="font-bold text-emerald-700">
-                              Tk {isBalanceVisible ? data.profit.toLocaleString() : '****'}
-                            </span>
-                          </div>
-
-                          {data.transactionCount > 0 && (
-                            <div className="flex items-center justify-between pt-1 border-t border-gray-50 text-[11px]">
-                              <span className="text-gray-400">Avg per Sale:</span>
-                              <span className="font-semibold text-gray-700">
-                                Tk {isBalanceVisible ? data.avgSale.toLocaleString() : '****'}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  }}
-                />
-
-                {/* Line 1: Daily Sales Revenue (Tk) */}
-                {(salesTrendMetric === 'both' || salesTrendMetric === 'sales') && (
-                  <Line 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="salesAmount" 
-                    name="Daily Sales (Tk)" 
-                    stroke="#084b3e" 
-                    strokeWidth={3} 
-                    dot={{ r: 4, fill: '#084b3e', stroke: '#ffffff', strokeWidth: 2 }}
-                    activeDot={{ r: 7, fill: '#084b3e', stroke: '#ffffff', strokeWidth: 3 }} 
-                  />
-                )}
-
-                {/* Line 2: Transaction Activity Count */}
-                {(salesTrendMetric === 'both' || salesTrendMetric === 'transactions') && (
-                  <Line 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="transactionCount" 
-                    name="Transactions Count" 
-                    stroke="#8b5cf6" 
-                    strokeWidth={2.5} 
-                    strokeDasharray={salesTrendMetric === 'both' ? '4 4' : undefined}
-                    dot={{ r: 4, fill: '#8b5cf6', stroke: '#ffffff', strokeWidth: 2 }}
-                    activeDot={{ r: 7, fill: '#8b5cf6', stroke: '#ffffff', strokeWidth: 3 }} 
-                  />
-                )}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Bottom Info & Action Bar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 mt-3 border-t border-gray-100 text-xs">
-            <div className="flex items-center gap-5">
-              <div className="flex items-center gap-2">
-                <span className="w-3.5 h-1 bg-[#084b3e] rounded-full inline-block" />
-                <span className="text-gray-700 font-bold">Daily Sales Revenue (Tk)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3.5 h-1 bg-[#8b5cf6] rounded-full inline-block" />
-                <span className="text-gray-700 font-bold">Transaction Activity (Count)</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Link
-                to="/sales"
-                className="px-3 py-1.5 bg-[#084b3e] hover:bg-[#0b5c4d] text-white rounded-lg font-bold text-[11px] transition-colors flex items-center gap-1 shadow-xs"
-              >
-                <span>+ Log New Sale</span>
-                <ArrowRight size={12} />
+        {recentActivities.length === 0 ? (
+          <div className="text-center py-10 text-gray-400">
+            <p className="text-sm font-medium text-gray-600">No transactions recorded yet</p>
+            <p className="text-xs mt-1">Start by recording your first sale, expense, or MFS transaction.</p>
+            <div className="flex items-center justify-center gap-3 mt-4">
+              <Link to="/sales" className="px-3 py-1.5 bg-[#084b3e] text-white rounded-lg text-xs font-bold shadow-xs">
+                + New Sale
+              </Link>
+              <Link to="/expenses" className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-bold shadow-xs">
+                + Add Expense
+              </Link>
+              <Link to="/mfs" className="px-3 py-1.5 bg-pink-600 text-white rounded-lg text-xs font-bold shadow-xs">
+                + MFS Entry
               </Link>
             </div>
           </div>
-        </div>
-
-        {/* 2. Pure Analytics: Cashflow Overview Chart */}
-        <div className="border border-gray-100 rounded-2xl p-5 sm:p-6 bg-white shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
-            <div>
-              <h2 className="text-sm font-bold uppercase tracking-widest text-gray-900 flex items-center gap-2">
-                <TrendingUp size={18} className="text-[#084b3e]" />
-                Cashflow Overview
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5 font-medium">
-                {filterType === 'today' ? "Today's Timeline" : "Daily Trends"}
-              </p>
-            </div>
-
-            {/* Chart Type Toggle */}
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 text-xs self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setChartType('line')}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
-                  chartType === 'line'
-                    ? 'bg-white text-[#084b3e] shadow-xs'
-                    : 'text-gray-500 hover:text-gray-900'
-                }`}
-                title="Smooth Line Chart"
-              >
-                <TrendingUp size={13} />
-                Line
-              </button>
-              <button
-                type="button"
-                onClick={() => setChartType('bar')}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
-                  chartType === 'bar'
-                    ? 'bg-white text-[#084b3e] shadow-xs'
-                    : 'text-gray-500 hover:text-gray-900'
-                }`}
-                title="Bar Chart"
-              >
-                <BarChart2 size={13} />
-                Bar
-              </button>
-            </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {recentActivities.map((item) => (
+              <div key={item.key} className="py-3 flex items-center justify-between text-xs hover:bg-gray-50/50 px-2 rounded-lg transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold ${
+                    item.type === 'sale' ? 'bg-blue-50 text-blue-700' :
+                    item.type === 'expense' ? 'bg-rose-50 text-rose-700' :
+                    'bg-pink-50 text-pink-700'
+                  }`}>
+                    {item.type === 'sale' ? <ShoppingCart size={15} /> :
+                     item.type === 'expense' ? <Wallet size={15} /> :
+                     <Coins size={15} />}
+                  </div>
+                  <div>
+                    <div className="font-bold text-gray-900 text-xs sm:text-sm">{item.title}</div>
+                    <div className="text-[11px] text-gray-400">
+                      {item.date} {item.time ? `• ${item.time}` : ''} {item.subtitle ? `• ${item.subtitle}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className={`font-black text-xs sm:text-sm ${
+                    item.type === 'sale' ? 'text-emerald-700' :
+                    item.type === 'expense' ? 'text-rose-600' :
+                    'text-gray-900'
+                  }`}>
+                    {item.type === 'expense' ? `- Tk ${item.amount.toLocaleString()}` : `Tk ${item.amount.toLocaleString()}`}
+                  </div>
+                  {item.profit !== undefined && item.profit > 0 ? (
+                    <div className="text-[10px] text-emerald-600 font-semibold">
+                      Profit: Tk {item.profit.toLocaleString()}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
           </div>
-
-          <div className="h-80 sm:h-96 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              {chartType === 'line' ? (
-                <LineChart 
-                  data={chartData} 
-                  margin={{ top: 15, right: 15, left: 0, bottom: 10 }}
-                >
-                  <CartesianGrid vertical={false} stroke="#e2e8f0" />
-                  
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                    padding={{ left: 16, right: 16 }}
-                    angle={-35}
-                    textAnchor="end"
-                    height={50}
-                    interval={filterType === 'last30' ? 2 : 0}
-                  />
-                  
-                  <YAxis 
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                  />
-                  
-                  <Tooltip 
-                    cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} 
-                    contentStyle={{
-                      borderRadius: '8px', 
-                      border: '1px solid #e2e8f0', 
-                      backgroundColor: '#ffffff', 
-                      boxShadow: '0 4px 14px -2px rgba(0, 0, 0, 0.08)', 
-                      fontWeight: 'bold',
-                      fontSize: '12px'
-                    }} 
-                    formatter={(value: any, name: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, name]}
-                    labelFormatter={(label: any, payload: any) => {
-                      const fullDate = payload?.[0]?.payload?.fullDate;
-                      return fullDate || label;
-                    }}
-                  />
-
-                  {/* 1. Sell */}
-                  <Line 
-                    type="natural" 
-                    dataKey="Sell" 
-                    name="Sell" 
-                    stroke="#2563eb" 
-                    strokeWidth={2.5} 
-                    dot={false} 
-                    activeDot={{ r: 6, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 2 }} 
-                  />
-
-                  {/* 2. Expense */}
-                  <Line 
-                    type="natural" 
-                    dataKey="Expense" 
-                    name="Expense" 
-                    stroke="#ef4444" 
-                    strokeWidth={2.5} 
-                    dot={false} 
-                    activeDot={{ r: 6, fill: '#ef4444', stroke: '#ffffff', strokeWidth: 2 }} 
-                  />
-
-                  {/* 3. Profit */}
-                  <Line 
-                    type="natural" 
-                    dataKey="Profit" 
-                    name="Profit" 
-                    stroke="#10b981" 
-                    strokeWidth={2.5} 
-                    dot={false} 
-                    activeDot={{ r: 6, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }} 
-                  />
-                </LineChart>
-              ) : (
-                <BarChart 
-                  data={chartData} 
-                  margin={{ top: 15, right: 15, left: 0, bottom: 10 }}
-                >
-                  <CartesianGrid vertical={false} stroke="#e2e8f0" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                    angle={-35}
-                    textAnchor="end"
-                    height={50}
-                    interval={filterType === 'last30' ? 2 : 0}
-                  />
-                  <YAxis 
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                  />
-                  <Tooltip 
-                    cursor={{ fill: '#f8fafc' }} 
-                    contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', boxShadow: '0 4px 12px -2px rgba(0, 0, 0, 0.08)', fontWeight: 'bold' }} 
-                    formatter={(value: any, name: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, name]}
-                    labelFormatter={(label: any, payload: any) => {
-                      const fullDate = payload?.[0]?.payload?.fullDate;
-                      return fullDate || label;
-                    }}
-                  />
-                  <Bar dataKey="Sell" name="Sell" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={20} />
-                  <Bar dataKey="Expense" name="Expense" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20} />
-                  <Bar dataKey="Profit" name="Profit" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
-                </BarChart>
-              )}
-            </ResponsiveContainer>
-          </div>
-
-          {/* Bottom Color Indicator */}
-          <div className="flex items-center justify-center gap-6 pt-4 mt-2 border-t border-gray-100 text-xs font-bold">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-[#2563eb] inline-block shadow-xs" />
-              <span className="text-gray-700 font-semibold">Sell</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-[#ef4444] inline-block shadow-xs" />
-              <span className="text-gray-700 font-semibold">Expense</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-[#10b981] inline-block shadow-xs" />
-              <span className="text-gray-700 font-semibold">Profit</span>
-            </div>
-          </div>
-        </div>
-
+        )}
       </div>
+
     </div>
   );
 }
-

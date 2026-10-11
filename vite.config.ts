@@ -74,9 +74,6 @@ export default defineConfig(() => {
               if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('html2pdf')) {
                 return 'vendor-pdf';
               }
-              if (id.includes('recharts') || id.includes('d3')) {
-                return 'vendor-charts';
-              }
             }
           }
         }
