@@ -9,7 +9,8 @@ import {
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { 
   ArrowUpRight, Wallet, Activity, ArrowRight, CircleDollarSign, 
-  ShoppingCart, TrendingUp, BarChart2, Package, Coins 
+  ShoppingCart, TrendingUp, BarChart2, Package, Coins, Calendar,
+  Flame, Layers, Sparkles
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -18,6 +19,7 @@ export function Dashboard() {
   const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
+  const [salesTrendMetric, setSalesTrendMetric] = useState<'both' | 'sales' | 'transactions'>('both');
   const { isBalanceVisible } = useAuth();
 
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -290,6 +292,65 @@ export function Dashboard() {
       };
     });
   }, [filterType, todaySales, allExpenses, today, todayMfs, startDate, endDate, filteredSales, filteredExpenses, filteredMfs, allSales]);
+
+  // Dedicated 7-Day Daily Sales Trend & Transaction Activity Computation
+  const last7DaysSalesData = useMemo(() => {
+    const days: Date[] = [];
+    const todayDate = startOfDay(new Date());
+    for (let i = 6; i >= 0; i--) {
+      days.push(subDays(todayDate, i));
+    }
+
+    return days.map(day => {
+      const dayStr = format(day, 'yyyy-MM-dd');
+      const daySales = allSales.filter(s => s.date === dayStr);
+      
+      const salesAmount = daySales.reduce((sum, s) => sum + (s.amount || 0), 0);
+      const transactionCount = daySales.length;
+      const profit = daySales.reduce((sum, s) => sum + (s.profit || 0), 0);
+      const cost = daySales.reduce((sum, s) => sum + (s.cost || 0), 0);
+      const avgSale = transactionCount > 0 ? Math.round(salesAmount / transactionCount) : 0;
+
+      return {
+        dateStr: dayStr,
+        dayName: format(day, 'EEE'),
+        displayDate: format(day, 'dd MMM'),
+        fullDate: format(day, 'EEEE, dd MMM yyyy'),
+        isToday: dayStr === today,
+        salesAmount,
+        transactionCount,
+        profit,
+        cost,
+        avgSale,
+      };
+    });
+  }, [allSales, today]);
+
+  // Aggregated 7-Day Stats for Quick Visual Cards
+  const last7DaysStats = useMemo(() => {
+    const totalSales = last7DaysSalesData.reduce((acc, d) => acc + d.salesAmount, 0);
+    const totalTransactions = last7DaysSalesData.reduce((acc, d) => acc + d.transactionCount, 0);
+    const totalProfit = last7DaysSalesData.reduce((acc, d) => acc + d.profit, 0);
+    const avgDailySales = Math.round(totalSales / 7);
+    const avgOrderValue = totalTransactions > 0 ? Math.round(totalSales / totalTransactions) : 0;
+    
+    // Find highest sales day
+    let peakDay = last7DaysSalesData[0];
+    for (const d of last7DaysSalesData) {
+      if (d.salesAmount > (peakDay?.salesAmount || 0)) {
+        peakDay = d;
+      }
+    }
+
+    return {
+      totalSales,
+      totalTransactions,
+      totalProfit,
+      avgDailySales,
+      avgOrderValue,
+      peakDay,
+    };
+  }, [last7DaysSalesData]);
 
   const filterOptions = [
     { id: 'today', label: 'Today' },
@@ -566,7 +627,279 @@ export function Dashboard() {
       {/* Main Content: Pure Analytics & Charts */}
       <div className="w-full flex flex-col gap-6">
 
-        {/* Pure Analytics: Cashflow Overview Chart */}
+        {/* 1. Dedicated 7-Day Daily Sales Trend Line Chart Card */}
+        <div className="border border-emerald-100 rounded-2xl p-5 sm:p-6 bg-gradient-to-b from-white to-emerald-50/20 shadow-sm relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-black uppercase tracking-widest text-gray-900 flex items-center gap-2">
+                  <TrendingUp size={18} className="text-[#084b3e]" />
+                  <span>Daily Sales Trend (Last 7 Days)</span>
+                </h2>
+                <span className="text-[10px] font-bold bg-emerald-100 text-[#084b3e] px-2 py-0.5 rounded-full border border-emerald-200">
+                  Transaction Activity
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1 font-medium">
+                Day-by-day sales revenue and transaction count from {last7DaysSalesData[0]?.displayDate} to {last7DaysSalesData[last7DaysSalesData.length - 1]?.displayDate}
+              </p>
+            </div>
+
+            {/* Metric Mode Toggle */}
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 text-xs self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setSalesTrendMetric('both')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
+                  salesTrendMetric === 'both'
+                    ? 'bg-white text-[#084b3e] shadow-xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+                title="View Revenue and Transaction Activity"
+              >
+                <Layers size={13} />
+                Both
+              </button>
+              <button
+                type="button"
+                onClick={() => setSalesTrendMetric('sales')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
+                  salesTrendMetric === 'sales'
+                    ? 'bg-white text-[#084b3e] shadow-xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+                title="View Sales Revenue (Tk)"
+              >
+                <ShoppingCart size={13} />
+                Sales (Tk)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSalesTrendMetric('transactions')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-md font-bold transition-all cursor-pointer ${
+                  salesTrendMetric === 'transactions'
+                    ? 'bg-white text-purple-700 shadow-xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+                title="View Transaction Count"
+              >
+                <Activity size={13} />
+                Transactions
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Metrics Strip for the 7-day period */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-5">
+            <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-xs flex flex-col justify-between">
+              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                <ShoppingCart size={12} className="text-[#084b3e]" />
+                7-Day Revenue
+              </span>
+              <span className="text-lg font-black text-gray-900 mt-1">
+                Tk {isBalanceVisible ? last7DaysStats.totalSales.toLocaleString() : '****'}
+              </span>
+            </div>
+
+            <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-xs flex flex-col justify-between">
+              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                <Activity size={12} className="text-purple-600" />
+                Total Transactions
+              </span>
+              <span className="text-lg font-black text-purple-700 mt-1">
+                {last7DaysStats.totalTransactions} <span className="text-xs font-semibold text-gray-500">entries</span>
+              </span>
+            </div>
+
+            <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-xs flex flex-col justify-between">
+              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                <Calendar size={12} className="text-teal-600" />
+                Daily Average
+              </span>
+              <span className="text-lg font-black text-teal-800 mt-1">
+                Tk {isBalanceVisible ? last7DaysStats.avgDailySales.toLocaleString() : '****'}
+                <span className="text-[10px] font-medium text-gray-400">/day</span>
+              </span>
+            </div>
+
+            <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-xs flex flex-col justify-between">
+              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                <Flame size={12} className="text-amber-500" />
+                Peak Sales Day
+              </span>
+              <span className="text-sm font-black text-gray-800 mt-1 truncate">
+                {last7DaysStats.peakDay?.displayDate || 'N/A'}{' '}
+                <span className="text-xs font-bold text-[#084b3e]">
+                  (Tk {isBalanceVisible ? (last7DaysStats.peakDay?.salesAmount || 0).toLocaleString() : '****'})
+                </span>
+              </span>
+            </div>
+          </div>
+
+          {/* Recharts LineChart */}
+          <div className="h-80 w-full min-h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart 
+                data={last7DaysSalesData} 
+                margin={{ top: 15, right: salesTrendMetric === 'both' ? 25 : 15, left: 0, bottom: 10 }}
+              >
+                <CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="3 3" />
+                
+                <XAxis 
+                  dataKey="displayDate" 
+                  axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
+                  tickLine={{ stroke: '#cbd5e1' }} 
+                  tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }} 
+                  padding={{ left: 20, right: 20 }}
+                  tickFormatter={(val, idx) => {
+                    const item = last7DaysSalesData[idx];
+                    return item ? `${item.dayName} (${val})` : val;
+                  }}
+                />
+                
+                {/* Left Y-Axis: Sales Revenue (Tk) */}
+                {(salesTrendMetric === 'both' || salesTrendMetric === 'sales') && (
+                  <YAxis 
+                    yAxisId="left"
+                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
+                    tickLine={{ stroke: '#cbd5e1' }} 
+                    tick={{ fontSize: 11, fill: '#084b3e', fontWeight: 600 }}
+                    tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
+                  />
+                )}
+
+                {/* Right Y-Axis: Transaction Count (Activity) */}
+                {(salesTrendMetric === 'both' || salesTrendMetric === 'transactions') && (
+                  <YAxis 
+                    yAxisId="right"
+                    orientation="right"
+                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
+                    tickLine={{ stroke: '#cbd5e1' }} 
+                    tick={{ fontSize: 11, fill: '#8b5cf6', fontWeight: 600 }} 
+                    allowDecimals={false}
+                    tickFormatter={(v) => `${v}`}
+                  />
+                )}
+                
+                <Tooltip 
+                  cursor={{ stroke: '#084b3e', strokeWidth: 1, strokeDasharray: '3 3' }} 
+                  content={({ active, payload }) => {
+                    if (!active || !payload || !payload.length) return null;
+                    const data = payload[0].payload;
+                    return (
+                      <div className="bg-white/95 backdrop-blur-md rounded-xl p-3.5 border border-emerald-100 shadow-xl text-xs space-y-2 min-w-[200px]">
+                        <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
+                          <span className="font-bold text-gray-900">{data.fullDate}</span>
+                          {data.isToday && (
+                            <span className="bg-emerald-100 text-[#084b3e] text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">
+                              Today
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-500 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#084b3e] inline-block" />
+                              Daily Sales:
+                            </span>
+                            <span className="font-black text-[#084b3e]">
+                              Tk {isBalanceVisible ? data.salesAmount.toLocaleString() : '****'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-500 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#8b5cf6] inline-block" />
+                              Transactions:
+                            </span>
+                            <span className="font-bold text-purple-700">
+                              {data.transactionCount} activity logs
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-500 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                              Estimated Profit:
+                            </span>
+                            <span className="font-bold text-emerald-700">
+                              Tk {isBalanceVisible ? data.profit.toLocaleString() : '****'}
+                            </span>
+                          </div>
+
+                          {data.transactionCount > 0 && (
+                            <div className="flex items-center justify-between pt-1 border-t border-gray-50 text-[11px]">
+                              <span className="text-gray-400">Avg per Sale:</span>
+                              <span className="font-semibold text-gray-700">
+                                Tk {isBalanceVisible ? data.avgSale.toLocaleString() : '****'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }}
+                />
+
+                {/* Line 1: Daily Sales Revenue (Tk) */}
+                {(salesTrendMetric === 'both' || salesTrendMetric === 'sales') && (
+                  <Line 
+                    yAxisId="left"
+                    type="monotone" 
+                    dataKey="salesAmount" 
+                    name="Daily Sales (Tk)" 
+                    stroke="#084b3e" 
+                    strokeWidth={3} 
+                    dot={{ r: 4, fill: '#084b3e', stroke: '#ffffff', strokeWidth: 2 }}
+                    activeDot={{ r: 7, fill: '#084b3e', stroke: '#ffffff', strokeWidth: 3 }} 
+                  />
+                )}
+
+                {/* Line 2: Transaction Activity Count */}
+                {(salesTrendMetric === 'both' || salesTrendMetric === 'transactions') && (
+                  <Line 
+                    yAxisId="right"
+                    type="monotone" 
+                    dataKey="transactionCount" 
+                    name="Transactions Count" 
+                    stroke="#8b5cf6" 
+                    strokeWidth={2.5} 
+                    strokeDasharray={salesTrendMetric === 'both' ? '4 4' : undefined}
+                    dot={{ r: 4, fill: '#8b5cf6', stroke: '#ffffff', strokeWidth: 2 }}
+                    activeDot={{ r: 7, fill: '#8b5cf6', stroke: '#ffffff', strokeWidth: 3 }} 
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Bottom Info & Action Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 mt-3 border-t border-gray-100 text-xs">
+            <div className="flex items-center gap-5">
+              <div className="flex items-center gap-2">
+                <span className="w-3.5 h-1 bg-[#084b3e] rounded-full inline-block" />
+                <span className="text-gray-700 font-bold">Daily Sales Revenue (Tk)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3.5 h-1 bg-[#8b5cf6] rounded-full inline-block" />
+                <span className="text-gray-700 font-bold">Transaction Activity (Count)</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Link
+                to="/sales"
+                className="px-3 py-1.5 bg-[#084b3e] hover:bg-[#0b5c4d] text-white rounded-lg font-bold text-[11px] transition-colors flex items-center gap-1 shadow-xs"
+              >
+                <span>+ Log New Sale</span>
+                <ArrowRight size={12} />
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Pure Analytics: Cashflow Overview Chart */}
         <div className="border border-gray-100 rounded-2xl p-5 sm:p-6 bg-white shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
             <div>

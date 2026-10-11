@@ -52,17 +52,25 @@ export function useAppNotifications() {
             const allBorrowings = await db.borrowings.where('status').notEqual('Paid').toArray();
             const nowTimeDate = new Date();
             let overdueBorrowingsTotal = 0;
+            let overdueLentTotal = 0;
             
             allBorrowings.forEach(b => {
               const dueTime = new Date(b.dueDate);
               if (dueTime < nowTimeDate && dueTime.toDateString() !== nowTimeDate.toDateString()) {
-                overdueBorrowingsTotal += (b.amount - b.paidAmount);
+                const bal = (b.amount || 0) - (b.paidAmount || 0);
+                if (b.type === 'lend') {
+                  overdueLentTotal += bal;
+                } else {
+                  overdueBorrowingsTotal += bal;
+                }
               }
             });
 
             let body = 'Did you forget to add any recent sales or expenses?';
             if (overdueBorrowingsTotal > 0) {
               body = `WARNING: You have Tk ${overdueBorrowingsTotal.toLocaleString()} in OVERDUE borrowings! Please pay your lenders.`;
+            } else if (overdueLentTotal > 0) {
+              body = `REMINDER: You have Tk ${overdueLentTotal.toLocaleString()} in OVERDUE lent money! Remember to collect from borrowers.`;
             } else if (totalDue > 0) {
               body = `You have Tk ${totalDue.toLocaleString()} in pending dues. Did you collect any? Also, remember to log your sales!`;
             }

@@ -16,7 +16,7 @@ export const navItems = [
   { name: 'MFS', path: '/mfs', icon: Smartphone, shortcut: 'F3' },
   { name: 'Customers & Dues', path: '/customers', icon: Users, shortcut: 'F6' },
   { name: 'Reports', path: '/reports', icon: FileBarChart, shortcut: 'F4' },
-  { name: 'Borrowings', path: '/borrowings', icon: HandCoins, shortcut: 'F9' },
+  { name: 'Borrow & Lend', path: '/borrowings', icon: HandCoins, shortcut: 'F9' },
   { name: 'History', path: '/history', icon: History, shortcut: 'F10' },
   { name: 'Settings', path: '/settings', icon: SettingsIcon, shortcut: 'F5' },
 ];
@@ -171,7 +171,7 @@ export function BottomNav() {
 
   const secondaryItems = [
     { name: 'Expenses', path: '/expenses', icon: Wallet },
-    { name: 'Borrowings', path: '/borrowings', icon: HandCoins },
+    { name: 'Borrow & Lend', path: '/borrowings', icon: HandCoins },
     { name: 'History', path: '/history', icon: History },
     { name: 'Settings', path: '/settings', icon: SettingsIcon },
   ];

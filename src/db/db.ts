@@ -190,19 +190,20 @@ export interface AppNotification {
 
 export interface Borrowing {
   id?: number;
+  type?: 'borrow' | 'lend'; // 'borrow' (funds taken as loan) or 'lend' (funds given as loan)
   date: string;
   time?: string;
   createdAt?: string;
   updatedAt?: string;
   customerId?: number;
-  lenderName: string;
+  lenderName: string; // Contact Person (Lender if borrow, Borrower if lend)
   phone?: string;
   amount: number;
   paidAmount: number;
   dueDate: string;
   status: 'Unpaid' | 'Partial' | 'Paid';
   note?: string;
-  receiveAccount?: string;
+  receiveAccount?: string; // Account used (deposit for borrow, deduct for lend)
 }
 
 export interface ActivityLog {
@@ -394,6 +395,10 @@ export class AlBarakahDB extends Dexie {
       inventory: '++id, name, category, currentStock',
       mfsClosings: '++id, date, operator, status',
       serviceItemLinks: '++id, serviceName, inventoryItemId'
+    });
+
+    this.version(15).stores({
+      borrowings: '++id, type, lenderName, phone, status, dueDate'
     });
   }
 }
