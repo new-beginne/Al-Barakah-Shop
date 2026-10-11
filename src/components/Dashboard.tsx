@@ -6,7 +6,7 @@ import {
   format, subDays, subMonths, startOfMonth, endOfMonth, 
   startOfYear, endOfYear, parseISO, eachDayOfInterval, startOfDay, endOfDay 
 } from 'date-fns';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { CashflowChart } from './CashflowChart';
 import { 
   ArrowUpRight, Wallet, Activity, ArrowRight, CircleDollarSign, 
   ShoppingCart, TrendingUp, BarChart2, Package, Coins, Calendar,
@@ -611,119 +611,8 @@ export function Dashboard() {
             </div>
           </div>
 
-          <div className="h-80 sm:h-96 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              {chartType === 'line' ? (
-                <LineChart 
-                  data={chartData} 
-                  margin={{ top: 15, right: 15, left: 0, bottom: 10 }}
-                >
-                  <CartesianGrid vertical={false} stroke="#e2e8f0" />
-                  
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                    padding={{ left: 16, right: 16 }}
-                    angle={-35}
-                    textAnchor="end"
-                    height={50}
-                    interval={filterType === 'last30' ? 2 : 0}
-                  />
-                  
-                  <YAxis 
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                  />
-                  
-                  <Tooltip 
-                    cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} 
-                    contentStyle={{
-                      borderRadius: '8px', 
-                      border: '1px solid #e2e8f0', 
-                      backgroundColor: '#ffffff', 
-                      boxShadow: '0 4px 14px -2px rgba(0, 0, 0, 0.08)', 
-                      fontWeight: 'bold',
-                      fontSize: '12px'
-                    }} 
-                    formatter={(value: any, name: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, name]}
-                    labelFormatter={(label: any, payload: any) => {
-                      const fullDate = payload?.[0]?.payload?.fullDate;
-                      return fullDate || label;
-                    }}
-                  />
-
-                  {/* 1. Sell */}
-                  <Line 
-                    type="natural" 
-                    dataKey="Sell" 
-                    name="Sell" 
-                    stroke="#2563eb" 
-                    strokeWidth={2.5} 
-                    dot={false} 
-                    activeDot={{ r: 6, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 2 }} 
-                  />
-
-                  {/* 2. Expense */}
-                  <Line 
-                    type="natural" 
-                    dataKey="Expense" 
-                    name="Expense" 
-                    stroke="#ef4444" 
-                    strokeWidth={2.5} 
-                    dot={false} 
-                    activeDot={{ r: 6, fill: '#ef4444', stroke: '#ffffff', strokeWidth: 2 }} 
-                  />
-
-                  {/* 3. Profit */}
-                  <Line 
-                    type="natural" 
-                    dataKey="Profit" 
-                    name="Profit" 
-                    stroke="#10b981" 
-                    strokeWidth={2.5} 
-                    dot={false} 
-                    activeDot={{ r: 6, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }} 
-                  />
-                </LineChart>
-              ) : (
-                <BarChart 
-                  data={chartData} 
-                  margin={{ top: 15, right: 15, left: 0, bottom: 10 }}
-                >
-                  <CartesianGrid vertical={false} stroke="#e2e8f0" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                    angle={-35}
-                    textAnchor="end"
-                    height={50}
-                    interval={filterType === 'last30' ? 2 : 0}
-                  />
-                  <YAxis 
-                    axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }} 
-                    tickLine={{ stroke: '#cbd5e1' }} 
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} 
-                  />
-                  <Tooltip 
-                    cursor={{ fill: '#f8fafc' }} 
-                    contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', boxShadow: '0 4px 12px -2px rgba(0, 0, 0, 0.08)', fontWeight: 'bold' }} 
-                    formatter={(value: any, name: any) => [`Tk ${Number(value || 0).toLocaleString('en-IN')}`, name]}
-                    labelFormatter={(label: any, payload: any) => {
-                      const fullDate = payload?.[0]?.payload?.fullDate;
-                      return fullDate || label;
-                    }}
-                  />
-                  <Bar dataKey="Sell" name="Sell" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={20} />
-                  <Bar dataKey="Expense" name="Expense" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20} />
-                  <Bar dataKey="Profit" name="Profit" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
-                </BarChart>
-              )}
-            </ResponsiveContainer>
+          <div className="w-full pt-2">
+            <CashflowChart data={chartData} chartType={chartType} />
           </div>
 
           {/* Bottom Color Indicator */}
