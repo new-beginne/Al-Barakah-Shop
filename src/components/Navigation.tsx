@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
-  LayoutDashboard, ShoppingCart, Users, Package, Wallet, 
+  LayoutDashboard, ShoppingCart, Users, Wallet, 
   FileBarChart, Settings as SettingsIcon, Leaf, 
   HandCoins, Smartphone, History, Keyboard, Calendar, Download, Menu, X
 } from 'lucide-react';
@@ -16,7 +16,6 @@ export const navItems = [
   { name: 'MFS', path: '/mfs', icon: Smartphone, shortcut: 'F3' },
   { name: 'Customers & Dues', path: '/customers', icon: Users, shortcut: 'F6' },
   { name: 'Reports', path: '/reports', icon: FileBarChart, shortcut: 'F4' },
-  { name: 'Inventory', path: '/inventory', icon: Package, shortcut: 'F7' },
   { name: 'Borrowings', path: '/borrowings', icon: HandCoins, shortcut: 'F9' },
   { name: 'History', path: '/history', icon: History, shortcut: 'F10' },
   { name: 'Settings', path: '/settings', icon: SettingsIcon, shortcut: 'F5' },
@@ -172,7 +171,6 @@ export function BottomNav() {
 
   const secondaryItems = [
     { name: 'Expenses', path: '/expenses', icon: Wallet },
-    { name: 'Inventory', path: '/inventory', icon: Package },
     { name: 'Borrowings', path: '/borrowings', icon: HandCoins },
     { name: 'History', path: '/history', icon: History },
     { name: 'Settings', path: '/settings', icon: SettingsIcon },

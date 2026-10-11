@@ -16,6 +16,7 @@ import { pullCloudToLocal, fullSync, pushLocalToCloud, clearAllCloudData, SyncRe
 import { db, hasPendingLocalChanges, clearLocalDatabaseForAccountSwitch } from '../db/db';
 
 import { sanitizeText, BruteForceGuard, calculateSha256 } from '../lib/security';
+import { safeStorage } from '../lib/safeStorage';
 
 export interface UserProfile {
   uid: string;
@@ -82,14 +83,14 @@ function createOfflineUser(p: UserProfile): User {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isOfflineMode, setIsOfflineMode] = useState<boolean>(() => {
-    return localStorage.getItem('albarakah_offline_session') === 'true';
+    return safeStorage.getItem('albarakah_offline_session') !== 'false';
   });
 
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     try {
-      const saved = localStorage.getItem('albarakah_user_profile');
+      const saved = safeStorage.getItem('albarakah_user_profile');
       const parsed = saved ? JSON.parse(saved) : null;
-      const cachedPhoto = localStorage.getItem('albarakah_shop_photo');
+      const cachedPhoto = safeStorage.getItem('albarakah_shop_photo');
       if (parsed) {
         if (!parsed.photoURL && cachedPhoto) parsed.photoURL = cachedPhoto;
         return parsed;
@@ -111,10 +112,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const [user, setUser] = useState<User | null>(() => {
-    const isOffline = localStorage.getItem('albarakah_offline_session') === 'true';
-    if (isOffline) {
+    const isExplicitlyLocked = safeStorage.getItem('albarakah_offline_session') === 'false';
+    if (!isExplicitlyLocked) {
       try {
-        const saved = localStorage.getItem('albarakah_user_profile');
+        const saved = safeStorage.getItem('albarakah_user_profile');
         const parsed = saved ? JSON.parse(saved) : {
           uid: 'offline_owner',
           storeName: 'Al-Barakah Digital Studio',
@@ -132,16 +133,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   });
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const [lastSynced, setLastSynced] = useState<string | null>(() => {
-    return localStorage.getItem('albarakah_last_synced') || null;
+    return safeStorage.getItem('albarakah_last_synced') || null;
   });
 
   const [isBalanceVisible, setIsBalanceVisible] = useState(() => {
     try {
-      const saved = localStorage.getItem('albarakah_balance_visible');
+      const saved = safeStorage.getItem('albarakah_balance_visible');
       return saved !== null ? saved === 'true' : true; // Default to true in production!
     } catch {
       return true;
@@ -152,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsBalanceVisible(prev => {
       const next = !prev;
       try {
-        localStorage.setItem('albarakah_balance_visible', String(next));
+        safeStorage.setItem('albarakah_balance_visible', String(next));
       } catch {
         // ignore
       }
@@ -219,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Listen to Firebase Auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      const previousActiveUid = localStorage.getItem('albarakah_active_uid');
+      const previousActiveUid = safeStorage.getItem('albarakah_active_uid');
 
       if (currentUser) {
         setUser(currentUser);
@@ -231,11 +232,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await clearLocalDatabaseForAccountSwitch(true);
         }
 
-        localStorage.setItem('albarakah_active_uid', currentUser.uid);
+        safeStorage.setItem('albarakah_active_uid', currentUser.uid);
 
         try {
           if (!isQuotaExceededBlocked()) {
-            const cachedProfile = localStorage.getItem('albarakah_user_profile');
+            const cachedProfile = safeStorage.getItem('albarakah_user_profile');
             // If account switched or no cached profile, fetch from firestore
             if (isAccountSwitch || !cachedProfile) {
               const docRef = doc(firestore, 'users', currentUser.uid);
@@ -243,7 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (docSnap.exists()) {
                 const data = docSnap.data() as UserProfile;
                 setProfile(data);
-                localStorage.setItem('albarakah_user_profile', JSON.stringify(data));
+                safeStorage.setItem('albarakah_user_profile', JSON.stringify(data));
               }
             }
           }
@@ -290,10 +291,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } else {
         // User not logged in to Firebase
-        const isOffline = localStorage.getItem('albarakah_offline_session') === 'true';
-        if (isOffline) {
+        const isExplicitlyLocked = safeStorage.getItem('albarakah_offline_session') === 'false';
+        if (!isExplicitlyLocked) {
           try {
-            const savedProfile = localStorage.getItem('albarakah_user_profile');
+            const savedProfile = safeStorage.getItem('albarakah_user_profile');
             const p: UserProfile = savedProfile ? JSON.parse(savedProfile) : {
               uid: 'offline_owner',
               storeName: 'Al-Barakah Digital Studio',
@@ -304,9 +305,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(createOfflineUser(p));
             setIsOfflineMode(true);
           } catch {
-            setUser(null);
-            setProfile(null);
-            setIsOfflineMode(false);
+            const fallback: UserProfile = {
+              uid: 'offline_owner',
+              storeName: 'Al-Barakah Digital Studio',
+              phone: '01700000000',
+              photoURL: '/logo.png?v=2'
+            };
+            setProfile(fallback);
+            setUser(createOfflineUser(fallback));
+            setIsOfflineMode(true);
           }
         } else {
           setUser(null);
@@ -317,7 +324,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 1200);
+
+    return () => {
+      clearTimeout(safetyTimer);
+      unsubscribe();
+    };
   }, []);
 
   // Sync function
@@ -381,7 +395,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // STRICT ISOLATION: A brand new store account MUST start 100% fresh!
       // Must NEVER inherit local data from a previous store/user!
       await clearLocalDatabaseForAccountSwitch(true);
-      localStorage.setItem('albarakah_active_uid', userCred.user.uid);
+      safeStorage.setItem('albarakah_active_uid', userCred.user.uid);
 
       const newProfile: UserProfile = {
         uid: userCred.user.uid,
@@ -399,12 +413,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setProfile(newProfile);
-      localStorage.setItem('albarakah_user_profile', JSON.stringify(newProfile));
+      safeStorage.setItem('albarakah_user_profile', JSON.stringify(newProfile));
 
       // Cache credentials hash for offline unlocking
       try {
         const pwHash = await calculateSha256(password);
-        localStorage.setItem('albarakah_offline_auth', JSON.stringify({
+        safeStorage.setItem('albarakah_offline_auth', JSON.stringify({
           phone: cleanPhone,
           pwHash,
           profile: newProfile,
@@ -456,12 +470,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Reset brute-force counter on success
       BruteForceGuard.clear(cleanPhone);
 
-      const previousActiveUid = localStorage.getItem('albarakah_active_uid');
+      const previousActiveUid = safeStorage.getItem('albarakah_active_uid');
       if (previousActiveUid && previousActiveUid !== userCred.user.uid) {
         console.info(`[Auth] User switched on login: ${previousActiveUid} -> ${userCred.user.uid}. Clearing local data.`);
         await clearLocalDatabaseForAccountSwitch(true);
       }
-      localStorage.setItem('albarakah_active_uid', userCred.user.uid);
+      safeStorage.setItem('albarakah_active_uid', userCred.user.uid);
 
       // Fetch Profile
       let activeProfile: UserProfile | null = null;
@@ -472,7 +486,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const data = docSnap.data() as UserProfile;
           activeProfile = data;
           setProfile(data);
-          localStorage.setItem('albarakah_user_profile', JSON.stringify(data));
+          safeStorage.setItem('albarakah_user_profile', JSON.stringify(data));
         }
       } catch (profileErr) {
         console.warn('Could not fetch profile from Firestore on login:', profileErr);
@@ -481,7 +495,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Cache credentials hash for offline unlocking
       try {
         const pwHash = await calculateSha256(password);
-        localStorage.setItem('albarakah_offline_auth', JSON.stringify({
+        safeStorage.setItem('albarakah_offline_auth', JSON.stringify({
           phone: cleanPhone,
           pwHash,
           profile: activeProfile || { uid: userCred.user.uid, storeName: 'Al-Barakah Digital Studio', phone: cleanPhone },
@@ -509,7 +523,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Offline login fallback if network unavailable
       const isNetworkIssue = !navigator.onLine || err?.code === 'auth/network-request-failed';
       if (isNetworkIssue) {
-        const savedOffline = localStorage.getItem('albarakah_offline_auth');
+        const savedOffline = safeStorage.getItem('albarakah_offline_auth');
         if (savedOffline) {
           try {
             const creds = JSON.parse(savedOffline);
@@ -585,7 +599,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     setProfile(updatedProfile);
-    localStorage.setItem('albarakah_user_profile', JSON.stringify(updatedProfile));
+    safeStorage.setItem('albarakah_user_profile', JSON.stringify(updatedProfile));
 
     // If logged in and online, also persist to Firestore
     if (user && isOnline) {
@@ -611,11 +625,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     setProfile(updatedProfile);
-    localStorage.setItem('albarakah_user_profile', JSON.stringify(updatedProfile));
+    safeStorage.setItem('albarakah_user_profile', JSON.stringify(updatedProfile));
     if (newPhotoURL) {
-      localStorage.setItem('albarakah_shop_photo', newPhotoURL);
+      safeStorage.setItem('albarakah_shop_photo', newPhotoURL);
     } else {
-      localStorage.removeItem('albarakah_shop_photo');
+      safeStorage.removeItem('albarakah_shop_photo');
     }
     window.dispatchEvent(new Event('albarakah-photo-changed'));
 
@@ -633,7 +647,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginOffline = async (storeName: string = 'Al-Barakah Digital Studio', phone: string = '01700000000') => {
     const cleanPhone = sanitizePhone(phone) || '01700000000';
     const cleanName = storeName.trim() || 'Al-Barakah Digital Studio';
-    const cachedPhoto = localStorage.getItem('albarakah_shop_photo');
+    const cachedPhoto = safeStorage.getItem('albarakah_shop_photo');
     const newProfile: UserProfile = {
       uid: 'offline_owner',
       storeName: cleanName,
@@ -643,9 +657,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updatedAt: new Date().toISOString()
     };
 
-    localStorage.setItem('albarakah_offline_session', 'true');
-    localStorage.setItem('albarakah_active_uid', 'offline_owner');
-    localStorage.setItem('albarakah_user_profile', JSON.stringify(newProfile));
+    safeStorage.setItem('albarakah_offline_session', 'true');
+    safeStorage.setItem('albarakah_active_uid', 'offline_owner');
+    safeStorage.setItem('albarakah_user_profile', JSON.stringify(newProfile));
 
     setProfile(newProfile);
     setUser(createOfflineUser(newProfile));
@@ -666,7 +680,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      localStorage.removeItem('albarakah_offline_session');
+      safeStorage.removeItem('albarakah_offline_session');
       setIsOfflineMode(false);
 
       if (auth.currentUser) {
@@ -674,14 +688,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setUser(null);
       setProfile(null);
-      localStorage.removeItem('albarakah_user_profile');
-      localStorage.removeItem('albarakah_active_uid');
-      localStorage.removeItem('albarakah_offline_auth');
+      safeStorage.removeItem('albarakah_user_profile');
+      safeStorage.removeItem('albarakah_active_uid');
+      safeStorage.removeItem('albarakah_offline_auth');
       // Local database is PRESERVED so offline shop records are never lost on logout
       setSyncStatus('idle');
     } catch (err) {
       console.error('Logout error:', err);
-      localStorage.removeItem('albarakah_offline_session');
+      safeStorage.removeItem('albarakah_offline_session');
       setIsOfflineMode(false);
       setUser(null);
       setProfile(null);
@@ -729,15 +743,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await clearLocalDatabaseForAccountSwitch(true);
 
       // 6. Clear all local storage keys
-      localStorage.removeItem('albarakah_user_profile');
-      localStorage.removeItem('albarakah_active_uid');
-      localStorage.removeItem('albarakah_offline_auth');
-      localStorage.removeItem('albarakah_shop_photo');
-      localStorage.removeItem('albarakah_last_synced');
-      localStorage.removeItem('albarakah_pending_tables');
-      localStorage.removeItem('albarakah_db_dirty');
-      localStorage.removeItem('albarakah_quota_blocked_until');
-      localStorage.removeItem('albarakah_quota_override');
+      safeStorage.removeItem('albarakah_user_profile');
+      safeStorage.removeItem('albarakah_active_uid');
+      safeStorage.removeItem('albarakah_offline_auth');
+      safeStorage.removeItem('albarakah_shop_photo');
+      safeStorage.removeItem('albarakah_last_synced');
+      safeStorage.removeItem('albarakah_pending_tables');
+      safeStorage.removeItem('albarakah_db_dirty');
+      safeStorage.removeItem('albarakah_quota_blocked_until');
+      safeStorage.removeItem('albarakah_quota_override');
       window.dispatchEvent(new Event('albarakah-photo-changed'));
 
       setUser(null);

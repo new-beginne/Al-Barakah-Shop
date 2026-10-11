@@ -34,16 +34,11 @@ import {
   Check,
   AlertCircle,
   HardDrive,
-  Zap,
-  Package
+  Zap
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AuthModal } from './AuthModal';
-import { 
-  initDefaultServicesAndMappings, 
-  linkServiceToInventoryItem, 
-  unlinkServiceFromInventory 
-} from '../services/serviceMappingService';
+import { initDefaultServicesAndMappings } from '../services/serviceMappingService';
 import { format } from 'date-fns';
 import { requestPersistentStorage } from '../lib/storagePersistence';
 import { 
@@ -82,16 +77,11 @@ export function Settings() {
   const services = useLiveQuery(() => db.services.toArray()) || [];
   // Expense Services
   const expenseServices = useLiveQuery(() => db.expenseServices.toArray()) || [];
-  // Inventory Items & Links
-  const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
-  const serviceItemLinks = useLiveQuery(() => db.serviceItemLinks.toArray()) || [];
 
-  // Service Form Extended States for Stock Pairing
+  // Service Form Extended States
   const [serviceFormCategory, setServiceFormCategory] = useState('Printing');
   const [serviceFormPrice, setServiceFormPrice] = useState('');
   const [serviceFormCost, setServiceFormCost] = useState('');
-  const [serviceFormInventoryItemId, setServiceFormInventoryItemId] = useState<number | 'none'>('none');
-  const [serviceFormDeductQty, setServiceFormDeductQty] = useState('1');
 
   // Deletion Confirmation Modal State
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -216,8 +206,6 @@ export function Settings() {
     setServiceFormCategory('Printing');
     setServiceFormPrice('');
     setServiceFormCost('');
-    setServiceFormInventoryItemId('none');
-    setServiceFormDeductQty('1');
     setIsServiceModalOpen(true);
   };
 
@@ -231,21 +219,6 @@ export function Settings() {
       setServiceFormCategory(found?.category || 'Printing');
       setServiceFormPrice(found?.defaultPrice ? String(found.defaultPrice) : '');
       setServiceFormCost(found?.defaultCost ? String(found.defaultCost) : '');
-
-      // Check linked inventory item from service or serviceItemLinks
-      if (found?.linkedInventoryItemId) {
-        setServiceFormInventoryItemId(found.linkedInventoryItemId);
-        setServiceFormDeductQty(String(found.deductQuantity || 1));
-      } else {
-        const link = serviceItemLinks.find(l => l.serviceName.toLowerCase().trim() === item.name.toLowerCase().trim());
-        if (link && link.inventoryItemId) {
-          setServiceFormInventoryItemId(link.inventoryItemId);
-          setServiceFormDeductQty(String(link.quantityPerUnit || 1));
-        } else {
-          setServiceFormInventoryItemId('none');
-          setServiceFormDeductQty('1');
-        }
-      }
     }
 
     setIsServiceModalOpen(true);
@@ -261,12 +234,6 @@ export function Settings() {
     if (serviceModalType === 'sell') {
       const pPrice = parseFloat(serviceFormPrice) || 0;
       const pCost = parseFloat(serviceFormCost) || 0;
-      const deductQty = Math.max(1, Number(serviceFormDeductQty) || 1);
-
-      let linkedInvItem = undefined;
-      if (typeof serviceFormInventoryItemId === 'number' && serviceFormInventoryItemId > 0) {
-        linkedInvItem = inventoryItems.find(i => i.id === serviceFormInventoryItemId);
-      }
 
       if (editingServiceId) {
         await db.services.update(editingServiceId, {
@@ -274,18 +241,8 @@ export function Settings() {
           category: serviceFormCategory || 'Printing',
           defaultPrice: pPrice,
           defaultCost: pCost,
-          linkedInventoryItemId: linkedInvItem?.id,
-          linkedInventoryItemName: linkedInvItem?.name,
-          deductQuantity: linkedInvItem ? deductQty : undefined,
           updatedAt: now,
         });
-
-        // Sync with db.serviceItemLinks
-        if (linkedInvItem && linkedInvItem.id) {
-          await linkServiceToInventoryItem(cleanName, linkedInvItem.id, deductQty, editingServiceId);
-        } else {
-          await unlinkServiceFromInventory(cleanName, editingServiceId);
-        }
 
         setSuccessMsg(`Sales service "${cleanName}" updated.`);
       } else {
@@ -294,18 +251,10 @@ export function Settings() {
           category: serviceFormCategory || 'Printing',
           defaultCost: pCost,
           defaultPrice: pPrice,
-          linkedInventoryItemId: linkedInvItem?.id,
-          linkedInventoryItemName: linkedInvItem?.name,
-          deductQuantity: linkedInvItem ? deductQty : undefined,
           createdAt: now,
           updatedAt: now,
         };
-        const newId = await db.services.add(newService);
-
-        // Sync with db.serviceItemLinks
-        if (linkedInvItem && linkedInvItem.id) {
-          await linkServiceToInventoryItem(cleanName, linkedInvItem.id, deductQty, newId as number);
-        }
+        await db.services.add(newService);
 
         setSuccessMsg(`Sales service "${cleanName}" added.`);
       }
@@ -685,19 +634,6 @@ export function Settings() {
                 />
               </div>
 
-              {serviceSubTab === 'sell' && (
-                <button
-                  type="button"
-                  onClick={() => navigate('/inventory/rules')}
-                  className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 px-3.5 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-2xs transition-all shrink-0 cursor-pointer"
-                  title="Configure automatic paper and stock deduction rules for services"
-                >
-                  <Zap size={15} className="text-amber-600 fill-amber-500/20" />
-                  <span className="hidden md:inline">Auto-Deduct Stock Rules</span>
-                  <span className="md:hidden">Stock Rules</span>
-                </button>
-              )}
-
               <button
                 type="button"
                 onClick={() => openAddServiceModal(serviceSubTab)}
@@ -718,10 +654,7 @@ export function Settings() {
                   <tr>
                     <th className="px-5 py-3.5">Service Name</th>
                     {serviceSubTab === 'sell' ? (
-                      <>
-                        <th className="px-5 py-3.5">Category & Rate</th>
-                        <th className="px-5 py-3.5">Auto-Cut Material</th>
-                      </>
+                      <th className="px-5 py-3.5">Category & Rate</th>
                     ) : (
                       <>
                         <th className="px-5 py-3.5">Type</th>
@@ -735,7 +668,7 @@ export function Settings() {
                   {serviceSubTab === 'sell' ? (
                     filteredSalesServices.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                        <td colSpan={3} className="px-6 py-10 text-center text-gray-500">
                           <SlidersHorizontal size={36} className="mx-auto text-gray-300 mb-2" />
                           <p className="font-bold text-xs">No sales services found</p>
                           <p className="text-[11px] text-gray-400 mt-0.5">Click "Add Sales Service" to register preset services.</p>
@@ -743,11 +676,6 @@ export function Settings() {
                       </tr>
                     ) : (
                       filteredSalesServices.map((s) => {
-                        const directLink = s.linkedInventoryItemId ? inventoryItems.find(i => i.id === s.linkedInventoryItemId) : null;
-                        const fallbackLink = !directLink ? serviceItemLinks.find(l => l.serviceName.toLowerCase().trim() === s.name.toLowerCase().trim()) : null;
-                        const invItem = directLink || (fallbackLink ? inventoryItems.find(i => i.id === fallbackLink.inventoryItemId) : null);
-                        const mult = s.deductQuantity || fallbackLink?.quantityPerUnit || 1;
-
                         return (
                           <tr key={s.id} className="hover:bg-gray-50/60 transition-colors">
                             <td className="px-5 py-3.5">
@@ -764,18 +692,6 @@ export function Settings() {
                                   </span>
                                 ) : null}
                               </div>
-                            </td>
-                            <td className="px-5 py-3.5">
-                              {invItem ? (
-                                <div className="flex items-center gap-1.5 text-xs">
-                                  <span className="font-bold text-gray-800">{invItem.name}</span>
-                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200/60">
-                                    {mult} {invItem.unit}/sale
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-gray-400 font-normal">—</span>
-                              )}
                             </td>
                             <td className="px-5 py-3.5 text-right">
                               <div className="flex items-center justify-end gap-1">
@@ -1337,52 +1253,6 @@ export function Settings() {
                         onChange={(e) => setServiceFormPrice(e.target.value)}
                         className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all font-mono"
                       />
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Package size={16} className="text-[#075b4d]" />
-                      <span className="text-xs font-black text-emerald-950">
-                        Auto-Cut Stock Material
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-emerald-900 uppercase tracking-wider mb-1">
-                          Stock Item to Deduct on Sale
-                        </label>
-                        <select
-                          value={serviceFormInventoryItemId}
-                          onChange={(e) => setServiceFormInventoryItemId(e.target.value === 'none' ? 'none' : Number(e.target.value))}
-                          className="w-full h-[42px] px-3 bg-white border border-emerald-200 rounded-xl text-xs font-bold text-gray-900 outline-none focus:ring-2 focus:ring-[#075b4d]/20"
-                        >
-                          <option value="none">None (No inventory deduction)</option>
-                          {inventoryItems.map(item => (
-                            <option key={item.id} value={item.id}>
-                              {item.name} ({item.currentStock} {item.unit} in stock)
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {serviceFormInventoryItemId !== 'none' && (
-                        <div>
-                          <label className="block text-[10px] font-bold text-emerald-900 uppercase tracking-wider mb-1">
-                            Quantity to Deduct per 1 Service Sold
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            step="any"
-                            value={serviceFormDeductQty}
-                            onChange={(e) => setServiceFormDeductQty(e.target.value)}
-                            className="w-full h-[42px] px-3 bg-white border border-emerald-200 rounded-xl text-xs font-black outline-none font-mono"
-                            placeholder="1"
-                          />
-                        </div>
-                      )}
                     </div>
                   </div>
                 </>

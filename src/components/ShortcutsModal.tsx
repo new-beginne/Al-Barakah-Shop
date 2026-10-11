@@ -16,7 +16,6 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
     { key: 'F4', desc: 'Go to Reports & Analytics' },
     { key: 'F5', desc: 'Go to Settings' },
     { key: 'F6', desc: 'Go to Customers & Dues' },
-    { key: 'F7', desc: 'Go to Inventory & Stock' },
     { key: 'F8', desc: 'Go to Dashboard' },
     { key: 'F9', desc: 'Go to Borrowings / Loans' },
     { key: 'F10', desc: 'Go to Transaction History' },

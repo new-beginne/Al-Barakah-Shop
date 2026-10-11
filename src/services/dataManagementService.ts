@@ -1,3 +1,4 @@
+import { safeStorage } from '../lib/safeStorage';
 import { db, setSyncSilent, clearAllPendingChanges } from '../db/db';
 import { adjustAccountBalance, mapPaymentMethodToAccountId } from './accountService';
 import { logCustomRangeDelete, logAllDataReset, logCompleteMasterWipe, recordActivityLog } from './activityLogService';
@@ -417,11 +418,11 @@ export async function executeClearCloudOnly(): Promise<CloudWipeResult> {
 
   // Clear cloud tracking timestamps and dirty flag so local data isn't pushed right back
   if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem('albarakah_last_synced');
-    localStorage.removeItem('albarakah_quota_blocked_until');
-    localStorage.removeItem('albarakah_quota_override');
-    localStorage.removeItem('albarakah_pending_tables');
-    localStorage.setItem('albarakah_db_dirty', 'false');
+    safeStorage.removeItem('albarakah_last_synced');
+    safeStorage.removeItem('albarakah_quota_blocked_until');
+    safeStorage.removeItem('albarakah_quota_override');
+    safeStorage.removeItem('albarakah_pending_tables');
+    safeStorage.setItem('albarakah_db_dirty', 'false');
   }
 
   await recordActivityLog({
@@ -576,11 +577,11 @@ export async function executeCompleteMasterWipe(options: MasterWipeOptions): Pro
 
   // 3. Clear local storage indicators
   if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem('albarakah_last_synced');
-    localStorage.removeItem('albarakah_quota_blocked_until');
-    localStorage.removeItem('albarakah_quota_override');
-    localStorage.removeItem('albarakah_pending_tables');
-    localStorage.setItem('albarakah_db_dirty', 'false');
+    safeStorage.removeItem('albarakah_last_synced');
+    safeStorage.removeItem('albarakah_quota_blocked_until');
+    safeStorage.removeItem('albarakah_quota_override');
+    safeStorage.removeItem('albarakah_pending_tables');
+    safeStorage.setItem('albarakah_db_dirty', 'false');
   }
 
   // 4. Log the wipe event

@@ -13,8 +13,6 @@ import { HistoryView } from './components/HistoryView';
 import { StoreProfile } from './components/StoreProfile';
 import { LoginScreen } from './components/LoginScreen';
 import { ShortcutsModal } from './components/ShortcutsModal';
-import { Inventory } from './components/Inventory';
-import { StockDeductionRules } from './components/StockDeductionRules';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { WifiOff, Cloud, RefreshCw, Eye, EyeOff, ShieldCheck, Download } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -26,7 +24,6 @@ import { usePwaInstall } from './hooks/usePwaInstall';
 
 import { useAppNotifications } from './hooks/useAppNotifications';
 import { initDefaultAccounts } from './services/accountService';
-import { initDefaultInventory } from './services/inventoryService';
 import { isQuotaExceededBlocked } from './services/syncService';
 
 interface TopHeaderProps {
@@ -50,7 +47,9 @@ function TopHeader({ onOpenShortcuts }: TopHeaderProps) {
               className="w-9 h-9 rounded-full border border-emerald-100 object-cover shadow-xs bg-white p-0.5"
               referrerPolicy="no-referrer"
               onError={(e) => {
-                (e.target as HTMLImageElement).src = '/logo.png?v=2';
+                const target = e.target as HTMLImageElement;
+                target.onerror = null;
+                target.src = '/icon.svg';
               }}
             />
           </div>
@@ -139,7 +138,9 @@ function TopHeader({ onOpenShortcuts }: TopHeaderProps) {
               alt="Shop Profile" 
               className="w-full h-full object-cover rounded-full"
               onError={(e) => {
-                (e.target as HTMLImageElement).src = '/logo.png?v=2';
+                const target = e.target as HTMLImageElement;
+                target.onerror = null;
+                target.src = '/icon.svg';
               }}
             />
           </button>
@@ -177,9 +178,9 @@ function ShopContent() {
               <Route path="/customers" element={<Customers />} />
               <Route path="/customers/:id" element={<CustomerProfile />} />
               <Route path="/mfs" element={<MfsLedger />} />
-              <Route path="/inventory" element={<Inventory />} />
-              <Route path="/inventory/rules" element={<StockDeductionRules />} />
-              <Route path="/stock-rules" element={<StockDeductionRules />} />
+              <Route path="/inventory" element={<Navigate to="/" replace />} />
+              <Route path="/inventory/rules" element={<Navigate to="/" replace />} />
+              <Route path="/stock-rules" element={<Navigate to="/" replace />} />
               <Route path="/borrowings" element={<Borrowings />} />
               <Route path="/dues" element={<Navigate to="/customers" replace />} />
               <Route path="/expenses" element={<Expenses />} />
@@ -231,9 +232,9 @@ function AuthenticatedApp() {
   }
 
   return (
-    <Router>
+    <ErrorBoundary>
       <ShopContent />
-    </Router>
+    </ErrorBoundary>
   );
 }
 
@@ -241,13 +242,18 @@ export default function App() {
   useAppNotifications();
 
   useEffect(() => {
-    initDefaultAccounts();
-    initDefaultInventory();
+    try {
+      initDefaultAccounts().catch(console.warn);
+    } catch (e) {
+      console.warn('initDefaultAccounts error:', e);
+    }
   }, []);
   
   return (
     <AuthProvider>
-      <AuthenticatedApp />
+      <Router>
+        <AuthenticatedApp />
+      </Router>
     </AuthProvider>
   );
 }

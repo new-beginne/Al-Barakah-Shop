@@ -12,8 +12,15 @@ export function usePwaInstall() {
 
   useEffect(() => {
     // Check if already in standalone mode
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as any).standalone === true;
+    let isStandalone = false;
+    try {
+      if (typeof window !== 'undefined') {
+        isStandalone = (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) ||
+          (window.navigator as any)?.standalone === true;
+      }
+    } catch {
+      // ignore in sandboxed iframes
+    }
     
     if (isStandalone) {
       setIsInstalled(true);

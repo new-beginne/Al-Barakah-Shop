@@ -1,35 +1,49 @@
+import { safeStorage } from '../lib/safeStorage';
 import { useEffect } from 'react';
 import { db } from '../db/db';
 
 export function useAppNotifications() {
   useEffect(() => {
+    const getNotificationPermission = (): NotificationPermission | null => {
+      try {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+          return Notification.permission;
+        }
+      } catch {
+        // Restricted in iframe / sandbox
+      }
+      return null;
+    };
+
     // Request permission automatically
     const requestPermission = async () => {
-      if ('Notification' in window && Notification.permission === 'default') {
-        try {
+      try {
+        const perm = getNotificationPermission();
+        if (perm === 'default' && typeof Notification.requestPermission === 'function') {
           await Notification.requestPermission();
-        } catch (e) {
-          console.warn('Notification permission request failed', e);
         }
+      } catch (e) {
+        console.warn('Notification permission request failed', e);
       }
     };
     
     requestPermission();
 
     const checkAndNotify = async () => {
-      const lastNotified = localStorage.getItem('albarakah_last_notified');
-      const now = Date.now();
-      
-      // If it's the very first time, set the timer for 1 hour from now instead of immediately spamming
-      if (!lastNotified) {
-        localStorage.setItem('albarakah_last_notified', now.toString());
-        return;
-      }
-      
-      // 1 hour = 60 * 60 * 1000 = 3600000 ms
-      if (now - parseInt(lastNotified, 10) >= 3600000) {
+      try {
+        const lastNotified = safeStorage.getItem('albarakah_last_notified');
+        const now = Date.now();
         
-        if ('Notification' in window && Notification.permission === 'granted') {
+        // If it's the very first time, set the timer for 1 hour from now instead of immediately spamming
+        if (!lastNotified) {
+          safeStorage.setItem('albarakah_last_notified', now.toString());
+          return;
+        }
+        
+        // 1 hour = 60 * 60 * 1000 = 3600000 ms
+        if (now - parseInt(lastNotified, 10) >= 3600000) {
+          const perm = getNotificationPermission();
+          if (perm === 'granted') {
           try {
             // Check for pending dues and overdue borrowings
             const allDues = await db.dues.toArray();
@@ -100,15 +114,18 @@ export function useAppNotifications() {
             }
             
             // Reset the timer
-            localStorage.setItem('albarakah_last_notified', now.toString());
+            safeStorage.setItem('albarakah_last_notified', now.toString());
           } catch (e) {
             console.error('Notification error:', e);
             // Even on error, update time so it doesn't loop endlessly failing
-            localStorage.setItem('albarakah_last_notified', now.toString());
+            safeStorage.setItem('albarakah_last_notified', now.toString());
           }
         }
       }
-    };
+    } catch (err) {
+      console.warn('checkAndNotify error', err);
+    }
+  };
 
     // Check every minute
     const interval = setInterval(checkAndNotify, 60 * 1000); 

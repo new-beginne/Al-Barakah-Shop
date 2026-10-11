@@ -321,7 +321,9 @@ export function StoreProfile() {
                   alt="Shop Logo" 
                   className="w-full h-full object-cover rounded-xl"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/logo.png?v=2';
+                    const target = e.target as HTMLImageElement;
+                    target.onerror = null;
+                    target.src = '/icon.svg';
                   }}
                 />
               </div>

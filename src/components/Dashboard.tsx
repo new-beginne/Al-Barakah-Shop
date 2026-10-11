@@ -33,10 +33,6 @@ export function Dashboard() {
   const allExpenses = useLiveQuery(() => db.expenses.orderBy('id').reverse().toArray()) || [];
   const allDues = useLiveQuery(() => db.dues.toArray()) || [];
   const allAccounts = useLiveQuery(() => db.accounts.toArray()) || [];
-  const allInventory = useLiveQuery(() => db.inventory.toArray()) || [];
-  const lowStockItems = useMemo(() => {
-    return allInventory.filter(item => item.currentStock <= item.minAlertStock);
-  }, [allInventory]);
 
   // Calculate Date Range
   let startDate = startOfDay(new Date());
@@ -569,35 +565,6 @@ export function Dashboard() {
 
       {/* Main Content: Pure Analytics & Charts */}
       <div className="w-full flex flex-col gap-6">
-
-        {/* Low Stock Warning Banner if any items low */}
-        {lowStockItems.length > 0 && (
-          <Link
-            to="/inventory"
-            className="bg-amber-50 hover:bg-amber-100/90 border border-amber-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 transition-all shadow-xs group"
-          >
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                <Package size={20} />
-              </div>
-              <div>
-                <p className="text-sm font-bold flex items-center gap-2 flex-wrap">
-                  <span>Stock Alert: {lowStockItems.length} item(s) low on stock!</span>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-200/80 font-bold text-amber-900">
-                    {lowStockItems.slice(0, 3).map(i => i.name).join(', ')}{lowStockItems.length > 3 ? '...' : ''}
-                  </span>
-                </p>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  Restock paper, ink or studio materials from the Inventory page.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs font-extrabold text-[#084b3e] bg-white px-3 py-1.5 rounded-lg border border-amber-200 self-start sm:self-auto group-hover:bg-amber-50 transition-colors shrink-0">
-              <span>Open Inventory</span>
-              <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-            </div>
-          </Link>
-        )}
 
         {/* Pure Analytics: Cashflow Overview Chart */}
         <div className="border border-gray-100 rounded-2xl p-5 sm:p-6 bg-white shadow-sm">

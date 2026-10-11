@@ -23,18 +23,10 @@ import {
   DollarSign,
   Tag,
   ChevronRight,
-  Zap,
-  Package
+  Zap
 } from 'lucide-react';
 import { formatDateStr } from '../utils/dateFormatter';
-import { 
-  deductInventoryForService, 
-  restoreInventoryForSale, 
-  getServiceStockImpact, 
-  initDefaultServicesAndMappings,
-  linkServiceToInventoryItem,
-  ServiceStockImpact 
-} from '../services/serviceMappingService';
+import { initDefaultServicesAndMappings } from '../services/serviceMappingService';
 
 export function SalesEntry() {
   const navigate = useNavigate();
@@ -52,8 +44,6 @@ export function SalesEntry() {
   const [sortBy, setSortBy] = useState<'newest' | 'amount-high' | 'profit-high'>('newest');
 
   // Form State (Always visible on top)
-  const [itemType, setItemType] = useState<'service' | 'product'>('service');
-  const [selectedProductId, setSelectedProductId] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [customServiceName, setCustomServiceName] = useState('');
   const [category, setCategory] = useState('');
@@ -64,11 +54,6 @@ export function SalesEntry() {
   const [cost, setCost] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [note, setNote] = useState('');
-
-  // Interactive Stock Selection State
-  const [selectedStockItemId, setSelectedStockItemId] = useState<number | 'auto' | 'none'>('auto');
-  const [stockDeductMultiplier, setStockDeductMultiplier] = useState<string>('1');
-  const [saveAsDefaultLink, setSaveAsDefaultLink] = useState(false);
 
   // Due / Customer Form State
   const [customerName, setCustomerName] = useState('');
@@ -81,64 +66,21 @@ export function SalesEntry() {
   const sales = useLiveQuery(() => db.sales.orderBy('id').reverse().toArray()) || [];
   const services = useLiveQuery(() => db.services.toArray()) || [];
   const customers = useLiveQuery(() => db.customers.toArray()) || [];
-  const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
   const dues = useLiveQuery(() => db.dues.toArray()) || [];
-  const serviceItemLinks = useLiveQuery(() => db.serviceItemLinks.toArray()) || [];
 
-  // Initialize standard studio services and mappings on first load
+  // Initialize standard studio services on first load
   useEffect(() => {
     initDefaultServicesAndMappings();
   }, []);
 
-  // Stock deduction impact preview state
-  const [stockImpact, setStockImpact] = useState<ServiceStockImpact>({ isLinked: false, links: [] });
-
-  // Selected inventory product (when selling from inventory)
-  const selectedProduct = useMemo(() => {
-    return inventoryItems.find(i => i.id?.toString() === selectedProductId);
-  }, [inventoryItems, selectedProductId]);
-
-  // Current service / product name (derived from selection or custom input)
+  // Current service name (derived from selection or custom input)
   const currentServiceName = useMemo(() => {
-    if (itemType === 'product') {
-      const item = inventoryItems.find(i => i.id?.toString() === selectedProductId);
-      return item ? item.name : customServiceName.trim();
-    }
     if (selectedServiceId === 'other') {
       return customServiceName.trim();
     }
     const found = services.find(s => s.id?.toString() === selectedServiceId);
     return found ? found.name : '';
-  }, [itemType, selectedProductId, selectedServiceId, customServiceName, services, inventoryItems]);
-
-  // Compute live stock impact whenever service, quantity, or mappings change
-  useEffect(() => {
-    let isCancelled = false;
-    if (!currentServiceName) {
-      setStockImpact({ isLinked: false, links: [] });
-      return;
-    }
-    const q = Math.max(1, parseInt(quantity) || 1);
-    const effectiveItem = itemType === 'product' && selectedProductId
-      ? Number(selectedProductId)
-      : (selectedStockItemId === 'auto' ? undefined : selectedStockItemId);
-    const effectiveMult = itemType === 'product' ? 1 : (Number(stockDeductMultiplier) || 1);
-
-    getServiceStockImpact(currentServiceName, q, effectiveItem, effectiveMult).then(impact => {
-      if (!isCancelled) {
-        setStockImpact(impact);
-      }
-    }).catch(() => {
-      if (!isCancelled) setStockImpact({ isLinked: false, links: [] });
-    });
-    return () => {
-      isCancelled = true;
-    };
-  }, [itemType, selectedProductId, currentServiceName, quantity, selectedStockItemId, stockDeductMultiplier, serviceItemLinks, inventoryItems, services]);
-
-  const openMappingModalForService = (_sName?: string) => {
-    navigate('/inventory/rules');
-  };
+  }, [selectedServiceId, customServiceName, services]);
 
   // Today metrics
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -179,35 +121,10 @@ export function SalesEntry() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Product selection handler (Sell Product from Inventory)
-  const handleProductChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const prodId = e.target.value;
-    setSelectedProductId(prodId);
-    setSelectedServiceId('');
-    const item = inventoryItems.find(i => i.id?.toString() === prodId);
-    if (item && item.id) {
-      setCustomServiceName(item.name);
-      setCategory(item.category);
-      setSelectedStockItemId(item.id);
-      setStockDeductMultiplier('1');
-      const price = item.sellingPrice ? String(item.sellingPrice) : (item.unitCost ? String(Math.round(item.unitCost * 1.5)) : '');
-      const costVal = item.unitCost ? String(item.unitCost) : '';
-      setUnitPrice(price);
-      setUnitCost(costVal);
-      const q = Math.max(1, parseInt(quantity) || 1);
-      setAmount(price ? (parseFloat(price) * q).toString() : '');
-      setCost(costVal ? (parseFloat(costVal) * q).toString() : '');
-    }
-  };
-
   // Service selection handler
   const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedServiceId(val);
-    setSelectedProductId('');
-    setSelectedStockItemId('auto');
-    setStockDeductMultiplier('1');
-    setSaveAsDefaultLink(false);
 
     const q = Math.max(1, parseInt(quantity) || 1);
     
@@ -225,10 +142,6 @@ export function SalesEntry() {
         setUnitPrice(uPrice);
         setUnitCost(uCost);
         setCategory(found.category || 'General');
-
-        if (found.deductQuantity) {
-          setStockDeductMultiplier(String(found.deductQuantity));
-        }
 
         if (uPrice) {
           setAmount((parseFloat(uPrice) * q).toString());
@@ -288,8 +201,6 @@ export function SalesEntry() {
   const currentProfit = (parseFloat(amount) || 0) - (parseFloat(cost) || 0);
 
   const resetForm = () => {
-    setItemType('service');
-    setSelectedProductId('');
     setSelectedServiceId('');
     setCustomServiceName('');
     setCategory('');
@@ -303,9 +214,6 @@ export function SalesEntry() {
     setCustomerName('');
     setCustomerPhone('');
     setDueAmount('');
-    setSelectedStockItemId('auto');
-    setStockDeductMultiplier('1');
-    setSaveAsDefaultLink(false);
   };
 
   // Submit sale
@@ -314,11 +222,9 @@ export function SalesEntry() {
     const parsedAmount = parseFloat(amount);
     if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
-    const finalServiceName = itemType === 'product'
-      ? (inventoryItems.find(i => i.id?.toString() === selectedProductId)?.name || customServiceName.trim() || 'Inventory Product')
-      : (selectedServiceId === 'other' 
-          ? (customServiceName.trim() || 'Custom Service')
-          : (services.find(s => s.id?.toString() === selectedServiceId)?.name || 'General Service'));
+    const finalServiceName = selectedServiceId === 'other' 
+      ? (customServiceName.trim() || 'Custom Service')
+      : (services.find(s => s.id?.toString() === selectedServiceId)?.name || 'General Service');
 
     const calculatedPaidAmount = paymentMethod === 'Due'
       ? (parsedAmount - (dueAmount === '' ? parsedAmount : (parseFloat(dueAmount) || 0)))
@@ -367,23 +273,13 @@ export function SalesEntry() {
     try {
       const isPureDue = paymentMethod === 'Due' && calculatedPaidAmount === 0;
       const isPartialDue = paymentMethod === 'Due' && calculatedPaidAmount > 0 && calculatedDueAmount > 0;
-      const qtyToDeduct = Math.max(1, parseInt(quantity) || 1);
 
-      // Smart inventory deduction based on matched or explicitly chosen stock item
-      const effectiveStockItem = itemType === 'product' && selectedProductId
-        ? Number(selectedProductId)
-        : (selectedStockItemId === 'auto' ? undefined : selectedStockItemId);
-      const effectiveMult = itemType === 'product' ? 1 : (Number(stockDeductMultiplier) || 1);
-      const consumedItems = await deductInventoryForService(finalServiceName, qtyToDeduct, effectiveStockItem, effectiveMult);
-
-      // If user checked "Remember as default stock item", persist it
-      if (saveAsDefaultLink && typeof selectedStockItemId === 'number' && selectedStockItemId > 0) {
-        await linkServiceToInventoryItem(finalServiceName, selectedStockItemId, effectiveMult);
-      }
+      // Stock logic deactivated temporarily per user request
+      const consumedItems: any[] = [];
 
       if (isPureDue) {
         // Pure Due: ONLY add to db.dues! Do NOT add to db.sales, expenses, or profit!
-        const dueId = await db.transaction('rw', [db.dues, db.inventory, db.serviceItemLinks], async () => {
+        const dueId = await db.transaction('rw', [db.dues], async () => {
           const id = await db.dues.add({
             date,
             time,
@@ -410,7 +306,7 @@ export function SalesEntry() {
           action: 'CREATE',
           module: 'Dues',
           title: `Due Entry: Tk ${parsedAmount.toLocaleString()} for ${customerName.trim()}`,
-          details: `Service: ${finalServiceName} • Recorded as Due.${consumedItems.length > 0 ? ` Stock deducted: ${consumedItems.map(c => `${c.quantity}x ${c.inventoryItemName}`).join(', ')}.` : ''}`,
+          details: `Service: ${finalServiceName} • Recorded as Due.`,
           meta: { customerName: customerName.trim(), phone: customerPhone.trim(), amount: parsedAmount, serviceName: finalServiceName, consumedItems }
         });
 
@@ -423,7 +319,7 @@ export function SalesEntry() {
           consumedItems
         };
         setReceiptSale(savedSaleWithId);
-        setSuccessMsg(`Recorded Due of Tk ${parsedAmount.toLocaleString()} for ${customerName.trim()}.${consumedItems.length > 0 ? ` (Deducted stock: ${consumedItems.map(c => `${c.quantity} ${c.inventoryItemName}`).join(', ')})` : ''}`);
+        setSuccessMsg(`Recorded Due of Tk ${parsedAmount.toLocaleString()} for ${customerName.trim()}.`);
         setTimeout(() => setSuccessMsg(''), 4000);
 
         resetForm();
@@ -437,7 +333,7 @@ export function SalesEntry() {
         const remainingProfit = Math.max(0, currentProfit - paidProfit);
         const remainingCost = Math.max(0, (parseFloat(cost) || 0) - paidCost);
 
-        const saleId = await db.transaction('rw', [db.sales, db.dues, db.accounts, db.balanceLogs, db.inventory, db.serviceItemLinks], async () => {
+        const saleId = await db.transaction('rw', [db.sales, db.dues, db.accounts, db.balanceLogs], async () => {
           const id = await db.sales.add({
             date,
             time,
@@ -488,7 +384,7 @@ export function SalesEntry() {
           action: 'CREATE',
           module: 'Sales',
           title: `Partial Sale Tk ${calculatedPaidAmount.toLocaleString()} & Due Tk ${calculatedDueAmount.toLocaleString()} for ${customerName.trim()}`,
-          details: `Service: ${finalServiceName}. Paid amount added to sales & cash.${consumedItems.length > 0 ? ` Stock: ${consumedItems.map(c => `${c.quantity}x ${c.inventoryItemName}`).join(', ')}.` : ''}`,
+          details: `Service: ${finalServiceName}. Paid amount added to sales & cash.`,
           meta: { customerName: customerName.trim(), paidAmount: calculatedPaidAmount, dueAmount: calculatedDueAmount, consumedItems }
         });
 
@@ -501,14 +397,14 @@ export function SalesEntry() {
           consumedItems
         };
         setReceiptSale(savedSaleWithId);
-        setSuccessMsg(`Recorded payment Tk ${calculatedPaidAmount.toLocaleString()} & Due Tk ${calculatedDueAmount.toLocaleString()}.${consumedItems.length > 0 ? ` (Deducted stock: ${consumedItems.map(c => `${c.quantity} ${c.inventoryItemName}`).join(', ')})` : ''}`);
+        setSuccessMsg(`Recorded payment Tk ${calculatedPaidAmount.toLocaleString()} & Due Tk ${calculatedDueAmount.toLocaleString()}.`);
         setTimeout(() => setSuccessMsg(''), 4000);
 
         resetForm();
         return;
       } else {
         // Standard 100% paid sale
-        const saleId = await db.transaction('rw', [db.sales, db.accounts, db.balanceLogs, db.inventory, db.serviceItemLinks], async () => {
+        const saleId = await db.transaction('rw', [db.sales, db.accounts, db.balanceLogs], async () => {
           const id = await db.sales.add({
             ...newSale,
             consumedItems
@@ -523,13 +419,13 @@ export function SalesEntry() {
           action: 'CREATE',
           module: 'Sales',
           title: `Sale: ${finalServiceName} - Tk ${parsedAmount.toLocaleString()}`,
-          details: `Category: ${category} • Paid via ${paymentMethod}${consumedItems.length > 0 ? ` • Stock: ${consumedItems.map(c => `${c.quantity}x ${c.inventoryItemName}`).join(', ')}` : ''}`,
+          details: `Category: ${category} • Paid via ${paymentMethod}`,
           meta: { saleId, amount: parsedAmount, paymentMethod, consumedItems }
         });
 
         const savedSaleWithId = { ...newSale, id: saleId as number, consumedItems };
         setReceiptSale(savedSaleWithId);
-        setSuccessMsg(`Sale of Tk ${parsedAmount.toLocaleString()} saved successfully.${consumedItems.length > 0 ? ` (Deducted stock: ${consumedItems.map(c => `${c.quantity} ${c.inventoryItemName}`).join(', ')})` : ''}`);
+        setSuccessMsg(`Sale of Tk ${parsedAmount.toLocaleString()} saved successfully.`);
         setTimeout(() => setSuccessMsg(''), 4000);
 
         resetForm();
@@ -544,7 +440,7 @@ export function SalesEntry() {
     if (!deleteTarget || !deleteTarget.id) return;
     try {
       const { id, paymentMethod: pMethod, amount: saleAmount } = deleteTarget;
-      await db.transaction('rw', [db.sales, db.dues, db.accounts, db.balanceLogs, db.activityLogs, db.inventory], async () => {
+      await db.transaction('rw', [db.sales, db.dues, db.accounts, db.balanceLogs, db.activityLogs], async () => {
         await db.sales.delete(id);
         if (pMethod !== 'Due') {
           const accountId = mapPaymentMethodToAccountId(pMethod);
@@ -573,13 +469,6 @@ export function SalesEntry() {
             await db.dues.delete(matchingDue.id);
           }
         }
-
-        // Restore inventory stock using smart restoration
-        await restoreInventoryForSale(
-          deleteTarget.consumedItems, 
-          deleteTarget.serviceName, 
-          Number(deleteTarget.quantity) || 1
-        );
       });
       await logSaleDelete(deleteTarget);
       if (detailsSale && detailsSale.id === id) {
@@ -635,16 +524,6 @@ export function SalesEntry() {
             <p className="text-sm text-gray-500 font-medium">Record sales & manage transactions</p>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => openMappingModalForService()}
-          className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer self-start sm:self-auto"
-          title="Configure automatic paper and stock deduction rules for services"
-        >
-          <Zap size={14} className="text-amber-600 fill-amber-500/20" />
-          <span>Service Stock Rules</span>
-        </button>
       </div>
 
       {/* 3 Summary Stats Cards */}
@@ -791,220 +670,56 @@ export function SalesEntry() {
             )}
           </div>
 
-          {/* Mode Switch: Service vs Stock Product */}
+          {/* Service Name & Quantity */}
           <div>
-            <div className="flex items-center gap-2 p-1 bg-gray-100/90 rounded-xl w-fit mb-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setItemType('service');
-                  setSelectedProductId('');
-                  setSelectedStockItemId('auto');
-                  setStockDeductMultiplier('1');
-                }}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-                  itemType === 'service'
-                    ? 'bg-white text-[#084b3e] shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <Zap size={14} className={itemType === 'service' ? 'text-[#084b3e]' : 'text-gray-400'} />
-                <span>Services (Studio & Online)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setItemType('product');
-                  setSelectedServiceId('');
-                  setSelectedStockItemId('auto');
-                  setStockDeductMultiplier('1');
-                }}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-                  itemType === 'product'
-                    ? 'bg-[#084b3e] text-white shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <Package size={14} />
-                <span>Inventory Products (Sell Stock)</span>
-              </button>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                  Service Name <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={selectedServiceId}
+                  onChange={handleServiceChange}
+                  className="w-full px-4 py-3 sm:py-3.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none text-base font-semibold shadow-sm transition-all text-gray-900"
+                >
+                  <option value="" disabled>Select service...</option>
+                  {services.map(s => (
+                    <option key={s.id} value={s.id?.toString()}>{s.name}</option>
+                  ))}
+                  <option value="other" className="font-bold">+ Other / Custom Service</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-1">
+                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                  Quantity
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={(e) => updateQuantity(e.target.value)}
+                  placeholder="1"
+                  className="w-full px-4 py-3 sm:py-3.5 border border-gray-200 rounded-xl text-center font-black text-base text-gray-900 focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none transition-all"
+                />
+              </div>
             </div>
 
-            {/* When Selling a Product from Stock */}
-            {itemType === 'product' ? (
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
-                  <div className="sm:col-span-3">
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider flex items-center justify-between">
-                      <span>Select Inventory Product <span className="text-red-500">*</span></span>
-                      <span className="text-[11px] font-semibold text-emerald-700">Total Products: {inventoryItems.length}</span>
-                    </label>
-                    <select
-                      required
-                      value={selectedProductId}
-                      onChange={handleProductChange}
-                      className="w-full px-4 py-3 sm:py-3.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none text-base font-bold shadow-sm transition-all text-gray-900"
-                    >
-                      <option value="" disabled>Choose product from stock...</option>
-                      {inventoryItems.map(item => (
-                        <option key={item.id} value={item.id?.toString()}>
-                          {item.name} — (Stock: {item.currentStock} {item.unit} | Price: Tk {item.sellingPrice || item.unitCost || 0})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="sm:col-span-1">
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                      Quantity (Qty) <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={quantity}
-                      onChange={(e) => updateQuantity(e.target.value)}
-                      placeholder="1"
-                      className="w-full px-4 py-3 sm:py-3.5 border border-gray-200 rounded-xl text-center font-black text-base text-gray-900 focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none transition-all font-mono"
-                    />
-                  </div>
-                </div>
-
-                {/* Selected Product Stock Status Badge */}
-                {selectedProduct && (
-                  <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div className="flex items-center gap-1.5 font-bold text-emerald-950">
-                        <Package size={15} className="text-[#084b3e]" />
-                        <span>Selected Item: <strong className="text-gray-900">{selectedProduct.name}</strong></span>
-                      </div>
-                      <div className="flex items-center gap-3 font-semibold text-gray-700">
-                        <span>Current Stock: <strong className="text-gray-900">{selectedProduct.currentStock} {selectedProduct.unit}</strong></span>
-                        <span>Deduction: <strong className="text-rose-600 font-bold">-{parseInt(quantity) || 1} {selectedProduct.unit}</strong></span>
-                        <span>Remaining Stock: <strong className="text-[#084b3e] font-black">{Math.max(0, selectedProduct.currentStock - (parseInt(quantity) || 1))} {selectedProduct.unit}</strong></span>
-                      </div>
-                    </div>
-
-                    {(parseInt(quantity) || 1) > selectedProduct.currentStock && (
-                      <div className="p-2.5 bg-amber-100/90 border border-amber-300 text-amber-900 rounded-lg text-xs font-bold flex items-center gap-2">
-                        <AlertCircle size={15} className="text-amber-700 shrink-0" />
-                        <span>Warning: Only {selectedProduct.currentStock} {selectedProduct.unit} in stock! Sale quantity ({quantity || 1}) exceeds stock.</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* When Selling a Service */
-              <div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
-                  <div className="sm:col-span-3">
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                      Service Name <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      required
-                      value={selectedServiceId}
-                      onChange={handleServiceChange}
-                      className="w-full px-4 py-3 sm:py-3.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none text-base font-semibold shadow-sm transition-all text-gray-900"
-                    >
-                      <option value="" disabled>Select service...</option>
-                      {services.map(s => (
-                        <option key={s.id} value={s.id?.toString()}>{s.name}</option>
-                      ))}
-                      <option value="other" className="font-bold">+ Other / Custom Service</option>
-                    </select>
-                  </div>
-
-                  <div className="sm:col-span-1">
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                      Quantity
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={quantity}
-                      onChange={(e) => updateQuantity(e.target.value)}
-                      placeholder="1"
-                      className="w-full px-4 py-3 sm:py-3.5 border border-gray-200 rounded-xl text-center font-black text-base text-gray-900 focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Custom Service Name if 'other' is selected */}
-                {selectedServiceId === 'other' && (
-                  <div className="mt-3">
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                      Custom Service Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={customServiceName}
-                      onChange={(e) => setCustomServiceName(e.target.value)}
-                      placeholder="Enter custom service name..."
-                      className="w-full px-4 py-3 sm:py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none text-base font-medium"
-                    />
-                  </div>
-                )}
-
-                {/* Interactive Stock Deduction Section for Service */}
-                <div className="mt-3.5 p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <Package size={14} className="text-[#084b3e]" />
-                      <span>Stock Item Deduction</span>
-                    </label>
-                    <span className="text-[11px] font-semibold text-gray-500 hidden sm:inline">
-                      Automatically deducts stock upon sale
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div className="sm:col-span-2">
-                      <label className="block text-[11px] font-bold text-gray-600 mb-1">Deduct From Item:</label>
-                      <select
-                        value={selectedStockItemId}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSelectedStockItemId(val === 'auto' ? 'auto' : val === 'none' ? 'none' : Number(val));
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-800 outline-none focus:border-[#084b3e]"
-                      >
-                        <option value="auto">⚡ Auto-matched Item (Default Rule)</option>
-                        {inventoryItems.map(inv => (
-                          <option key={inv.id} value={inv.id}>
-                            {inv.name} (Stock: {inv.currentStock} {inv.unit})
-                          </option>
-                        ))}
-                        <option value="none">🚫 No Stock Deduction</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-600 mb-1">Deduct per 1 Service Unit:</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={stockDeductMultiplier}
-                        onChange={(e) => setStockDeductMultiplier(e.target.value)}
-                        placeholder="1"
-                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-800 outline-none text-center focus:border-[#084b3e] font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Real-time deduction feedback */}
-                  {stockImpact.isLinked && stockImpact.links.length > 0 && selectedStockItemId !== 'none' && (
-                    <div className="pt-2 border-t border-gray-200/70 flex flex-wrap items-center justify-between gap-2 text-xs">
-                      {stockImpact.links.map((link, idx) => (
-                        <div key={idx} className="flex items-center gap-2 flex-wrap font-medium text-gray-700">
-                          <span className="font-bold text-emerald-800">Total {link.totalDeduct} {link.unit} {link.inventoryItemName}</span>
-                          <span>will be deducted (Current: {link.currentStock} → Remaining: {Math.max(0, link.currentStock - link.totalDeduct)} {link.unit})</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            {/* Custom Service Name if 'other' is selected */}
+            {selectedServiceId === 'other' && (
+              <div className="mt-3">
+                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                  Custom Service Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={customServiceName}
+                  onChange={(e) => setCustomServiceName(e.target.value)}
+                  placeholder="Enter custom service name..."
+                  className="w-full px-4 py-3 sm:py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none text-base font-medium"
+                />
               </div>
             )}
           </div>
@@ -1217,12 +932,6 @@ export function SalesEntry() {
                           </span>
                         )}
                       </div>
-                      {sale.consumedItems && sale.consumedItems.length > 0 && (
-                        <div className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/80 inline-flex items-center gap-1 mt-1">
-                          <Package size={11} className="text-[#084b3e]" />
-                          <span>Stock Deducted: {sale.consumedItems.map(c => `${c.quantity} ${c.inventoryItemName}`).join(', ')}</span>
-                        </div>
-                      )}
                       {sale.note && (
                         <div className="text-xs text-gray-400 truncate max-w-xs mt-0.5">{sale.note}</div>
                       )}
@@ -1392,17 +1101,6 @@ export function SalesEntry() {
                   </div>
                 )}
 
-                {detailsSale.consumedItems && detailsSale.consumedItems.length > 0 && (
-                  <div className="flex justify-between items-center py-1 border-b border-gray-200/60 bg-emerald-50/60 -mx-4 px-4">
-                    <span className="text-[#084b3e] font-bold flex items-center gap-1.5 text-xs">
-                      <Package size={14} className="text-[#084b3e]" /> Stock Deducted
-                    </span>
-                    <span className="font-bold text-gray-900 text-xs">
-                      {detailsSale.consumedItems.map(c => `${c.quantity}x ${c.inventoryItemName}`).join(', ')}
-                    </span>
-                  </div>
-                )}
-
                 {detailsSale.note && (
                   <div className="py-1">
                     <span className="text-gray-500 font-medium block mb-1">Note:</span>
@@ -1512,12 +1210,6 @@ export function SalesEntry() {
                 <span className="text-gray-500">Payment:</span>
                 <span className="font-bold">{receiptSale.paymentMethod}</span>
               </div>
-              {receiptSale.consumedItems && receiptSale.consumedItems.length > 0 && (
-                <div className="flex justify-between text-emerald-800 bg-emerald-50/70 p-1.5 rounded">
-                  <span>Stock Deducted:</span>
-                  <span className="font-bold">{receiptSale.consumedItems.map(c => `${c.quantity}x ${c.inventoryItemName}`).join(', ')}</span>
-                </div>
-              )}
               <div className="border-t border-gray-200 pt-2 flex justify-between text-sm">
                 <span className="font-bold text-gray-700">Total:</span>
                 <span className="font-black text-[#084b3e]">Tk {receiptSale.amount.toLocaleString()}</span>

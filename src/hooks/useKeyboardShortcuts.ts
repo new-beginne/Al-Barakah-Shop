@@ -67,11 +67,6 @@ export function useKeyboardShortcuts({ onOpenShortcuts, onCloseModals }: UseKeyb
         navigate('/customers');
         return;
       }
-      if (e.key === 'F7') {
-        e.preventDefault();
-        navigate('/inventory');
-        return;
-      }
       if (e.key === 'F8') {
         e.preventDefault();
         navigate('/');
@@ -141,11 +136,6 @@ export function useKeyboardShortcuts({ onOpenShortcuts, onCloseModals }: UseKeyb
           case 'M':
             e.preventDefault();
             navigate('/mfs');
-            break;
-          case 'i':
-          case 'I':
-            e.preventDefault();
-            navigate('/inventory');
             break;
           case 'c':
           case 'C':

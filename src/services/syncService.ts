@@ -1,3 +1,4 @@
+import { safeStorage } from '../lib/safeStorage';
 import { 
   collection, doc, getDocs, setDoc, deleteDoc, writeBatch 
 } from 'firebase/firestore';
@@ -30,13 +31,13 @@ export function getNextUtcResetTime(): number {
 export function isQuotaExceededBlocked(): boolean {
   if (typeof localStorage === 'undefined') return false;
 
-  const until = localStorage.getItem('albarakah_quota_blocked_until');
+  const until = safeStorage.getItem('albarakah_quota_blocked_until');
   if (until) {
     const expiry = Number(until);
     if (Date.now() < expiry) {
       return true;
     }
-    localStorage.removeItem('albarakah_quota_blocked_until');
+    safeStorage.removeItem('albarakah_quota_blocked_until');
   }
 
   return false;
@@ -45,7 +46,7 @@ export function isQuotaExceededBlocked(): boolean {
 export function markQuotaExceeded(): void {
   if (typeof localStorage === 'undefined') return;
   const resetTime = getNextUtcResetTime();
-  localStorage.setItem('albarakah_quota_blocked_until', resetTime.toString());
+  safeStorage.setItem('albarakah_quota_blocked_until', resetTime.toString());
 }
 
 /**
@@ -150,9 +151,9 @@ export async function clearAllCloudData(uid: string): Promise<{ deletedCount: nu
 
   // Clear sync tracking timestamps
   if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem('albarakah_last_synced');
-    localStorage.removeItem('albarakah_quota_blocked_until');
-    localStorage.removeItem('albarakah_quota_override');
+    safeStorage.removeItem('albarakah_last_synced');
+    safeStorage.removeItem('albarakah_quota_blocked_until');
+    safeStorage.removeItem('albarakah_quota_override');
   }
 
   return { deletedCount, collectionsCleared };
@@ -166,7 +167,7 @@ export async function pushLocalToCloud(uid: string, forceAll: boolean = false): 
   }
 
   // MULTI-TENANT ISOLATION GUARD: Verify this device's active user matches target uid
-  const activeUid = typeof localStorage !== 'undefined' ? localStorage.getItem('albarakah_active_uid') : null;
+  const activeUid = typeof localStorage !== 'undefined' ? safeStorage.getItem('albarakah_active_uid') : null;
   if (activeUid && activeUid !== uid) {
     console.warn(`[Sync Guard] Blocked pushLocalToCloud! Target uid (${uid}) does not match active local uid (${activeUid}).`);
     return 0;
@@ -183,7 +184,7 @@ export async function pushLocalToCloud(uid: string, forceAll: boolean = false): 
   }
 
   let count = 0;
-  const lastSyncedStr = localStorage.getItem('albarakah_last_synced');
+  const lastSyncedStr = safeStorage.getItem('albarakah_last_synced');
   // Exact timestamp check without clock-skew buffer to avoid redundant writes
   const lastSyncedTime = (lastSyncedStr && !forceAll) ? new Date(lastSyncedStr).getTime() : 0;
 
@@ -424,7 +425,7 @@ export async function pushLocalToCloud(uid: string, forceAll: boolean = false): 
 
     // If changes were saved, update the last synced timestamp and clear dirty flag
     if (count > 0 || pendingDeletions.length > 0) {
-      localStorage.setItem('albarakah_last_synced', new Date().toISOString());
+      safeStorage.setItem('albarakah_last_synced', new Date().toISOString());
     }
     clearAllPendingChanges();
   } catch (err: any) {
@@ -480,7 +481,7 @@ export async function pullCloudToLocal(uid: string): Promise<number> {
   if (isQuotaExceededBlocked()) return 0;
 
   // MULTI-TENANT ISOLATION GUARD: Verify this device's active user matches target uid
-  const activeUid = typeof localStorage !== 'undefined' ? localStorage.getItem('albarakah_active_uid') : null;
+  const activeUid = typeof localStorage !== 'undefined' ? safeStorage.getItem('albarakah_active_uid') : null;
   if (activeUid && activeUid !== uid) {
     console.warn(`[Sync Guard] Skipping pullCloudToLocal because active user changed (${activeUid} !== ${uid})`);
     return 0;
@@ -670,7 +671,7 @@ export async function fullSync(uid: string, forceAll: boolean = false): Promise<
   try {
     const pushed = await pushLocalToCloud(uid, forceAll);
     const pulled = await pullCloudToLocal(uid);
-    localStorage.setItem('albarakah_last_synced', new Date().toISOString());
+    safeStorage.setItem('albarakah_last_synced', new Date().toISOString());
     return {
       success: true,
       pushedCount: pushed,

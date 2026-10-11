@@ -1,5 +1,6 @@
 import Dexie, { Table } from 'dexie';
 import { format } from 'date-fns';
+import { safeStorage } from '../lib/safeStorage';
 
 export function getRecordMetadata() {
   const now = new Date();
@@ -399,6 +400,20 @@ export class AlBarakahDB extends Dexie {
 
 export const db = new AlBarakahDB();
 
+if (typeof window !== 'undefined') {
+  try {
+    db.on('blocked', () => {
+      console.warn('AlBarakahDB: Database open blocked by another tab');
+    });
+    db.on('versionchange', () => {
+      console.warn('AlBarakahDB: Database version changed in another tab, closing connection');
+      db.close();
+    });
+  } catch {
+    // ignore
+  }
+}
+
 // Global Sync Event Dispatcher with mute support
 let isSyncSilent = false;
 
@@ -432,7 +447,7 @@ const pendingModifiedTables = new Set<string>();
 // Restore any pending modified tables from localStorage on boot
 if (typeof localStorage !== 'undefined') {
   try {
-    const saved = localStorage.getItem('albarakah_pending_tables');
+    const saved = safeStorage.getItem('albarakah_pending_tables');
     if (saved) {
       const arr = JSON.parse(saved);
       if (Array.isArray(arr)) {
@@ -452,9 +467,9 @@ export function markTableModified(tableName: string) {
   pendingModifiedTables.add(tableName);
   if (typeof localStorage !== 'undefined') {
     try {
-      localStorage.setItem('albarakah_pending_tables', JSON.stringify(Array.from(pendingModifiedTables)));
-      localStorage.setItem('albarakah_db_dirty', 'true');
-      localStorage.setItem('albarakah_last_local_change', Date.now().toString());
+      safeStorage.setItem('albarakah_pending_tables', JSON.stringify(Array.from(pendingModifiedTables)));
+      safeStorage.setItem('albarakah_db_dirty', 'true');
+      safeStorage.setItem('albarakah_last_local_change', Date.now().toString());
     } catch {
       // ignore
     }
@@ -470,10 +485,10 @@ export function clearPendingModifiedTable(tableName: string) {
   if (typeof localStorage !== 'undefined') {
     try {
       if (pendingModifiedTables.size === 0) {
-        localStorage.removeItem('albarakah_pending_tables');
-        localStorage.setItem('albarakah_db_dirty', 'false');
+        safeStorage.removeItem('albarakah_pending_tables');
+        safeStorage.setItem('albarakah_db_dirty', 'false');
       } else {
-        localStorage.setItem('albarakah_pending_tables', JSON.stringify(Array.from(pendingModifiedTables)));
+        safeStorage.setItem('albarakah_pending_tables', JSON.stringify(Array.from(pendingModifiedTables)));
       }
     } catch {
       // ignore
@@ -485,8 +500,8 @@ export function clearAllPendingChanges() {
   pendingModifiedTables.clear();
   if (typeof localStorage !== 'undefined') {
     try {
-      localStorage.removeItem('albarakah_pending_tables');
-      localStorage.setItem('albarakah_db_dirty', 'false');
+      safeStorage.removeItem('albarakah_pending_tables');
+      safeStorage.setItem('albarakah_db_dirty', 'false');
     } catch {
       // ignore
     }
@@ -545,9 +560,9 @@ export async function clearLocalDatabaseForAccountSwitch(resetAccounts: boolean 
     clearAllPendingChanges();
 
     if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem('albarakah_last_synced');
-      localStorage.removeItem('albarakah_pending_tables');
-      localStorage.setItem('albarakah_db_dirty', 'false');
+      safeStorage.removeItem('albarakah_last_synced');
+      safeStorage.removeItem('albarakah_pending_tables');
+      safeStorage.setItem('albarakah_db_dirty', 'false');
     }
   } catch (err) {
     console.error('Failed to clear local database for account switch:', err);
@@ -562,7 +577,7 @@ export async function clearLocalDatabaseForAccountSwitch(resetAccounts: boolean 
  */
 export function hasPendingLocalChanges(): boolean {
   if (typeof localStorage === 'undefined') return false;
-  const isDirty = localStorage.getItem('albarakah_db_dirty') === 'true';
+  const isDirty = safeStorage.getItem('albarakah_db_dirty') === 'true';
   return isDirty || pendingModifiedTables.size > 0;
 }
 

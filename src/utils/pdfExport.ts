@@ -1,3 +1,4 @@
+import { safeStorage } from '../lib/safeStorage';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { format } from 'date-fns';
@@ -24,12 +25,12 @@ export async function getLogoBase64(): Promise<string> {
   if (cachedLogoBase64) return cachedLogoBase64;
 
   try {
-    const customPhoto = localStorage.getItem('albarakah_shop_photo');
+    const customPhoto = safeStorage.getItem('albarakah_shop_photo');
     if (customPhoto && (customPhoto.startsWith('data:') || customPhoto.startsWith('http'))) {
       cachedLogoBase64 = customPhoto;
       return customPhoto;
     }
-    const savedProfile = localStorage.getItem('albarakah_user_profile');
+    const savedProfile = safeStorage.getItem('albarakah_user_profile');
     if (savedProfile) {
       const parsed = JSON.parse(savedProfile);
       if (parsed?.photoURL && (parsed.photoURL.startsWith('data:') || parsed.photoURL.startsWith('http'))) {
