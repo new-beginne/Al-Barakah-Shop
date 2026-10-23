@@ -6,6 +6,7 @@ import {
   ArrowLeft, Plus, Zap, Trash2, Edit2, CheckCircle2, 
   AlertCircle, Package, Search, X
 } from 'lucide-react';
+import { Modal } from './common/Modal';
 
 export function StockDeductionRules() {
   const navigate = useNavigate();
@@ -338,107 +339,98 @@ export function StockDeductionRules() {
         )}
       </div>
 
-      {/* Add / Edit Rule Modal (Following Universal Modal Design) */}
-      {isFormOpen && (
-        <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
-          onClick={() => setIsFormOpen(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">
-              {editingLink ? 'Edit Deduction Rule' : 'Add New Deduction Rule'}
-            </h3>
-
-            <form onSubmit={handleSave} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
-                  Service Name *
-                </label>
-                <select
-                  required
-                  value={selectedService}
-                  onChange={(e) => setSelectedService(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] outline-none focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 cursor-pointer transition-all"
-                >
-                  <option value="">-- Choose Sales Service --</option>
-                  {services.map(s => (
-                    <option key={s.id || s.name} value={s.name}>{s.name} ({s.category})</option>
-                  ))}
-                  <option value="custom">+ Custom Service Name</option>
-                </select>
-              </div>
-
-              {selectedService === 'custom' && (
-                <div>
-                  <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
-                    Custom Service Title *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={customServiceName}
-                    onChange={(e) => setCustomServiceName(e.target.value)}
-                    placeholder="e.g. Visa Photo, Document Scan"
-                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl font-bold text-[#1d2939] outline-none focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 transition-all text-sm"
-                    autoFocus
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
-                  Deduct from Stock Material *
-                </label>
-                <select
-                  required
-                  value={selectedInventoryId}
-                  onChange={(e) => setSelectedInventoryId(e.target.value ? Number(e.target.value) : '')}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] outline-none focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 cursor-pointer transition-all"
-                >
-                  <option value="">-- Choose Stock Material --</option>
-                  {inventoryItems.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({item.currentStock} {item.unit} in stock)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#465269] mb-1.5 uppercase tracking-wider">
-                  Quantity to Deduct per Sale *
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={quantityMultiplier}
-                    onChange={(e) => setQuantityMultiplier(e.target.value)}
-                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-black text-[#1d2939] outline-none focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 font-mono transition-all"
-                    placeholder="1"
-                  />
-                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 pointer-events-none">
-                    Unit(s)
-                  </span>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-xs transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
-                >
-                  {editingLink ? 'Update Rule' : 'Save Rule'}
-                </button>
-              </div>
-            </form>
+      {/* Add / Edit Rule Modal */}
+      <Modal
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title={editingLink ? 'Edit Deduction Rule' : 'Add New Deduction Rule'}
+        maxWidth="md"
+      >
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Service Name *
+            </label>
+            <select
+              required
+              value={selectedService}
+              onChange={(e) => setSelectedService(e.target.value)}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] outline-none focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 cursor-pointer transition-all"
+            >
+              <option value="">-- Choose Sales Service --</option>
+              {services.map(s => (
+                <option key={s.id || s.name} value={s.name}>{s.name} ({s.category})</option>
+              ))}
+              <option value="custom">+ Custom Service Name</option>
+            </select>
           </div>
-        </div>
-      )}
+
+          {selectedService === 'custom' && (
+            <div>
+              <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                Custom Service Title *
+              </label>
+              <input
+                type="text"
+                required
+                value={customServiceName}
+                onChange={(e) => setCustomServiceName(e.target.value)}
+                placeholder="e.g. Visa Photo, Document Scan"
+                className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] font-bold text-[#202b3d] outline-none focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 transition-all text-[14px]"
+                autoFocus
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Deduct from Stock Material *
+            </label>
+            <select
+              required
+              value={selectedInventoryId}
+              onChange={(e) => setSelectedInventoryId(e.target.value ? Number(e.target.value) : '')}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] outline-none focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 cursor-pointer transition-all"
+            >
+              <option value="">-- Choose Stock Material --</option>
+              {inventoryItems.map(item => (
+                <option key={item.id} value={item.id}>
+                  {item.name} ({item.currentStock} {item.unit} in stock)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Quantity to Deduct per Sale *
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                required
+                min="1"
+                value={quantityMultiplier}
+                onChange={(e) => setQuantityMultiplier(e.target.value)}
+                className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[15px] font-bold text-[#202b3d] outline-none focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 font-mono transition-all"
+                placeholder="1"
+              />
+              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 pointer-events-none">
+                Unit(s)
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white font-[750] text-[14px] rounded-[12px] shadow-[0_2px_3px_rgba(0,0,0,0.12)] transition-all cursor-pointer flex items-center justify-center"
+            >
+              {editingLink ? 'Update Rule' : 'Save Rule'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -25,6 +25,7 @@ import {
   Package,
   Layers
 } from 'lucide-react';
+import { Modal } from './common/Modal';
 import { format, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -905,390 +906,334 @@ export function DataManagementSettings() {
       {/* ========================================================================= */}
       {/* MODAL 1: MASTER WIPE / DELETE OPTIONS (ALL, CLOUD ONLY, LOCAL ONLY) */}
       {/* ========================================================================= */}
-      {isMasterWipeModalOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
-          onClick={() => !isWipingMaster && setIsMasterWipeModalOpen(false)}
-        >
-          <div 
-            className={`bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border-2 animate-in fade-in zoom-in-95 space-y-5 my-8 ${
-              wipeMode === 'cloud' ? 'border-sky-300' :
-              wipeMode === 'local' ? 'border-amber-300' :
-              'border-rose-300'
-            }`}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Mode Switcher Tabs */}
-            <div className="flex rounded-xl bg-gray-100 p-1 gap-1 text-xs font-bold">
-              <button
-                type="button"
-                disabled={isWipingMaster}
-                onClick={() => {
-                  setWipeMode('all');
-                  setConfirmInputText('');
-                }}
-                className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  wipeMode === 'all' 
-                    ? 'bg-rose-600 text-white shadow-xs' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <ShieldAlert size={14} />
-                <span>Both (Local & Cloud)</span>
-              </button>
-              <button
-                type="button"
-                disabled={isWipingMaster || !user || !isOnline}
-                onClick={() => {
-                  setWipeMode('cloud');
-                  setConfirmInputText('');
-                }}
-                className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                  wipeMode === 'cloud' 
-                    ? 'bg-sky-600 text-white shadow-xs' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <Cloud size={14} />
-                <span>Cloud Only</span>
-              </button>
-              <button
-                type="button"
-                disabled={isWipingMaster}
-                onClick={() => {
-                  setWipeMode('local');
-                  setConfirmInputText('');
-                }}
-                className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  wipeMode === 'local' 
-                    ? 'bg-amber-600 text-white shadow-xs' 
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <Database size={14} />
-                <span>Local Only</span>
-              </button>
-            </div>
+      {/* ========================================================================= */}
+      {/* MODAL 1: MASTER WIPE / DELETE OPTIONS (ALL, CLOUD ONLY, LOCAL ONLY) */}
+      {/* ========================================================================= */}
+      <Modal
+        isOpen={isMasterWipeModalOpen}
+        onClose={() => !isWipingMaster && setIsMasterWipeModalOpen(false)}
+        title={
+          wipeMode === 'cloud' ? 'Clear Cloud Backups' :
+          wipeMode === 'local' ? 'Clear Local Database' :
+          'Master Database Wipe'
+        }
+        maxWidth="lg"
+      >
+        <div className="space-y-4">
+          {/* Mode Switcher Tabs */}
+          <div className="flex rounded-[12px] bg-[#f7f8fa] p-1 gap-1 text-xs font-bold border border-[#d8e0e8]">
+            <button
+              type="button"
+              disabled={isWipingMaster}
+              onClick={() => {
+                setWipeMode('all');
+                setConfirmInputText('');
+              }}
+              className={`flex-1 py-2 px-2.5 rounded-[9px] transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                wipeMode === 'all' 
+                  ? 'bg-rose-600 text-white shadow-xs' 
+                  : 'text-[#4b5870] hover:text-[#202b3d]'
+              }`}
+            >
+              <ShieldAlert size={14} />
+              <span>Both (Local & Cloud)</span>
+            </button>
+            <button
+              type="button"
+              disabled={isWipingMaster || !user || !isOnline}
+              onClick={() => {
+                setWipeMode('cloud');
+                setConfirmInputText('');
+              }}
+              className={`flex-1 py-2 px-2.5 rounded-[9px] transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                wipeMode === 'cloud' 
+                  ? 'bg-sky-600 text-white shadow-xs' 
+                  : 'text-[#4b5870] hover:text-[#202b3d]'
+              }`}
+            >
+              <Cloud size={14} />
+              <span>Cloud Only</span>
+            </button>
+            <button
+              type="button"
+              disabled={isWipingMaster}
+              onClick={() => {
+                setWipeMode('local');
+                setConfirmInputText('');
+              }}
+              className={`flex-1 py-2 px-2.5 rounded-[9px] transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                wipeMode === 'local' 
+                  ? 'bg-amber-600 text-white shadow-xs' 
+                  : 'text-[#4b5870] hover:text-[#202b3d]'
+              }`}
+            >
+              <Database size={14} />
+              <span>Local Only</span>
+            </button>
+          </div>
 
-            {/* Header */}
-            <div className="flex items-start gap-3.5">
-              <div className={`p-3 rounded-2xl shrink-0 ${
-                wipeMode === 'cloud' ? 'bg-sky-100 text-sky-700' :
-                wipeMode === 'local' ? 'bg-amber-100 text-amber-700' :
-                'bg-rose-100 text-rose-700'
-              }`}>
-                {wipeMode === 'cloud' ? <Cloud size={28} /> :
-                 wipeMode === 'local' ? <Database size={28} /> :
-                 <ShieldAlert size={28} />}
-              </div>
-              <div>
-                <h3 className="text-xl font-black text-gray-900 leading-tight">
-                  {wipeMode === 'cloud' ? 'Clear All Cloud Data' :
-                   wipeMode === 'local' ? 'Clear All Local Data' :
-                   'All Delete: Local & Cloud Wipe'}
-                </h3>
-                <p className={`text-xs font-bold mt-0.5 ${
+          {/* Mode-specific Warning Message */}
+          {wipeMode === 'cloud' ? (
+            <div className="bg-sky-50 border border-sky-200 rounded-[12px] p-3.5 text-xs space-y-1.5 text-sky-950 font-medium">
+              <p className="font-bold text-sky-900">
+                You are about to delete all data stored in Google Firebase Cloud Firestore:
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-[#4b5870]">
+                <li><strong>Target Account:</strong> {user?.email || 'Logged in account'}</li>
+                <li><strong>Cloud Collections:</strong> Sales, expenses, mfs, dues, customers, inventory in Firestore will be emptied.</li>
+                <li><strong>Local Database:</strong> <span className="font-bold text-emerald-700">100% Safe.</span> All {totalAllLocalRecords} records on this device will NOT be touched.</li>
+              </ul>
+            </div>
+          ) : wipeMode === 'local' ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-[12px] p-3.5 text-xs space-y-1.5 text-amber-950 font-medium">
+              <p className="font-bold text-amber-900">
+                You are about to wipe all data from this device's local IndexedDB:
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-[#4b5870]">
+                <li><strong>Local Records:</strong> All {totalAllLocalRecords} records on this phone/computer will be wiped.</li>
+                <li><strong>Cash & Wallets:</strong> All balances (Cash, bKash, Nagad, Rocket) will be reset to <strong>Tk 0.00</strong>.</li>
+                <li><strong>Google Firebase Cloud:</strong> <span className="font-bold text-emerald-700">100% Preserved.</span> Your cloud backups will NOT be deleted.</li>
+              </ul>
+            </div>
+          ) : (
+            <div className="bg-rose-50 border border-rose-200 rounded-[12px] p-3.5 text-xs space-y-1.5 text-rose-950 font-medium">
+              <p className="font-bold text-rose-900">
+                You are about to completely wipe both your offline device data AND your Google Cloud backups:
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-[#4b5870]">
+                <li><strong>Local Database:</strong> {totalAllLocalRecords} records across all IndexedDB tables will be wiped.</li>
+                <li><strong>Cash & Wallets:</strong> Balances for Cash, bKash, Nagad, Rocket reset to <strong>Tk 0.00</strong>.</li>
+                <li>
+                  <strong>Google Firebase Firestore:</strong> {user ? `All cloud subcollections for ${user.email} will be permanently erased.` : 'Local storage will be wiped.'}
+                </li>
+              </ul>
+            </div>
+          )}
+
+          {/* Optional Wipe Checkboxes (only for local and all modes) */}
+          {wipeMode !== 'cloud' && (
+            <div className="space-y-2 bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] p-3.5 text-xs font-bold text-[#202b3d]">
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={wipeCustomers}
+                  onChange={e => setWipeCustomers(e.target.checked)}
+                  className="rounded text-rose-600 focus:ring-rose-600 cursor-pointer"
+                />
+                <span>Also wipe Customer Directory ({customersCount} Customers)</span>
+              </label>
+
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={wipePresets}
+                  onChange={e => setWipePresets(e.target.checked)}
+                  className="rounded text-rose-600 focus:ring-rose-600 cursor-pointer"
+                />
+                <span>Also wipe custom Preset Services & Expense Categories</span>
+              </label>
+            </div>
+          )}
+
+          {/* Typing Confirmation Requirement */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <label className="block text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                Type <strong className={`font-black ${
                   wipeMode === 'cloud' ? 'text-sky-700' :
                   wipeMode === 'local' ? 'text-amber-700' :
-                  'text-rose-600'
-                }`}>
-                  {wipeMode === 'cloud' ? 'Delete all cloud backups from Google Firebase Cloud Firestore' :
-                   wipeMode === 'local' ? 'Delete local device data completely (Cloud backup remains safe)' :
-                   'Permanently delete both local and cloud databases (Full Factory Reset)'}
-                </p>
-              </div>
-            </div>
-
-            {/* Mode-specific Warning Message */}
-            {wipeMode === 'cloud' ? (
-              <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 text-xs space-y-2 text-sky-950 font-medium">
-                <p className="font-bold text-sky-900">
-                  You are about to delete all data stored in Google Firebase Cloud Firestore:
-                </p>
-                <ul className="list-disc pl-4 space-y-1 text-gray-700">
-                  <li><strong>Target Account:</strong> {user?.email || 'Logged in account'}</li>
-                  <li><strong>Cloud Collections:</strong> Sales, expenses, mfs, dues, customers, inventory and logs in Firestore will be emptied.</li>
-                  <li><strong>Local Database:</strong> <span className="font-bold text-emerald-700">100% Safe.</span> All {totalAllLocalRecords} records on this device will NOT be touched.</li>
-                </ul>
-              </div>
-            ) : wipeMode === 'local' ? (
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs space-y-2 text-amber-950 font-medium">
-                <p className="font-bold text-amber-900">
-                  You are about to wipe all data from this device's local IndexedDB:
-                </p>
-                <ul className="list-disc pl-4 space-y-1 text-gray-700">
-                  <li><strong>Local Records:</strong> All {totalAllLocalRecords} records on this phone/computer will be wiped.</li>
-                  <li><strong>Cash & Wallets:</strong> All balances (Cash, bKash, Nagad, Rocket) will be reset to <strong>Tk 0.00</strong>.</li>
-                  <li><strong>Google Firebase Cloud:</strong> <span className="font-bold text-emerald-700">100% Preserved.</span> Your cloud backups will NOT be deleted.</li>
-                </ul>
-              </div>
-            ) : (
-              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-xs space-y-2 text-rose-950 font-medium">
-                <p className="font-bold text-rose-900">
-                  You are about to completely wipe both your offline device data AND your Google Cloud backups:
-                </p>
-                <ul className="list-disc pl-4 space-y-1 text-gray-700">
-                  <li><strong>Local Database:</strong> {totalAllLocalRecords} records across all IndexedDB tables will be wiped.</li>
-                  <li><strong>Cash & Wallets:</strong> Balances for Cash, bKash, Nagad, Rocket reset to <strong>Tk 0.00</strong>.</li>
-                  <li>
-                    <strong>Google Firebase Firestore:</strong> {user ? `All cloud subcollections for ${user.email} will be permanently erased.` : 'Local storage will be wiped.'}
-                  </li>
-                </ul>
-              </div>
-            )}
-
-            {/* Optional Wipe Checkboxes (only for local and all modes) */}
-            {wipeMode !== 'cloud' && (
-              <div className="space-y-2.5 bg-gray-50 border border-gray-200 rounded-2xl p-4 text-xs font-bold text-gray-800">
-                <label className="flex items-center gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={wipeCustomers}
-                    onChange={e => setWipeCustomers(e.target.checked)}
-                    className="rounded text-rose-600 focus:ring-rose-600 cursor-pointer"
-                  />
-                  <span>Also wipe Customer Directory ({customersCount} Customers)</span>
-                </label>
-
-                <label className="flex items-center gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={wipePresets}
-                    onChange={e => setWipePresets(e.target.checked)}
-                    className="rounded text-rose-600 focus:ring-rose-600 cursor-pointer"
-                  />
-                  <span>Also wipe custom Preset Services & Expense Categories</span>
-                </label>
-              </div>
-            )}
-
-            {/* Typing Confirmation Requirement */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-gray-700">
-                  Type <strong className={`font-black ${
-                    wipeMode === 'cloud' ? 'text-sky-700' :
-                    wipeMode === 'local' ? 'text-amber-700' :
-                    'text-rose-700'
-                  }`}>{getExpectedConfirmText()}</strong> to confirm:
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setConfirmInputText(getExpectedConfirmText())}
-                  className={`text-[11px] font-bold underline cursor-pointer ${
-                    wipeMode === 'cloud' ? 'text-sky-600 hover:text-sky-800' :
-                    wipeMode === 'local' ? 'text-amber-600 hover:text-amber-800' :
-                    'text-rose-600 hover:text-rose-800'
-                  }`}
-                >
-                  Auto-fill "{getExpectedConfirmText()}"
-                </button>
-              </div>
-
-              <input
-                type="text"
-                disabled={isWipingMaster}
-                placeholder={getExpectedConfirmText()}
-                value={confirmInputText}
-                onChange={e => setConfirmInputText(e.target.value)}
-                className={`w-full p-3 border-2 rounded-xl text-sm font-black outline-none uppercase text-center tracking-widest ${
-                  wipeMode === 'cloud' 
-                    ? 'border-sky-300 focus:border-sky-600 text-sky-900 bg-sky-50/30' :
-                  wipeMode === 'local' 
-                    ? 'border-amber-300 focus:border-amber-600 text-amber-900 bg-amber-50/30' :
-                    'border-rose-300 focus:border-rose-600 text-rose-900 bg-rose-50/30'
-                }`}
-              />
-            </div>
-
-            {/* Progress indicator */}
-            {isWipingMaster && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-xs font-bold text-amber-900 animate-pulse">
-                <RefreshCw size={16} className="animate-spin text-amber-700" />
-                <span>{wipeStepText || 'Processing requested wipe...'}</span>
-              </div>
-            )}
-
-            {/* Modal Buttons */}
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                  'text-rose-700'
+                }`}>{getExpectedConfirmText()}</strong> to confirm:
+              </label>
               <button
                 type="button"
-                disabled={isWipingMaster}
-                onClick={() => setIsMasterWipeModalOpen(false)}
-                className="px-4 py-2.5 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!isConfirmInputValid || isWipingMaster}
-                onClick={handleConfirmMasterWipe}
-                className={`px-6 py-2.5 text-xs font-black text-white rounded-xl flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-md uppercase transition-all ${
-                  wipeMode === 'cloud' ? 'bg-sky-600 hover:bg-sky-700' :
-                  wipeMode === 'local' ? 'bg-amber-600 hover:bg-amber-700' :
-                  'bg-rose-600 hover:bg-rose-700'
+                onClick={() => setConfirmInputText(getExpectedConfirmText())}
+                className={`text-[11px] font-bold underline cursor-pointer ${
+                  wipeMode === 'cloud' ? 'text-sky-600 hover:text-sky-800' :
+                  wipeMode === 'local' ? 'text-amber-600 hover:text-amber-800' :
+                  'text-rose-600 hover:text-rose-800'
                 }`}
               >
-                <Trash2 size={16} />
-                <span>
-                  {isWipingMaster ? 'Processing Wipe...' :
-                   wipeMode === 'cloud' ? 'Confirm & Wipe Cloud' :
-                   wipeMode === 'local' ? 'Confirm & Wipe Local' :
-                   'Confirm & Wipe Everything'}
-                </span>
+                Auto-fill "{getExpectedConfirmText()}"
               </button>
             </div>
 
+            <input
+              type="text"
+              disabled={isWipingMaster}
+              placeholder={getExpectedConfirmText()}
+              value={confirmInputText}
+              onChange={e => setConfirmInputText(e.target.value)}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] outline-none uppercase text-center tracking-widest focus:bg-white focus:border-rose-600 focus:ring-[3px] focus:ring-rose-600/10 transition-all"
+            />
+          </div>
+
+          {/* Progress indicator */}
+          {isWipingMaster && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-[12px] flex items-center gap-2 text-xs font-bold text-amber-900 animate-pulse">
+              <RefreshCw size={16} className="animate-spin text-amber-700" />
+              <span>{wipeStepText || 'Processing requested wipe...'}</span>
+            </div>
+          )}
+
+          {/* Modal Buttons */}
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#d8e0e8]/60">
+            <button
+              type="button"
+              disabled={isWipingMaster}
+              onClick={() => setIsMasterWipeModalOpen(false)}
+              className="min-h-[49px] h-[49px] px-4 bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] cursor-pointer disabled:opacity-50 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!isConfirmInputValid || isWipingMaster}
+              onClick={handleConfirmMasterWipe}
+              className={`min-h-[49px] h-[49px] px-5 text-xs font-black text-white rounded-[12px] flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_2px_3px_rgba(0,0,0,0.12)] uppercase transition-all ${
+                wipeMode === 'cloud' ? 'bg-sky-600 hover:bg-sky-700' :
+                wipeMode === 'local' ? 'bg-amber-600 hover:bg-amber-700' :
+                'bg-rose-600 hover:bg-rose-700'
+              }`}
+            >
+              <Trash2 size={16} />
+              <span>
+                {isWipingMaster ? 'Processing Wipe...' :
+                 wipeMode === 'cloud' ? 'Confirm & Wipe Cloud' :
+                 wipeMode === 'local' ? 'Confirm & Wipe Local' :
+                 'Confirm & Wipe Everything'}
+              </span>
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* ========================================================================= */}
       {/* MODAL 2: RANGE DELETE CONFIRMATION */}
       {/* ========================================================================= */}
-      {isRangeModalOpen && rangePreview && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setIsRangeModalOpen(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-4"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 text-amber-600">
-              <div className="p-3 bg-amber-50 rounded-2xl">
-                <AlertTriangle size={24} />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-gray-900">Confirm Date Range Deletion</h3>
-                <p className="text-xs text-gray-500 font-semibold">{rangeStartDate} to {rangeEndDate}</p>
-              </div>
+      <Modal
+        isOpen={isRangeModalOpen && !!rangePreview}
+        onClose={() => setIsRangeModalOpen(false)}
+        title="Confirm Date Range Deletion"
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-[12px] text-xs text-amber-900 font-semibold flex items-center gap-2.5">
+            <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+            <span>Date Range: {rangeStartDate} to {rangeEndDate}</span>
+          </div>
+
+          <p className="text-[13px] text-[#4b5870] leading-relaxed">
+            You are about to permanently remove <strong className="text-[#202b3d]">{rangePreview?.totalRecords}</strong> matching records from this date range:
+          </p>
+
+          <div className="bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] p-3.5 text-[13px] space-y-2 font-medium">
+            <div className="flex justify-between">
+              <span className="text-[#4b5870]">Sales to delete:</span>
+              <span className="font-bold text-[#202b3d]">{rangePreview?.salesCount} (Tk {rangePreview?.salesTotal.toLocaleString()})</span>
             </div>
-
-            <p className="text-xs text-gray-600 leading-relaxed font-medium">
-              You are about to permanently remove <strong>{rangePreview.totalRecords}</strong> matching records from this date range:
-            </p>
-
-            <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 text-xs space-y-1.5 font-medium">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Sales to delete:</span>
-                <span className="font-bold text-gray-900">{rangePreview.salesCount} (Tk {rangePreview.salesTotal.toLocaleString()})</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Expenses to delete:</span>
-                <span className="font-bold text-gray-900">{rangePreview.expensesCount} (Tk {rangePreview.expensesTotal.toLocaleString()})</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">MFS transactions:</span>
-                <span className="font-bold text-gray-900">{rangePreview.mfsCount} (Tk {rangePreview.mfsTotal.toLocaleString()})</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Borrowings:</span>
-                <span className="font-bold text-gray-900">{rangePreview.borrowingsCount}</span>
-              </div>
-              <div className="flex justify-between pt-1 border-t border-gray-200 text-amber-900 font-bold">
-                <span>Account Balance Adjustment:</span>
-                <span>{adjustBalancesOnRangeDelete ? 'Enabled (Auto-Adjusted)' : 'Disabled'}</span>
-              </div>
+            <div className="flex justify-between">
+              <span className="text-[#4b5870]">Expenses to delete:</span>
+              <span className="font-bold text-[#202b3d]">{rangePreview?.expensesCount} (Tk {rangePreview?.expensesTotal.toLocaleString()})</span>
             </div>
-
-            <p className="text-[11px] text-gray-400">
-              Note: This action will be automatically recorded in your History tab.
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => setIsRangeModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeletingRange}
-                onClick={handleConfirmRangeDelete}
-                className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                <Trash2 size={14} />
-                <span>{isDeletingRange ? 'Deleting Records...' : 'Confirm & Delete'}</span>
-              </button>
+            <div className="flex justify-between">
+              <span className="text-[#4b5870]">MFS transactions:</span>
+              <span className="font-bold text-[#202b3d]">{rangePreview?.mfsCount} (Tk {rangePreview?.mfsTotal.toLocaleString()})</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#4b5870]">Borrowings:</span>
+              <span className="font-bold text-[#202b3d]">{rangePreview?.borrowingsCount}</span>
+            </div>
+            <div className="flex justify-between pt-2 border-t border-[#d8e0e8] text-amber-900 font-bold">
+              <span>Account Balance Adjustment:</span>
+              <span>{adjustBalancesOnRangeDelete ? 'Enabled (Auto-Adjusted)' : 'Disabled'}</span>
             </div>
           </div>
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#d8e0e8]/60">
+            <button
+              type="button"
+              onClick={() => setIsRangeModalOpen(false)}
+              className="min-h-[49px] h-[49px] px-4 bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] cursor-pointer transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isDeletingRange}
+              onClick={handleConfirmRangeDelete}
+              className="min-h-[49px] h-[49px] px-5 text-xs font-black text-white bg-amber-600 hover:bg-amber-700 rounded-[12px] flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-[0_2px_3px_rgba(217,119,6,0.2)] transition-all"
+            >
+              <Trash2 size={15} />
+              <span>{isDeletingRange ? 'Deleting Records...' : 'Confirm & Delete'}</span>
+            </button>
+          </div>
         </div>
-      )}
+      </Modal>
 
       {/* ========================================================================= */}
       {/* MODAL 3: CLEAR HISTORY CONFIRMATION */}
       {/* ========================================================================= */}
-      {isClearHistoryConfirmOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setIsClearHistoryConfirmOpen(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-gray-200 space-y-3"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="text-base font-black text-gray-900">Clear Activity History Logs?</h3>
-            <p className="text-xs text-gray-500 font-medium">
-              This will remove all {historyLogsCount} audit logs from the History tab. Your actual shop balances and transactions will not be affected.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsClearHistoryConfirmOpen(false)}
-                className="px-3.5 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleClearHistory}
-                className="px-4 py-2 text-xs font-bold text-white bg-gray-900 hover:bg-black rounded-xl cursor-pointer"
-              >
-                Yes, Clear Logs
-              </button>
-            </div>
+      <Modal
+        isOpen={isClearHistoryConfirmOpen}
+        onClose={() => setIsClearHistoryConfirmOpen(false)}
+        title="Clear Activity History Logs"
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-[13px] text-[#4b5870] leading-relaxed">
+            This will remove all <strong className="text-[#202b3d]">{historyLogsCount}</strong> audit logs from the History tab. Your actual shop balances and transactions will not be affected.
+          </p>
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#d8e0e8]/60">
+            <button
+              type="button"
+              onClick={() => setIsClearHistoryConfirmOpen(false)}
+              className="min-h-[49px] h-[49px] px-4 bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] cursor-pointer transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleClearHistory}
+              className="min-h-[49px] h-[49px] px-5 bg-rose-600 hover:bg-rose-700 text-white font-[750] text-[13px] rounded-[12px] shadow-[0_2px_3px_rgba(225,29,72,0.2)] transition-all cursor-pointer"
+            >
+              Yes, Clear Logs
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* ========================================================================= */}
       {/* MODAL 4: CLEAR PAID DUES CONFIRMATION */}
       {/* ========================================================================= */}
-      {isClearPaidDuesConfirmOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setIsClearPaidDuesConfirmOpen(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-gray-200 space-y-3"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="text-base font-black text-gray-900">Clear Settled Dues?</h3>
-            <p className="text-xs text-gray-500 font-medium">
-              This will delete {paidDuesCount} customer due entries that have already been fully paid off. Active pending dues will remain completely safe.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsClearPaidDuesConfirmOpen(false)}
-                className="px-3.5 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleClearPaidDues}
-                className="px-4 py-2 text-xs font-bold text-white bg-[#084b3e] hover:bg-[#0c5e4e] rounded-xl cursor-pointer"
-              >
-                Yes, Clear Settled
-              </button>
-            </div>
+      <Modal
+        isOpen={isClearPaidDuesConfirmOpen}
+        onClose={() => setIsClearPaidDuesConfirmOpen(false)}
+        title="Clear Settled Dues"
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-[13px] text-[#4b5870] leading-relaxed">
+            This will delete <strong className="text-[#202b3d]">{paidDuesCount}</strong> customer due entries that have already been fully paid off. Active pending dues will remain completely safe.
+          </p>
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#d8e0e8]/60">
+            <button
+              type="button"
+              onClick={() => setIsClearPaidDuesConfirmOpen(false)}
+              className="min-h-[49px] h-[49px] px-4 bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] cursor-pointer transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleClearPaidDues}
+              className="min-h-[49px] h-[49px] px-5 bg-[#075e4f] hover:bg-[#064c40] text-white font-[750] text-[13px] rounded-[12px] shadow-[0_2px_3px_rgba(7,94,79,0.2)] transition-all cursor-pointer"
+            >
+              Yes, Clear Settled
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
     </div>
   );

@@ -20,6 +20,7 @@ import {
   Layers
 } from 'lucide-react';
 import { formatDateStr } from '../utils/dateFormatter';
+import { Modal } from './common/Modal';
 
 const DEFAULT_EXPENSE_SERVICES = [
   'Shop Rent',
@@ -595,154 +596,120 @@ export function Expenses() {
       </div>
 
       {/* TRANSACTION DETAILS MODAL */}
-      {detailsExpense && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 my-8">
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-[#084b3e] to-[#0c5e4e] text-white p-6 relative">
-              <button
-                onClick={() => setDetailsExpense(null)}
-                className="absolute top-5 right-5 text-white/80 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors"
-              >
-                <X size={20} />
-              </button>
-              <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold uppercase tracking-wider mb-1">
-                <span>Expense Details</span>
-                <span>•</span>
-                <span>#{detailsExpense.id}</span>
-              </div>
-              <h3 className="text-2xl font-black">{getExpenseDisplayTitle(detailsExpense)}</h3>
-              <div className="flex items-center gap-3 mt-2 text-xs font-medium text-white/90">
-                <span className="flex items-center gap-1">
-                  <Calendar size={13} /> {formatDateStr(detailsExpense.date)}
-                </span>
-                {detailsExpense.time && (
-                  <span className="flex items-center gap-1">
-                    <Clock size={13} /> {detailsExpense.time}
-                  </span>
-                )}
-              </div>
+      <Modal
+        isOpen={!!detailsExpense}
+        onClose={() => setDetailsExpense(null)}
+        title="Expense Details"
+        maxWidth="md"
+      >
+        {detailsExpense && (
+          <div className="space-y-4">
+            <div className="text-center pb-2">
+              <span className="text-[12px] font-bold text-gray-400 uppercase tracking-wider block">Expense Amount</span>
+              <span className="text-2xl font-black text-rose-600">
+                Tk {(detailsExpense.amount || 0).toLocaleString()}
+              </span>
+              <span className="text-xs font-semibold text-gray-500 block mt-1">
+                {getExpenseDisplayTitle(detailsExpense)} (#{detailsExpense.id})
+              </span>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-5">
-              {/* Financial Highlight Cards */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-rose-50 p-4 rounded-2xl border border-rose-100 text-center">
-                  <span className="text-[11px] font-bold text-gray-400 block uppercase">Expense Amount</span>
-                  <span className="text-2xl font-black text-rose-600 mt-0.5 block">
-                    Tk {(detailsExpense.amount || 0).toLocaleString()}
+            <div className="bg-[#f7f8fa] rounded-[12px] p-3.5 border border-[#d8e0e8] divide-y divide-gray-200/60 text-xs">
+              <div className="flex justify-between py-2">
+                <span className="text-[#4b5870] font-semibold">Date & Time</span>
+                <span className="font-bold text-[#202b3d]">
+                  {formatDateStr(detailsExpense.date)} {detailsExpense.time ? `• ${detailsExpense.time}` : ''}
+                </span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-[#4b5870] font-semibold">Category / Title</span>
+                <span className="font-bold text-[#202b3d]">{getExpenseDisplayTitle(detailsExpense)}</span>
+              </div>
+              {getExpenseQuantity(detailsExpense) && (
+                <div className="flex justify-between py-2">
+                  <span className="text-[#4b5870] font-semibold">Quantity</span>
+                  <span className="font-bold text-[#202b3d]">{getExpenseQuantity(detailsExpense)}</span>
+                </div>
+              )}
+              <div className="flex justify-between py-2">
+                <span className="text-[#4b5870] font-semibold">Payment Method</span>
+                <span className="font-bold text-[#202b3d]">{getExpensePaymentMethod(detailsExpense)}</span>
+              </div>
+              {detailsExpense.note && (
+                <div className="flex justify-between py-2">
+                  <span className="text-[#4b5870] font-semibold">Note / Remarks</span>
+                  <span className="font-bold text-[#202b3d] text-right max-w-[200px] break-words">
+                    {detailsExpense.note}
                   </span>
                 </div>
-                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 text-center flex flex-col items-center justify-center">
-                  <span className="text-[11px] font-bold text-gray-400 block uppercase mb-1">Payment Method</span>
-                  <span className="text-base font-black text-gray-900">
-                    {getExpensePaymentMethod(detailsExpense)}
+              )}
+              {detailsExpense.createdAt && (
+                <div className="flex justify-between py-2">
+                  <span className="text-[#4b5870] font-semibold">Recorded At</span>
+                  <span className="font-medium text-gray-500">
+                    {format(new Date(detailsExpense.createdAt), 'dd MMM yyyy, hh:mm a')}
                   </span>
                 </div>
-              </div>
+              )}
+            </div>
 
-              {/* Detail Items List */}
-              <div className="bg-gray-50/70 rounded-2xl p-4 divide-y divide-gray-100 border border-gray-100 space-y-2 text-xs">
-                <div className="flex justify-between py-1.5">
-                  <span className="text-gray-500 font-bold">Transaction Date</span>
-                  <span className="font-extrabold text-gray-900">{formatDateStr(detailsExpense.date)}</span>
-                </div>
-                {detailsExpense.time && (
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-gray-500 font-bold">Transaction Time</span>
-                    <span className="font-extrabold text-gray-900">{detailsExpense.time}</span>
-                  </div>
-                )}
-                <div className="flex justify-between py-1.5">
-                  <span className="text-gray-500 font-bold">Category / Title</span>
-                  <span className="font-extrabold text-gray-900">{getExpenseDisplayTitle(detailsExpense)}</span>
-                </div>
-                {getExpenseQuantity(detailsExpense) && (
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-gray-500 font-bold">Quantity</span>
-                    <span className="font-extrabold text-gray-900">{getExpenseQuantity(detailsExpense)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between py-1.5">
-                  <span className="text-gray-500 font-bold">Payment Method</span>
-                  <span className="font-extrabold text-gray-900">{getExpensePaymentMethod(detailsExpense)}</span>
-                </div>
-                {detailsExpense.note && (
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-gray-500 font-bold">Note / Remarks</span>
-                    <span className="font-extrabold text-gray-900 text-right max-w-[260px] break-words">
-                      {detailsExpense.note}
-                    </span>
-                  </div>
-                )}
-                {detailsExpense.createdAt && (
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-gray-500 font-bold">Recorded At</span>
-                    <span className="font-medium text-gray-500">
-                      {format(new Date(detailsExpense.createdAt), 'dd MMM yyyy, hh:mm a')}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setDeleteTarget(detailsExpense)}
-                  className="flex-1 py-3 px-4 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-xl text-sm transition-colors flex items-center justify-center gap-2 border border-red-100"
-                >
-                  <Trash2 size={16} /> Delete Expense
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDetailsExpense(null)}
-                  className="py-3 px-6 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors"
-                >
-                  Close
-                </button>
-              </div>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(detailsExpense)}
+                className="flex-1 min-h-[47px] h-[47px] px-4 bg-rose-50 hover:bg-rose-100 text-rose-600 font-[750] text-[13px] rounded-[12px] border border-rose-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 size={15} /> Delete
+              </button>
+              <button
+                type="button"
+                onClick={() => setDetailsExpense(null)}
+                className="flex-1 min-h-[47px] h-[47px] px-4 bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* DELETE CONFIRMATION MODAL */}
-      {deleteTarget && (
-        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-gray-100 animate-in fade-in zoom-in-95">
-            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
-              <AlertCircle size={28} />
-            </div>
-            <h3 className="text-lg font-black text-gray-900 text-center">Delete Expense?</h3>
-            <p className="text-xs text-gray-500 text-center mt-2 font-medium">
-              Are you sure you want to delete <span className="font-bold text-gray-800">#{deleteTarget.id} ({getExpenseDisplayTitle(deleteTarget)})</span>?
+      <Modal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Expense"
+        maxWidth="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-[#4b5870] leading-relaxed">
+              Are you sure you want to delete <span className="font-bold text-[#202b3d]">#{deleteTarget.id} ({getExpenseDisplayTitle(deleteTarget)})</span>?
               {getExpensePaymentMethod(deleteTarget) !== 'Due' && (
-                <span className="block mt-1 text-emerald-600 font-bold">
+                <span className="block mt-2 text-xs text-[#075e4f] font-semibold bg-[#075e4f]/5 p-2 rounded-lg border border-[#075e4f]/15">
                   Tk {(deleteTarget.amount || 0).toLocaleString()} will be refunded to your {getExpensePaymentMethod(deleteTarget)} balance.
                 </span>
               )}
             </p>
-            <div className="flex gap-3 mt-6">
+
+            <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-colors"
+                className="flex-1 min-h-[47px] h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
+                className="flex-1 min-h-[47px] h-[47px] bg-rose-600 hover:bg-rose-700 text-white font-[750] text-[13px] rounded-[12px] shadow-[0_2px_3px_rgba(225,29,72,0.2)] transition-colors cursor-pointer"
               >
                 Yes, Delete
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

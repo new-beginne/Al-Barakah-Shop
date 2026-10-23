@@ -63,6 +63,19 @@ export interface MfsTransaction {
   dueId?: number;
 }
 
+export interface DuePaymentRecord {
+  id: string;
+  date: string; // 'yyyy-MM-dd'
+  time?: string; // 'hh:mm:ss a'
+  amount: number; // actual money received in this partial/full payment
+  discount?: number; // discount given in this installment
+  totalSettled: number; // amount + discount
+  paymentMethod: string; // 'Cash' | 'bKash' | 'Nagad' | 'Rocket' | 'Bank'
+  remainingDueAfter: number;
+  note?: string;
+  createdAt?: string;
+}
+
 export interface Due {
   id?: number;
   date?: string;
@@ -82,6 +95,7 @@ export interface Due {
   category?: string;
   cost?: number;
   profit?: number;
+  paymentHistory?: DuePaymentRecord[];
   consumedItems?: Array<{
     inventoryItemId: number;
     inventoryItemName: string;

@@ -1,5 +1,6 @@
 import React from 'react';
-import { X, Keyboard, Zap, Shield, ArrowRight } from 'lucide-react';
+import { Zap, Shield } from 'lucide-react';
+import { Modal } from './common/Modal';
 
 interface ShortcutsModalProps {
   isOpen: boolean;
@@ -7,8 +8,6 @@ interface ShortcutsModalProps {
 }
 
 export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
-  if (!isOpen) return null;
-
   const navigationShortcuts = [
     { key: 'F1', desc: 'Go to Sales Entry' },
     { key: 'F2', desc: 'Go to Expenses Entry' },
@@ -34,98 +33,74 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
   ];
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn"
-      onClick={onClose}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Keyboard Shortcuts"
+      maxWidth="lg"
     >
-      <div 
-        className="bg-white rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="bg-[#084b3e] text-white p-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-emerald-200 border border-white/20">
-              <Keyboard size={22} />
-            </div>
-            <div>
-              <h3 className="text-lg font-extrabold tracking-wide">Keyboard Shortcuts</h3>
-              <p className="text-xs text-emerald-100/80">Speed up your daily shop workflow</p>
-            </div>
-          </div>
-          <button 
-            type="button" 
-            onClick={onClose}
-            className="text-white/70 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            <X size={20} />
-          </button>
+      <div className="space-y-5">
+        {/* Quick Tip */}
+        <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-[12px] text-xs font-semibold">
+          <Zap size={18} className="text-[#075e4f] shrink-0" />
+          <span>
+            Press any function key (<kbd className="px-1.5 py-0.5 bg-white rounded border border-emerald-300 font-mono text-[11px] shadow-xs">F1</kbd> to <kbd className="px-1.5 py-0.5 bg-white rounded border border-emerald-300 font-mono text-[11px] shadow-xs">F10</kbd>) or <kbd className="px-1.5 py-0.5 bg-white rounded border border-emerald-300 font-mono text-[11px] shadow-xs">Alt + 1-9</kbd> from anywhere in the app to switch tabs instantly!
+          </span>
         </div>
 
-        {/* Content Body */}
-        <div className="p-6 overflow-y-auto space-y-6">
-          {/* Quick Tip */}
-          <div className="flex items-center gap-3 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs font-semibold">
-            <Zap size={18} className="text-emerald-700 shrink-0" />
-            <span>
-              Press any function key (<kbd className="px-1.5 py-0.5 bg-white rounded border border-emerald-300 font-mono text-[11px] shadow-xs">F1</kbd> to <kbd className="px-1.5 py-0.5 bg-white rounded border border-emerald-300 font-mono text-[11px] shadow-xs">F10</kbd>) or <kbd className="px-1.5 py-0.5 bg-white rounded border border-emerald-300 font-mono text-[11px] shadow-xs">Alt + 1-9</kbd> from anywhere in the app to switch tabs instantly!
-            </span>
+        {/* Navigation Shortcuts */}
+        <div>
+          <h4 className="text-[12px] font-[750] uppercase tracking-[0.04em] text-[#4b5870] mb-2.5 flex items-center gap-1.5">
+            <span>Page Navigation</span>
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {navigationShortcuts.map((item, idx) => (
+              <div 
+                key={idx} 
+                className="flex items-center justify-between p-2.5 bg-[#f7f8fa] hover:bg-[#eef2f5] rounded-[10px] border border-[#d8e0e8] transition-colors"
+              >
+                <span className="text-[13px] font-semibold text-[#202b3d]">{item.desc}</span>
+                <kbd className="px-2 py-0.5 bg-white border border-[#d8e0e8] rounded-[6px] font-mono text-[11px] font-bold text-[#202b3d] shadow-xs">
+                  {item.key}
+                </kbd>
+              </div>
+            ))}
           </div>
+        </div>
 
-          {/* Navigation Shortcuts */}
-          <div>
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1.5">
-              <span>Page Navigation</span>
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {navigationShortcuts.map((item, idx) => (
-                <div 
-                  key={idx} 
-                  className="flex items-center justify-between p-2.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl border border-gray-100 transition-colors"
-                >
-                  <span className="text-xs font-medium text-gray-700">{item.desc}</span>
-                  <kbd className="px-2 py-1 bg-white border border-gray-300 rounded-md font-mono text-[11px] font-bold text-gray-900 shadow-xs">
-                    {item.key}
-                  </kbd>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Action & Security Shortcuts */}
-          <div>
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1.5">
-              <Shield size={14} className="text-[#084b3e]" />
-              <span>Actions & Security</span>
-            </h4>
-            <div className="grid grid-cols-1 gap-2.5">
-              {actionShortcuts.map((item, idx) => (
-                <div 
-                  key={idx} 
-                  className="flex items-center justify-between p-2.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl border border-gray-100 transition-colors"
-                >
-                  <span className="text-xs font-medium text-gray-700">{item.desc}</span>
-                  <kbd className="px-2.5 py-1 bg-white border border-gray-300 rounded-md font-mono text-[11px] font-bold text-[#084b3e] shadow-xs">
-                    {item.key}
-                  </kbd>
-                </div>
-              ))}
-            </div>
+        {/* Action & Security Shortcuts */}
+        <div>
+          <h4 className="text-[12px] font-[750] uppercase tracking-[0.04em] text-[#4b5870] mb-2.5 flex items-center gap-1.5">
+            <Shield size={14} className="text-[#075e4f]" />
+            <span>Actions & Security</span>
+          </h4>
+          <div className="grid grid-cols-1 gap-2">
+            {actionShortcuts.map((item, idx) => (
+              <div 
+                key={idx} 
+                className="flex items-center justify-between p-2.5 bg-[#f7f8fa] hover:bg-[#eef2f5] rounded-[10px] border border-[#d8e0e8] transition-colors"
+              >
+                <span className="text-[13px] font-semibold text-[#202b3d]">{item.desc}</span>
+                <kbd className="px-2.5 py-0.5 bg-white border border-[#d8e0e8] rounded-[6px] font-mono text-[11px] font-bold text-[#075e4f] shadow-xs">
+                  {item.key}
+                </kbd>
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-          <span>Press <kbd className="px-1.5 py-0.5 bg-white border border-gray-300 rounded font-mono shadow-xs">Esc</kbd> to close</span>
+        <div className="pt-2 flex items-center justify-between border-t border-[#d8e0e8]/60 text-xs text-[#8b95a3]">
+          <span>Press <kbd className="px-1.5 py-0.5 bg-white border border-[#d8e0e8] rounded font-mono shadow-xs">Esc</kbd> to close</span>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 bg-[#084b3e] text-white rounded-lg font-bold hover:bg-[#0c5e4e] transition-colors cursor-pointer"
+            className="min-h-[43px] px-5 bg-[#075e4f] hover:bg-[#064c40] text-white font-[750] text-[13px] rounded-[12px] shadow-[0_2px_3px_rgba(0,0,0,0.12)] transition-all cursor-pointer"
           >
             Got it
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

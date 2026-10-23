@@ -23,6 +23,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { format, subDays, startOfMonth } from 'date-fns';
+import { Modal } from './common/Modal';
 
 export function HistoryView() {
   const rawLogs = useLiveQuery(() => db.activityLogs.orderBy('id').reverse().toArray()) || [];
@@ -653,160 +654,130 @@ export function HistoryView() {
       </div>
 
       {/* Minimal Log Inspection Modal */}
-      {inspectLog && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setInspectLog(null)}
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-3.5"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start border-b border-gray-100 pb-2.5">
-              <div>
-                <h3 className="text-sm font-black text-gray-900 leading-tight">
-                  Activity Record #{inspectLog.id}
-                </h3>
-                <p className="text-[11px] text-gray-400 font-medium">
-                  {inspectLog.date} • {inspectLog.time}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setInspectLog(null)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
-              >
-                <X size={16} />
-              </button>
+      <Modal
+        isOpen={!!inspectLog}
+        onClose={() => setInspectLog(null)}
+        title={inspectLog ? `Activity Record #${inspectLog.id}` : 'Activity Record'}
+        maxWidth="lg"
+      >
+        {inspectLog && (
+          <div className="space-y-4">
+            <div className="text-center -mt-3 mb-2">
+              <span className="text-xs font-semibold text-gray-500">{inspectLog.date} • {inspectLog.time}</span>
             </div>
 
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between items-center py-1.5 border-b border-gray-50">
-                <span className="text-gray-500 font-medium">Action</span>
-                <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] border ${getActionBadge(inspectLog.action).bg}`}>
+            <div className="bg-[#f7f8fa] rounded-[12px] p-3.5 border border-[#d8e0e8] divide-y divide-gray-200/60 text-xs">
+              <div className="flex justify-between items-center py-2">
+                <span className="text-[#4b5870] font-semibold">Action</span>
+                <span className={`px-2.5 py-0.5 rounded-[6px] font-[750] text-[11px] border ${getActionBadge(inspectLog.action).bg}`}>
                   {inspectLog.action}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center py-1.5 border-b border-gray-50">
-                <span className="text-gray-500 font-medium">Module</span>
-                <span className="font-bold text-gray-900">{inspectLog.module}</span>
+              <div className="flex justify-between items-center py-2">
+                <span className="text-[#4b5870] font-semibold">Module</span>
+                <span className="font-bold text-[#202b3d]">{inspectLog.module}</span>
               </div>
 
-              <div className="py-1.5 border-b border-gray-50">
-                <span className="text-gray-500 font-medium block text-[11px]">Title</span>
-                <p className="font-bold text-gray-900 mt-0.5">{inspectLog.title}</p>
+              <div className="py-2">
+                <span className="text-[#4b5870] font-semibold block mb-0.5">Title</span>
+                <p className="font-bold text-[#202b3d] text-sm">{inspectLog.title}</p>
               </div>
 
               {inspectLog.details && (
-                <div className="py-1.5 border-b border-gray-50">
-                  <span className="text-gray-500 font-medium block text-[11px]">Details</span>
-                  <p className="text-gray-700 mt-0.5 leading-relaxed">{inspectLog.details}</p>
+                <div className="py-2">
+                  <span className="text-[#4b5870] font-semibold block mb-0.5">Details</span>
+                  <p className="text-[#202b3d] leading-relaxed bg-white p-2.5 rounded-lg border border-[#d8e0e8]">{inspectLog.details}</p>
                 </div>
               )}
 
               {/* JSON Metadata snapshot if exists */}
               {inspectLog.meta && (
-                <div className="p-2.5 bg-gray-900 text-emerald-400 rounded-xl font-mono text-[10px] max-h-40 overflow-y-auto mt-2">
-                  <span className="text-[10px] text-gray-400 font-bold block mb-1">Payload / Snapshot:</span>
-                  <pre className="whitespace-pre-wrap">{JSON.stringify(inspectLog.meta, null, 2)}</pre>
+                <div className="pt-2">
+                  <span className="text-[11px] text-[#4b5870] font-bold block mb-1 uppercase tracking-wider">Payload / Snapshot</span>
+                  <div className="p-3 bg-gray-900 text-emerald-400 rounded-[10px] font-mono text-[10px] max-h-40 overflow-y-auto">
+                    <pre className="whitespace-pre-wrap">{JSON.stringify(inspectLog.meta, null, 2)}</pre>
+                  </div>
                 </div>
               )}
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="pt-2">
               <button
                 type="button"
                 onClick={() => setInspectLog(null)}
-                className="px-4 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+                className="w-full min-h-[49px] h-[49px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[14px] rounded-[12px] transition-colors cursor-pointer"
               >
                 Close
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Delete Single Log Modal */}
-      {deleteTargetLog && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setDeleteTargetLog(null)}
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-3"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2.5 text-rose-600">
-              <div className="p-2 bg-rose-50 rounded-xl">
-                <AlertTriangle size={18} />
-              </div>
-              <h3 className="text-sm font-black text-gray-900">Remove from History?</h3>
-            </div>
-
-            <p className="text-xs text-gray-500 leading-relaxed">
+      <Modal
+        isOpen={!!deleteTargetLog}
+        onClose={() => setDeleteTargetLog(null)}
+        title="Remove from History"
+        maxWidth="sm"
+      >
+        {deleteTargetLog && (
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-[#4b5870] leading-relaxed">
               This will only remove this audit log entry from your device. Your actual sales, expenses, and accounts will not be affected.
             </p>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+            <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteTargetLog(null)}
-                className="px-3.5 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDeleteSingle}
-                className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-rose-600 hover:bg-rose-700 text-white font-[750] text-[13px] rounded-[12px] shadow-[0_2px_3px_rgba(225,29,72,0.2)] transition-colors cursor-pointer"
               >
                 Delete
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Clear All History Modal */}
-      {isClearAllOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setIsClearAllOpen(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-gray-200 animate-in fade-in zoom-in-95 space-y-3 text-center"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-              <AlertTriangle size={20} />
-            </div>
+      <Modal
+        isOpen={isClearAllOpen}
+        onClose={() => setIsClearAllOpen(false)}
+        title="Clear All Activity History"
+        maxWidth="sm"
+      >
+        <div className="space-y-4 text-center">
+          <p className="text-sm text-[#4b5870] leading-relaxed">
+            This will permanently delete all {rawLogs.length} audit records. Your sales, expenses, customer accounts, and cash balances will NOT be altered.
+          </p>
 
-            <h3 className="text-sm font-black text-gray-900">Clear All Activity History?</h3>
-
-            <p className="text-xs text-gray-500 leading-relaxed">
-              This will permanently delete all {rawLogs.length} audit records. Your sales, expenses, customer accounts, and cash balances will NOT be altered.
-            </p>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsClearAllOpen(false)}
-                className="flex-1 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmClearAll}
-                className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl cursor-pointer"
-              >
-                Clear All
-              </button>
-            </div>
+          <div className="flex gap-2.5 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsClearAllOpen(false)}
+              className="flex-1 min-h-[47px] h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmClearAll}
+              className="flex-1 min-h-[47px] h-[47px] bg-rose-600 hover:bg-rose-700 text-white font-[750] text-[13px] rounded-[12px] shadow-[0_2px_3px_rgba(225,29,72,0.2)] transition-colors cursor-pointer"
+            >
+              Clear All
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
     </div>
   );

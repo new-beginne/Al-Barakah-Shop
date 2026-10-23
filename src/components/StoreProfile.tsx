@@ -9,6 +9,7 @@ import {
   AlertTriangle, X, Cloud, CloudCheck, HardDrive, Edit3, Check
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { Modal } from './common/Modal';
 
 export function StoreProfile() {
   const { 
@@ -738,102 +739,98 @@ export function StoreProfile() {
       )}
 
       {/* Delete Account Modal */}
-      {isDeleteModalOpen && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setIsDeleteModalOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-3 border border-red-100">
-              <ShieldAlert size={28} strokeWidth={2.5} />
-            </div>
-            <h3 className="font-bold text-xl text-[#182236] mb-1 text-center">Permanently Delete Account</h3>
-            <p className="text-xs text-rose-600 font-semibold mb-5 text-center">Warning: This action cannot be undone</p>
-
-            <div className="space-y-4">
-              <div className="p-3.5 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-900 space-y-1.5">
-                <p className="font-bold">Proceeding will permanently wipe:</p>
-                <ul className="list-disc pl-5 space-y-1 font-medium text-rose-800">
-                  <li>Sales, expenses, dues, MFS & reports</li>
-                  <li>Store profile ({user?.email})</li>
-                  <li>Local IndexedDB offline storage</li>
-                </ul>
-              </div>
-
-              {deleteError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-2">
-                  <AlertCircle size={16} className="text-rose-600 shrink-0" />
-                  <span>{deleteError}</span>
-                </div>
-              )}
-
-              <form id="delete-account-form" onSubmit={handleDeleteAccountSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                    Type <span className="text-rose-600 font-mono font-black">DELETE</span> to confirm:
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={deleteConfirmationText}
-                    onChange={(e) => setDeleteConfirmationText(e.target.value)}
-                    placeholder="DELETE"
-                    className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-mono font-bold text-[#1d2939] focus:bg-white focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 transition-all text-center tracking-wider"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                    Account Password:
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showDeletePassword ? 'text' : 'password'}
-                      required
-                      value={deletePassword}
-                      onChange={(e) => setDeletePassword(e.target.value)}
-                      placeholder="Enter your account password"
-                      className="w-full h-[47px] pl-4 pr-10 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-semibold text-[#1d2939] focus:bg-white focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowDeletePassword(!showDeletePassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                    >
-                      {showDeletePassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    disabled={isDeletingAccount}
-                    onClick={() => setIsDeleteModalOpen(false)}
-                    className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isDeletingAccount}
-                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    {isDeletingAccount ? (
-                      <>
-                        <RefreshCw size={14} className="animate-spin" />
-                        <span>Deleting...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 size={14} />
-                        <span>Delete Account</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+      {/* Delete Account Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => !isDeletingAccount && setIsDeleteModalOpen(false)}
+        title="Delete Store Account"
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          <div className="p-3.5 bg-rose-50 rounded-[12px] border border-rose-200 text-xs text-rose-950 space-y-1.5 font-medium">
+            <p className="font-bold text-rose-900">Proceeding will permanently erase:</p>
+            <ul className="list-disc pl-5 space-y-1 text-[#4b5870]">
+              <li>Sales, expenses, dues, MFS & reports</li>
+              <li>Store profile ({user?.email})</li>
+              <li>Local IndexedDB offline storage</li>
+            </ul>
           </div>
+
+          {deleteError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-[12px] text-xs font-bold flex items-center gap-2">
+              <AlertCircle size={16} className="text-rose-600 shrink-0" />
+              <span>{deleteError}</span>
+            </div>
+          )}
+
+          <form id="delete-account-form" onSubmit={handleDeleteAccountSubmit} className="space-y-4">
+            <div>
+              <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                Type <span className="text-rose-600 font-mono font-black">DELETE</span> to confirm:
+              </label>
+              <input
+                type="text"
+                required
+                value={deleteConfirmationText}
+                onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                placeholder="DELETE"
+                className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-mono font-bold text-[#202b3d] outline-none text-center tracking-wider focus:bg-white focus:border-rose-600 focus:ring-[3px] focus:ring-rose-600/10 transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                Account Password:
+              </label>
+              <div className="relative">
+                <input
+                  type={showDeletePassword ? 'text' : 'password'}
+                  required
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  placeholder="Enter your account password"
+                  className="w-full min-h-[47px] h-[47px] pl-4 pr-10 bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-semibold text-[#202b3d] outline-none focus:bg-white focus:border-rose-600 focus:ring-[3px] focus:ring-rose-600/10 transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowDeletePassword(!showDeletePassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  {showDeletePassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#d8e0e8]/60">
+              <button
+                type="button"
+                disabled={isDeletingAccount}
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="min-h-[49px] h-[49px] px-4 bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] cursor-pointer disabled:opacity-50 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isDeletingAccount}
+                className="min-h-[49px] h-[49px] px-5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-black rounded-[12px] shadow-[0_2px_3px_rgba(225,29,72,0.2)] transition-all cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wide"
+              >
+                {isDeletingAccount ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Delete Account</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
-      )}
+      </Modal>
 
       {/* Auth Modal for Login/Registration */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />

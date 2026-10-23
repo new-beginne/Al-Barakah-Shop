@@ -8,6 +8,7 @@ import {
   ArrowUpRight, ArrowDownLeft, DollarSign, Calendar
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { Modal } from './common/Modal';
 
 interface MfsClosingModalProps {
   isOpen: boolean;
@@ -154,35 +155,13 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
     setConfirmDeleteId(null);
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/65 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden border border-gray-100 max-h-[92vh] flex flex-col">
-        
-        {/* Header */}
-        <div className="bg-[#084b3e] text-white p-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center text-emerald-200">
-              <Calculator size={22} />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black tracking-tight">
-                Daily MFS Closing & SIM Reconciliation
-              </h2>
-              <p className="text-xs text-emerald-100/80">
-                Match Agent SIM balance with physical cash drawer at end of day
-              </p>
-            </div>
-          </div>
-          <button 
-            type="button" 
-            onClick={onClose}
-            className="text-white/70 hover:text-white p-1 rounded-xl transition-colors cursor-pointer"
-          >
-            <X size={22} />
-          </button>
-        </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Daily MFS Closing & Reconciliation"
+      maxWidth="xl"
+    >
 
         {/* Tab Switcher */}
         <div className="flex items-center border-b border-gray-100 bg-gray-50/70 px-5 pt-3">
@@ -441,14 +420,14 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer"
+                    className="min-h-[47px] h-[47px] px-4 bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
                   >
                     Close
                   </button>
                   <button
                     type="submit"
                     disabled={!simBalanceInput}
-                    className="px-6 py-2.5 bg-[#084b3e] hover:bg-[#0c5e4e] text-white rounded-xl text-xs font-extrabold shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    className="min-h-[47px] h-[47px] px-6 bg-[#075e4f] hover:bg-[#064c40] text-white font-[750] text-[13px] rounded-[12px] shadow-[0_2px_3px_rgba(0,0,0,0.12)] flex items-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
                   >
                     <CheckCircle2 size={16} />
                     <span>{saveSuccess ? 'Saved Successfully!' : 'Save Closing Record'}</span>
@@ -537,7 +516,6 @@ export function MfsClosingModal({ isOpen, onClose }: MfsClosingModalProps) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

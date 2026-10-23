@@ -1001,110 +1001,108 @@ export function SalesEntry() {
 
       {/* TRANSACTION DETAILS MODAL */}
       {detailsSale && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 my-8">
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-[#084b3e] to-[#0c5e4e] text-white p-6 relative">
-              <button
-                onClick={() => setDetailsSale(null)}
-                className="absolute top-5 right-5 text-white/80 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors"
-              >
-                <X size={20} />
-              </button>
-              <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold uppercase tracking-wider mb-1">
-                <span>Transaction Details</span>
-                <span>•</span>
-                <span>#{detailsSale.id}</span>
-              </div>
-              <h3 className="text-2xl font-black">{detailsSale.serviceName}</h3>
-              <div className="flex items-center gap-3 mt-2 text-xs font-medium text-white/90">
-                <span className="flex items-center gap-1"><Calendar size={13} /> {formatDateStr(detailsSale.date)}</span>
-                {detailsSale.time && <span className="flex items-center gap-1"><Clock size={13} /> {detailsSale.time}</span>}
-              </div>
-            </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm overflow-y-auto" onClick={() => setDetailsSale(null)}>
+          <div className="w-full max-w-lg p-6 sm:p-7 bg-white border border-[#cdd6e0]/75 rounded-[15px] shadow-[0_12px_32px_rgba(25,40,60,0.07)] max-h-[90vh] overflow-y-auto relative" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setDetailsSale(null)}
+              className="absolute top-5 right-5 p-1.5 text-gray-400 hover:text-[#202b3d] rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <h2 className="text-center font-[750] text-[20px] sm:text-[21px] text-[#202b3d] tracking-[-0.025em] leading-snug mb-1">
+              Transaction Details
+            </h2>
+            <p className="text-center text-xs font-semibold text-[#4b5870] mb-5">
+              #{detailsSale.id} • {detailsSale.serviceName}
+            </p>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-5">
+            <div className="space-y-4">
               {/* Financial Highlight Cards */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-gray-50 p-3.5 rounded-2xl border border-gray-100 text-center">
-                  <span className="text-[11px] font-bold text-gray-400 block uppercase">Total Selling</span>
-                  <span className="text-lg font-black text-gray-900 mt-0.5 block">
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="bg-[#f7f8fa] p-3 rounded-[12px] border border-[#d8e0e8] text-center">
+                  <span className="text-[11px] font-[750] text-[#4b5870] block uppercase tracking-[0.03em]">Selling</span>
+                  <span className="text-base font-black text-[#202b3d] mt-0.5 block">
                     Tk {detailsSale.amount.toLocaleString()}
                   </span>
                 </div>
-                <div className="bg-gray-50 p-3.5 rounded-2xl border border-gray-100 text-center">
-                  <span className="text-[11px] font-bold text-gray-400 block uppercase">Total Cost</span>
-                  <span className="text-lg font-bold text-gray-700 mt-0.5 block">
+                <div className="bg-[#f7f8fa] p-3 rounded-[12px] border border-[#d8e0e8] text-center">
+                  <span className="text-[11px] font-[750] text-[#4b5870] block uppercase tracking-[0.03em]">Cost</span>
+                  <span className="text-base font-bold text-gray-700 mt-0.5 block">
                     Tk {(detailsSale.cost || 0).toLocaleString()}
                   </span>
                 </div>
-                <div className="bg-emerald-50 p-3.5 rounded-2xl border border-emerald-100 text-center">
-                  <span className="text-[11px] font-bold text-emerald-700 block uppercase">Net Profit</span>
-                  <span className="text-lg font-black text-[#084b3e] mt-0.5 block">
+                <div className="bg-emerald-50 p-3 rounded-[12px] border border-emerald-200 text-center">
+                  <span className="text-[11px] font-[750] text-[#075e4f] block uppercase tracking-[0.03em]">Profit</span>
+                  <span className="text-base font-black text-[#075e4f] mt-0.5 block">
                     +Tk {(detailsSale.profit || 0).toLocaleString()}
                   </span>
                 </div>
               </div>
 
               {/* Detailed Breakdown List */}
-              <div className="bg-gray-50/70 rounded-2xl p-4 border border-gray-100 space-y-3 text-sm">
-                <div className="flex justify-between items-center py-1 border-b border-gray-200/60">
-                  <span className="text-gray-500 font-medium flex items-center gap-1.5">
-                    <Layers size={15} className="text-gray-400" /> Quantity
+              <div className="bg-[#f7f8fa] rounded-[12px] p-4 border border-[#d8e0e8] space-y-2.5 text-xs font-medium">
+                <div className="flex justify-between items-center py-1 border-b border-[#d8e0e8]/60">
+                  <span className="text-[#4b5870] flex items-center gap-1.5">
+                    <Calendar size={14} className="text-gray-400" /> Date & Time
                   </span>
-                  <span className="font-bold text-gray-900">{detailsSale.quantity || 1} unit(s)</span>
+                  <span className="font-bold text-[#202b3d]">
+                    {formatDateStr(detailsSale.date)} {detailsSale.time || ''}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center py-1 border-b border-[#d8e0e8]/60">
+                  <span className="text-[#4b5870] flex items-center gap-1.5">
+                    <Layers size={14} className="text-gray-400" /> Quantity
+                  </span>
+                  <span className="font-bold text-[#202b3d]">{detailsSale.quantity || 1} unit(s)</span>
                 </div>
 
                 {detailsSale.unitPrice && (
-                  <div className="flex justify-between items-center py-1 border-b border-gray-200/60">
-                    <span className="text-gray-500 font-medium">Unit Price</span>
-                    <span className="font-bold text-gray-900">Tk {detailsSale.unitPrice.toLocaleString()} / unit</span>
+                  <div className="flex justify-between items-center py-1 border-b border-[#d8e0e8]/60">
+                    <span className="text-[#4b5870]">Unit Price</span>
+                    <span className="font-bold text-[#202b3d]">Tk {detailsSale.unitPrice.toLocaleString()} / unit</span>
                   </div>
                 )}
 
                 {detailsSale.unitCost && (
-                  <div className="flex justify-between items-center py-1 border-b border-gray-200/60">
-                    <span className="text-gray-500 font-medium">Unit Cost</span>
+                  <div className="flex justify-between items-center py-1 border-b border-[#d8e0e8]/60">
+                    <span className="text-[#4b5870]">Unit Cost</span>
                     <span className="font-bold text-gray-700">Tk {detailsSale.unitCost.toLocaleString()} / unit</span>
                   </div>
                 )}
 
-                <div className="flex justify-between items-center py-1 border-b border-gray-200/60">
-                  <span className="text-gray-500 font-medium flex items-center gap-1.5">
-                    <DollarSign size={15} className="text-gray-400" /> Payment Method
+                <div className="flex justify-between items-center py-1 border-b border-[#d8e0e8]/60">
+                  <span className="text-[#4b5870] flex items-center gap-1.5">
+                    <DollarSign size={14} className="text-gray-400" /> Payment Method
                   </span>
-                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${
-                    detailsSale.paymentMethod === 'Cash' ? 'bg-emerald-100 text-emerald-800' :
-                    detailsSale.paymentMethod === 'bKash' ? 'bg-pink-100 text-pink-800' :
-                    detailsSale.paymentMethod === 'Nagad' ? 'bg-orange-100 text-orange-800' :
-                    detailsSale.paymentMethod === 'Rocket' ? 'bg-purple-100 text-purple-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-[8px] bg-white border border-[#d8e0e8] text-[#202b3d]">
                     {detailsSale.paymentMethod}
                   </span>
                 </div>
 
-                <div className="flex justify-between items-center py-1 border-b border-gray-200/60">
-                  <span className="text-gray-500 font-medium flex items-center gap-1.5">
-                    <User size={15} className="text-gray-400" /> Customer Name
+                <div className="flex justify-between items-center py-1 border-b border-[#d8e0e8]/60">
+                  <span className="text-[#4b5870] flex items-center gap-1.5">
+                    <User size={14} className="text-gray-400" /> Customer Name
                   </span>
-                  <span className="font-bold text-gray-900">{detailsSale.customerName || 'Walk-in Customer'}</span>
+                  <span className="font-bold text-[#202b3d]">{detailsSale.customerName || 'Walk-in Customer'}</span>
                 </div>
 
                 {detailsSale.category && (
-                  <div className="flex justify-between items-center py-1 border-b border-gray-200/60">
-                    <span className="text-gray-500 font-medium flex items-center gap-1.5">
-                      <Tag size={15} className="text-gray-400" /> Category
+                  <div className="flex justify-between items-center py-1 border-b border-[#d8e0e8]/60">
+                    <span className="text-[#4b5870] flex items-center gap-1.5">
+                      <Tag size={14} className="text-gray-400" /> Category
                     </span>
-                    <span className="font-medium text-gray-700">{detailsSale.category}</span>
+                    <span className="font-semibold text-gray-700">{detailsSale.category}</span>
                   </div>
                 )}
 
                 {detailsSale.note && (
                   <div className="py-1">
-                    <span className="text-gray-500 font-medium block mb-1">Note:</span>
-                    <p className="bg-white p-2.5 rounded-xl border border-gray-200 text-gray-800 font-medium text-xs">
+                    <span className="text-[#4b5870] block mb-1 font-[750] uppercase text-[11px]">Note</span>
+                    <p className="bg-white p-2.5 rounded-[10px] border border-[#d8e0e8] text-[#202b3d] text-xs">
                       {detailsSale.note}
                     </p>
                   </div>
@@ -1114,24 +1112,27 @@ export function SalesEntry() {
               {/* Action Buttons inside Details */}
               <div className="flex flex-wrap gap-2 pt-2">
                 <button
+                  type="button"
                   onClick={() => handleShareWhatsApp(detailsSale)}
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-sm"
+                  className="flex-1 h-[47px] min-h-[47px] bg-[#075e4f] hover:bg-[#064c40] text-white rounded-[12px] text-[14px] font-[750] transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_2px_3px_rgba(0,0,0,0.12)] active:translate-y-px"
                 >
                   <Share2 size={15} /> WhatsApp
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setReceiptSale(detailsSale);
                   }}
-                  className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 h-[47px] min-h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] rounded-[12px] text-[14px] font-[750] transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <FileText size={15} /> Receipt
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setDeleteTarget(detailsSale);
                   }}
-                  className="py-3 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  className="h-[47px] min-h-[47px] px-4 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-[12px] text-[14px] font-[750] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Trash2 size={15} /> Delete
                 </button>
@@ -1143,25 +1144,27 @@ export function SalesEntry() {
 
       {/* Delete Confirmation Modal */}
       {deleteTarget && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center shadow-xl animate-in fade-in zoom-in-95">
-            <div className="w-14 h-14 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-4 border border-red-100">
-              <AlertCircle size={28} />
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setDeleteTarget(null)}>
+          <div className="w-full max-w-[445px] p-6 sm:p-7 bg-white border border-[#cdd6e0]/75 rounded-[15px] shadow-[0_12px_32px_rgba(25,40,60,0.07)] max-h-[90vh] overflow-y-auto text-center" onClick={(e) => e.stopPropagation()}>
+            <div className="w-14 h-14 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100">
+              <AlertCircle size={26} strokeWidth={2.5} />
             </div>
-            <h3 className="font-bold text-xl text-gray-900 mb-2">Delete Sale?</h3>
-            <p className="text-sm text-gray-500 mb-6">
-              Delete sale of <span className="font-black text-gray-900">Tk {deleteTarget.amount.toLocaleString()}</span> for {deleteTarget.serviceName}?
+            <h3 className="font-[750] text-[20px] sm:text-[21px] text-[#202b3d] tracking-[-0.025em] mb-2">Delete Sale?</h3>
+            <p className="text-sm text-[#4b5870] mb-6 font-medium">
+              Delete sale of <span className="font-bold text-[#202b3d]">Tk {deleteTarget.amount.toLocaleString()}</span> for {deleteTarget.serviceName}?
             </p>
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors text-sm"
+                className="flex-1 h-[49px] min-h-[49px] font-[750] text-[14px] text-[#4b5870] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] hover:bg-[#eef2f5] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleConfirmDelete}
-                className="flex-1 py-2.5 font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors text-sm shadow-sm"
+                className="flex-1 h-[49px] min-h-[49px] font-[750] text-[14px] text-white bg-rose-600 rounded-[12px] hover:bg-rose-700 transition-colors shadow-[0_2px_3px_rgba(225,29,72,0.2)] cursor-pointer active:translate-y-px"
               >
                 Delete
               </button>
@@ -1172,62 +1175,66 @@ export function SalesEntry() {
 
       {/* Receipt Preview Modal */}
       {receiptSale && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95">
-            <div className="flex justify-between items-center pb-3 border-b border-gray-100 mb-4">
-              <div>
-                <h3 className="font-black text-lg text-gray-900">Sale Receipt</h3>
-                <p className="text-xs text-gray-400">#{receiptSale.id}</p>
-              </div>
-              <button
-                onClick={() => setReceiptSale(null)}
-                className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setReceiptSale(null)}>
+          <div className="w-full max-w-[445px] p-6 sm:p-7 bg-white border border-[#cdd6e0]/75 rounded-[15px] shadow-[0_12px_32px_rgba(25,40,60,0.07)] max-h-[90vh] overflow-y-auto relative" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setReceiptSale(null)}
+              className="absolute top-5 right-5 p-1.5 text-gray-400 hover:text-[#202b3d] rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
 
-            <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-xs border border-gray-100 mb-5 font-mono">
+            <h2 className="text-center font-[750] text-[20px] sm:text-[21px] text-[#202b3d] tracking-[-0.025em] leading-snug mb-1">
+              Sale Receipt
+            </h2>
+            <p className="text-center text-xs text-[#4b5870] font-medium mb-5">
+              Receipt #{receiptSale.id}
+            </p>
+
+            <div className="bg-[#f7f8fa] rounded-[12px] p-4 space-y-2.5 text-xs border border-[#d8e0e8] mb-5 font-mono">
               <div className="flex justify-between">
-                <span className="text-gray-500">Date:</span>
-                <span className="font-bold">{receiptSale.date} {receiptSale.time || ''}</span>
+                <span className="text-[#4b5870]">Date:</span>
+                <span className="font-bold text-[#202b3d]">{receiptSale.date} {receiptSale.time || ''}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Service:</span>
-                <span className="font-bold">{receiptSale.serviceName}</span>
+                <span className="text-[#4b5870]">Service:</span>
+                <span className="font-bold text-[#202b3d]">{receiptSale.serviceName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Quantity:</span>
-                <span className="font-bold">{receiptSale.quantity || 1}</span>
+                <span className="text-[#4b5870]">Quantity:</span>
+                <span className="font-bold text-[#202b3d]">{receiptSale.quantity || 1}</span>
               </div>
               {receiptSale.customerName && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Customer:</span>
-                  <span className="font-bold">{receiptSale.customerName}</span>
+                  <span className="text-[#4b5870]">Customer:</span>
+                  <span className="font-bold text-[#202b3d]">{receiptSale.customerName}</span>
                 </div>
               )}
               <div className="flex justify-between">
-                <span className="text-gray-500">Payment:</span>
-                <span className="font-bold">{receiptSale.paymentMethod}</span>
+                <span className="text-[#4b5870]">Payment:</span>
+                <span className="font-bold text-[#202b3d]">{receiptSale.paymentMethod}</span>
               </div>
-              <div className="border-t border-gray-200 pt-2 flex justify-between text-sm">
-                <span className="font-bold text-gray-700">Total:</span>
-                <span className="font-black text-[#084b3e]">Tk {receiptSale.amount.toLocaleString()}</span>
+              <div className="border-t border-[#d8e0e8] pt-2 flex justify-between text-sm">
+                <span className="font-bold text-[#4b5870]">Total:</span>
+                <span className="font-black text-[#075e4f]">Tk {receiptSale.amount.toLocaleString()}</span>
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2.5">
               <button
+                type="button"
                 onClick={() => handleShareWhatsApp(receiptSale)}
-                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                className="flex-1 h-[47px] min-h-[47px] bg-[#075e4f] text-white rounded-[12px] text-[14px] font-[750] hover:bg-[#064c40] transition-colors flex items-center justify-center gap-1.5 shadow-[0_2px_3px_rgba(0,0,0,0.12)] cursor-pointer active:translate-y-px"
               >
-                <Share2 size={14} /> WhatsApp
+                <Share2 size={15} /> WhatsApp
               </button>
               <button
+                type="button"
                 onClick={() => window.print()}
-                className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 transition-colors flex items-center justify-center gap-1.5"
+                className="flex-1 h-[47px] min-h-[47px] bg-[#f7f8fa] text-[#4b5870] hover:text-[#202b3d] border border-[#d8e0e8] rounded-[12px] text-[14px] font-[750] hover:bg-[#eef2f5] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <Printer size={14} /> Print
+                <Printer size={15} /> Print
               </button>
             </div>
           </div>

@@ -24,6 +24,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { MfsClosingModal } from './MfsClosingModal';
+import { Modal } from './common/Modal';
 
 const OPERATORS = ['bKash', 'Nagad', 'Rocket'] as const;
 type OperatorType = typeof OPERATORS[number];
@@ -1121,175 +1122,148 @@ export function MfsLedger() {
       </div>
 
       {/* Adjust Balance Modal */}
-      {isAdjustModalOpen && (
-        <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" 
-          onClick={() => setIsAdjustModalOpen(false)}
-        >
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">
-              Adjust {adjustOperator} Balance
-            </h3>
-            
-            <form onSubmit={handleSaveAdjustment} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Operator
-                </label>
-                <select
-                  value={adjustOperator}
-                  onChange={(e) => {
-                    const newOp = e.target.value as OperatorType;
-                    setAdjustOperator(newOp);
-                    setAdjustNewBalance(balances[newOp].toString());
-                  }}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none cursor-pointer transition-all"
-                >
-                  {OPERATORS.map(op => (
-                    <option key={op} value={op}>{op}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  New Exact Balance (Tk) *
-                </label>
-                <input 
-                  type="number" 
-                  step="any" 
-                  required 
-                  value={adjustNewBalance} 
-                  onChange={e => setAdjustNewBalance(e.target.value)} 
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl font-black text-base text-[#1d2939] outline-none font-mono focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 transition-all" 
-                  autoFocus 
-                />
-                <span className="text-[11px] text-gray-500 font-semibold mt-1.5 block">
-                  Current recorded balance: <strong className="text-gray-900">Tk {balances[adjustOperator].toLocaleString()}</strong>
-                </span>
-              </div>
-              
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Reason for Adjustment
-                </label>
-                <input 
-                  type="text" 
-                  value={adjustNote} 
-                  onChange={e => setAdjustNote(e.target.value)} 
-                  placeholder="e.g. Daily audit correction"
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] outline-none focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 transition-all" 
-                />
-              </div>
-
-              <div className="pt-2">
-                <button 
-                  type="submit" 
-                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
-                >
-                  Update Balance
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={isAdjustModalOpen}
+        onClose={() => setIsAdjustModalOpen(false)}
+        title={`Adjust ${adjustOperator} Balance`}
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveAdjustment} className="space-y-4">
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Operator
+            </label>
+            <select
+              value={adjustOperator}
+              onChange={(e) => {
+                const newOp = e.target.value as OperatorType;
+                setAdjustOperator(newOp);
+                setAdjustNewBalance(balances[newOp].toString());
+              }}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none cursor-pointer transition-all"
+            >
+              {OPERATORS.map(op => (
+                <option key={op} value={op}>{op}</option>
+              ))}
+            </select>
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              New Exact Balance (Tk) *
+            </label>
+            <input 
+              type="number" 
+              step="any" 
+              required 
+              value={adjustNewBalance} 
+              onChange={e => setAdjustNewBalance(e.target.value)} 
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] font-bold text-[15px] text-[#202b3d] outline-none font-mono focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 transition-all" 
+              autoFocus 
+            />
+            <span className="text-[11px] text-[#4b5870] font-semibold mt-1.5 block">
+              Current recorded balance: <strong className="text-[#202b3d]">Tk {balances[adjustOperator].toLocaleString()}</strong>
+            </span>
+          </div>
+          
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Reason for Adjustment
+            </label>
+            <input 
+              type="text" 
+              value={adjustNote} 
+              onChange={e => setAdjustNote(e.target.value)} 
+              placeholder="e.g. Daily audit correction"
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] text-[#202b3d] placeholder:text-[#8b95a3] outline-none focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 transition-all" 
+            />
+          </div>
+
+          <div className="pt-2">
+            <button 
+              type="submit" 
+              className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white font-[750] text-[14px] rounded-[12px] shadow-[0_2px_3px_rgba(0,0,0,0.12)] transition-all cursor-pointer flex items-center justify-center"
+            >
+              Update Balance
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Delete Confirmation Modal */}
-      {deleteTarget && (
-        <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" 
-          onClick={() => setDeleteTarget(null)}
-        >
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-2 border border-red-100">
-              <AlertTriangle size={28} strokeWidth={2.5} />
-            </div>
-            <h3 className="font-bold text-xl text-[#182236]">Delete Transaction?</h3>
-            <p className="text-sm text-gray-500 font-medium">
-              This will delete the {deleteTarget.operator} {deleteTarget.type} transaction of <span className="font-bold text-gray-900 font-mono">Tk {deleteTarget.amount.toLocaleString()}</span> and automatically revert account balances.
+      <Modal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Transaction"
+        maxWidth="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-[#4b5870] leading-relaxed">
+              This will delete the {deleteTarget.operator} {deleteTarget.type} transaction of <span className="font-bold text-[#202b3d] font-mono">Tk {deleteTarget.amount.toLocaleString()}</span> and automatically revert account balances.
             </p>
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2.5 pt-2">
               <button 
                 type="button"
                 onClick={() => setDeleteTarget(null)} 
-                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button 
                 type="button"
                 onClick={handleConfirmDelete} 
-                className="flex-1 py-3 font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors shadow-sm cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-rose-600 hover:bg-rose-700 text-white font-[750] text-[13px] rounded-[12px] shadow-[0_2px_3px_rgba(225,29,72,0.2)] transition-colors cursor-pointer"
               >
                 Yes, Delete
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
-      {/* Transaction Details Modal (Matching main Reports tab transaction modal) */}
-      {selectedTransaction && (() => {
-        const tx = selectedTransaction;
-        const recipientPhone = tx.recipientNumber?.trim() || '';
-        const matchedCustomer = recipientPhone
-          ? customers.find(c => c.phone?.trim() === recipientPhone || (c.name && recipientPhone.toLowerCase() === c.name.toLowerCase().trim()))
-          : null;
+      {/* Transaction Details Modal */}
+      <Modal
+        isOpen={!!selectedTransaction}
+        onClose={() => setSelectedTransaction(null)}
+        title={selectedTransaction ? `${selectedTransaction.operator} (${selectedTransaction.type})` : 'Transaction Details'}
+        maxWidth="md"
+      >
+        {selectedTransaction && (() => {
+          const tx = selectedTransaction;
+          const recipientPhone = tx.recipientNumber?.trim() || '';
+          const matchedCustomer = recipientPhone
+            ? customers.find(c => c.phone?.trim() === recipientPhone || (c.name && recipientPhone.toLowerCase() === c.name.toLowerCase().trim()))
+            : null;
 
-        const customerName = matchedCustomer?.name || (recipientPhone ? 'Recipient' : '');
+          const customerName = matchedCustomer?.name || (recipientPhone ? 'Recipient' : '');
 
-        return (
-          <div 
-            className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
-            onClick={() => setSelectedTransaction(null)}
-          >
-            <div 
-              className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150"
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div className="flex items-start justify-between pb-4 border-b border-gray-100 mb-4">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                      MFS RECORD
-                    </span>
-                    <span className="text-xs text-gray-400 font-bold">#{tx.id}</span>
-                  </div>
-                  <h3 className="text-xl font-black text-gray-900">
-                    {tx.operator} ({tx.type})
-                  </h3>
-                </div>
-                <button 
-                  type="button"
-                  onClick={() => setSelectedTransaction(null)} 
-                  className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                >
-                  <X size={20} />
-                </button>
+          return (
+            <div className="space-y-4">
+              <div className="text-center -mt-3 mb-2">
+                <span className="text-xs font-semibold text-gray-500">Record #{tx.id}</span>
               </div>
 
               {/* Customer / Recipient Banner if Available */}
               {(customerName || recipientPhone) && (
-                <div className="bg-gray-50 rounded-xl p-3.5 mb-4 border border-gray-100 flex items-center justify-between">
+                <div className="bg-[#f7f8fa] rounded-[12px] p-3 border border-[#d8e0e8] flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-[#084b3e] flex items-center justify-center font-bold">
-                      <User size={16} />
+                    <div className="w-8 h-8 rounded-full bg-[#075e4f]/10 text-[#075e4f] flex items-center justify-center font-bold">
+                      <User size={15} />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-gray-900">{customerName || recipientPhone}</p>
+                      <p className="text-xs font-bold text-[#202b3d]">{customerName || recipientPhone}</p>
                       {recipientPhone && (
-                        <p className="text-[11px] text-gray-500 font-mono">{recipientPhone}</p>
+                        <p className="text-[11px] text-[#4b5870] font-mono">{recipientPhone}</p>
                       )}
                     </div>
                   </div>
                   {matchedCustomer ? (
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                    <span className="text-[10px] font-bold text-[#075e4f] bg-[#075e4f]/10 px-2 py-0.5 rounded-[6px] border border-[#075e4f]/20">
                       Registered
                     </span>
                   ) : (
-                    <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-bold text-[#4b5870] bg-gray-200/60 px-2 py-0.5 rounded-[6px]">
                       Recipient
                     </span>
                   )}
@@ -1297,63 +1271,63 @@ export function MfsLedger() {
               )}
 
               {/* Key Financial Cards */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-100 text-center">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="bg-[#f7f8fa] p-3 rounded-[12px] border border-[#d8e0e8] text-center">
                   <span className="text-[11px] font-bold text-gray-400 uppercase block">Amount</span>
-                  <span className="text-xl font-black text-gray-900 mt-0.5 block font-mono">
+                  <span className="text-xl font-black text-[#202b3d] mt-0.5 block font-mono">
                     Tk {tx.amount?.toLocaleString()}
                   </span>
                 </div>
-                <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-100 text-center">
-                  <span className="text-[11px] font-bold text-emerald-700 uppercase block">Profit</span>
-                  <span className={`text-xl font-black mt-0.5 block font-mono ${(tx.profit || 0) >= 0 ? 'text-[#084b3e]' : 'text-rose-600'}`}>
+                <div className="bg-[#075e4f]/5 p-3 rounded-[12px] border border-[#075e4f]/20 text-center">
+                  <span className="text-[11px] font-bold text-[#075e4f] uppercase block">Profit</span>
+                  <span className={`text-xl font-black mt-0.5 block font-mono ${(tx.profit || 0) >= 0 ? 'text-[#075e4f]' : 'text-rose-600'}`}>
                     {(tx.profit || 0) >= 0 ? '+Tk ' : '-Tk '}{Math.abs(tx.profit || 0).toLocaleString()}
                   </span>
                 </div>
               </div>
 
-              {/* Details List (Matching Reports Tab Card) */}
-              <div className="space-y-2.5 text-xs text-gray-600 mb-6 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
-                <div className="flex justify-between py-1 border-b border-gray-100">
-                  <span className="font-bold text-gray-400 uppercase">Date & Time</span>
-                  <span className="font-extrabold text-gray-900 font-mono">
+              {/* Details List */}
+              <div className="bg-[#f7f8fa] rounded-[12px] p-3.5 border border-[#d8e0e8] divide-y divide-gray-200/60 text-xs">
+                <div className="flex justify-between py-2">
+                  <span className="text-[#4b5870] font-semibold">Date & Time</span>
+                  <span className="font-bold text-[#202b3d] font-mono">
                     {formatDateStr(tx.date)} {tx.time ? `• ${tx.time}` : ''}
                   </span>
                 </div>
 
-                <div className="flex justify-between py-1 border-b border-gray-100">
-                  <span className="font-bold text-gray-400 uppercase">Operator</span>
-                  <span className="font-extrabold text-gray-900">{tx.operator}</span>
+                <div className="flex justify-between py-2">
+                  <span className="text-[#4b5870] font-semibold">Operator</span>
+                  <span className="font-bold text-[#202b3d]">{tx.operator}</span>
                 </div>
 
-                <div className="flex justify-between py-1 border-b border-gray-100">
-                  <span className="font-bold text-gray-400 uppercase">Type</span>
-                  <span className="font-extrabold text-gray-900">{tx.type}</span>
+                <div className="flex justify-between py-2">
+                  <span className="text-[#4b5870] font-semibold">Type</span>
+                  <span className="font-bold text-[#202b3d]">{tx.type}</span>
                 </div>
 
-                <div className="flex justify-between py-1 border-b border-gray-100">
-                  <span className="font-bold text-gray-400 uppercase">Charge / Fee</span>
-                  <span className="font-extrabold text-gray-900 font-mono">Tk {tx.charge || 0}</span>
+                <div className="flex justify-between py-2">
+                  <span className="text-[#4b5870] font-semibold">Charge / Fee</span>
+                  <span className="font-bold text-[#202b3d] font-mono">Tk {tx.charge || 0}</span>
                 </div>
 
                 {tx.isDue && (
                   <>
-                    <div className="flex justify-between py-1 border-b border-amber-200 bg-amber-50/60 px-2 rounded-lg">
+                    <div className="flex justify-between py-2 bg-amber-50/60 px-2 rounded-lg border border-amber-200/60 my-1">
                       <span className="font-bold text-amber-900 uppercase">Customer Due</span>
                       <span className="font-black text-amber-900 font-mono">
                         Tk {(tx.dueAmount || 0).toLocaleString()}
                       </span>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-gray-100">
-                      <span className="font-bold text-gray-400 uppercase">Cash Paid</span>
-                      <span className="font-extrabold text-gray-900 font-mono">
+                    <div className="flex justify-between py-2">
+                      <span className="text-[#4b5870] font-semibold">Cash Paid</span>
+                      <span className="font-bold text-[#202b3d] font-mono">
                         Tk {(tx.paidAmount || 0).toLocaleString()}
                       </span>
                     </div>
                     {tx.customerName && (
-                      <div className="flex justify-between py-1 border-b border-gray-100">
-                        <span className="font-bold text-gray-400 uppercase">Customer</span>
-                        <span className="font-extrabold text-gray-900">
+                      <div className="flex justify-between py-2">
+                        <span className="text-[#4b5870] font-semibold">Customer</span>
+                        <span className="font-bold text-[#202b3d]">
                           {tx.customerName} {tx.customerPhone ? `(${tx.customerPhone})` : ''}
                         </span>
                       </div>
@@ -1361,17 +1335,17 @@ export function MfsLedger() {
                   </>
                 )}
 
-                <div className="flex justify-between py-1 border-b border-gray-100">
-                  <span className="font-bold text-gray-400 uppercase">Wallet Balance After</span>
-                  <span className="font-extrabold text-[#084b3e] font-mono">
+                <div className="flex justify-between py-2">
+                  <span className="text-[#4b5870] font-semibold">Wallet Balance After</span>
+                  <span className="font-bold text-[#075e4f] font-mono">
                     Tk {(tx.balanceAfter || 0).toLocaleString()}
                   </span>
                 </div>
 
                 {tx.note && (
-                  <div className="flex justify-between py-1">
-                    <span className="font-bold text-gray-400 uppercase">Note</span>
-                    <span className="font-extrabold text-gray-900 max-w-[200px] text-right truncate">
+                  <div className="flex justify-between py-2">
+                    <span className="text-[#4b5870] font-semibold">Note</span>
+                    <span className="font-bold text-[#202b3d] max-w-[200px] text-right truncate">
                       {tx.note}
                     </span>
                   </div>
@@ -1379,7 +1353,7 @@ export function MfsLedger() {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -1387,23 +1361,23 @@ export function MfsLedger() {
                     setSelectedTransaction(null);
                     setDeleteTarget(target);
                   }}
-                  className="p-3 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                  className="min-h-[47px] h-[47px] px-4 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-[12px] text-[13px] font-[750] transition-colors cursor-pointer"
                   title="Delete transaction"
                 >
-                  <Trash2 size={18} />
+                  <Trash2 size={16} />
                 </button>
                 <button 
                   type="button"
                   onClick={() => setSelectedTransaction(null)} 
-                  className="flex-1 bg-[#084b3e] hover:bg-[#0c5e4e] text-white font-bold py-3 rounded-xl transition-colors shadow-sm cursor-pointer text-center"
+                  className="flex-1 min-h-[47px] h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[14px] rounded-[12px] transition-colors cursor-pointer text-center"
                 >
                   Close
                 </button>
               </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
+      </Modal>
     </div>
   );
 }

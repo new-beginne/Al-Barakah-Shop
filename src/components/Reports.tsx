@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { generateStatementPdf, printStatement } from '../utils/pdfExport';
 import { formatDateStr } from '../utils/dateFormatter';
+import { Modal } from './common/Modal';
 
 export function Reports() {
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -517,78 +518,68 @@ export function Reports() {
       </div>
 
       {/* Transaction Details Modal */}
-      {selectedTx && (
-        <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4"
-          onClick={() => setSelectedTx(null)}
-        >
-          <div 
-            className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-xl border border-gray-100"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-3">
-              <div>
-                <h3 className="text-base font-bold text-gray-900">{selectedTx.title}</h3>
-                <p className="text-xs text-gray-400">{selectedTx.typeLabel} #{selectedTx.originalId}</p>
-              </div>
-              <button
-                onClick={() => setSelectedTx(null)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
-              >
-                <X size={18} />
-              </button>
+      <Modal
+        isOpen={!!selectedTx}
+        onClose={() => setSelectedTx(null)}
+        title={selectedTx ? `${selectedTx.typeLabel} Details` : 'Transaction Details'}
+        maxWidth="sm"
+      >
+        {selectedTx && (
+          <div className="space-y-4">
+            <div className="text-center pb-2 border-b border-[#d8e0e8]/60">
+              <h4 className="font-bold text-[15px] text-[#202b3d]">{selectedTx.title}</h4>
+              <p className="text-[12px] font-semibold text-[#8b95a3]">{selectedTx.typeLabel} #{selectedTx.originalId}</p>
             </div>
 
-            {/* List */}
-            <div className="space-y-2 text-xs text-gray-600 mb-4">
-              <div className="flex justify-between py-1 border-b border-gray-50">
-                <span className="text-gray-400">Date</span>
-                <span className="font-semibold text-gray-900">{formatDateStr(selectedTx.date)} {selectedTx.time || ''}</span>
+            <div className="bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] p-3 text-[13px] space-y-2">
+              <div className="flex justify-between py-1 border-b border-[#d8e0e8]/50">
+                <span className="text-[#8b95a3]">Date</span>
+                <span className="font-semibold text-[#202b3d]">{formatDateStr(selectedTx.date)} {selectedTx.time || ''}</span>
               </div>
               {selectedTx.customerName && (
-                <div className="flex justify-between py-1 border-b border-gray-50">
-                  <span className="text-gray-400">Customer</span>
-                  <span className="font-semibold text-gray-900">{selectedTx.customerName}</span>
+                <div className="flex justify-between py-1 border-b border-[#d8e0e8]/50">
+                  <span className="text-[#8b95a3]">Customer</span>
+                  <span className="font-semibold text-[#202b3d]">{selectedTx.customerName}</span>
                 </div>
               )}
-              <div className="flex justify-between py-1 border-b border-gray-50">
-                <span className="text-gray-400">Method</span>
-                <span className="font-semibold text-gray-900">{selectedTx.paymentMethod}</span>
+              <div className="flex justify-between py-1 border-b border-[#d8e0e8]/50">
+                <span className="text-[#8b95a3]">Method</span>
+                <span className="font-semibold text-[#202b3d]">{selectedTx.paymentMethod}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-gray-50">
-                <span className="text-gray-400">Amount</span>
-                <span className="font-bold text-gray-900">Tk {selectedTx.amount?.toLocaleString()}</span>
+              <div className="flex justify-between py-1 border-b border-[#d8e0e8]/50">
+                <span className="text-[#8b95a3]">Amount</span>
+                <span className="font-bold text-[#202b3d]">Tk {selectedTx.amount?.toLocaleString()}</span>
               </div>
               {selectedTx.type === 'sale' && (
-                <div className="flex justify-between py-1 border-b border-gray-50">
-                  <span className="text-gray-400">Cost</span>
-                  <span className="font-semibold text-gray-900">Tk {selectedTx.cost?.toLocaleString()}</span>
+                <div className="flex justify-between py-1 border-b border-[#d8e0e8]/50">
+                  <span className="text-[#8b95a3]">Cost</span>
+                  <span className="font-semibold text-[#202b3d]">Tk {selectedTx.cost?.toLocaleString()}</span>
                 </div>
               )}
-              <div className="flex justify-between py-1 border-b border-gray-50">
-                <span className="text-gray-400">Profit</span>
-                <span className={`font-bold ${selectedTx.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              <div className="flex justify-between py-1 border-b border-[#d8e0e8]/50">
+                <span className="text-[#8b95a3]">Profit</span>
+                <span className={`font-bold ${selectedTx.profit >= 0 ? 'text-[#075e4f]' : 'text-rose-600'}`}>
                   {selectedTx.profit >= 0 ? '+Tk ' : '-Tk '}{Math.abs(selectedTx.profit || 0).toLocaleString()}
                 </span>
               </div>
               {selectedTx.subtitle && (
                 <div className="flex justify-between py-1">
-                  <span className="text-gray-400">Note</span>
-                  <span className="text-gray-800">{selectedTx.subtitle}</span>
+                  <span className="text-[#8b95a3]">Note</span>
+                  <span className="text-[#202b3d] font-medium">{selectedTx.subtitle}</span>
                 </div>
               )}
             </div>
 
             <button
+              type="button"
               onClick={() => setSelectedTx(null)}
-              className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+              className="w-full min-h-[45px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-all cursor-pointer"
             >
               Close
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Universal Minimal Modal Demo</title>
+  <style>
+    :root {
+      --green: #075e4f;
+      --green-hover: #064c40;
+      --text: #202b3d;
+      --label: #4b5870;
+      --border: #d8e0e8;
+      --field-bg: #f7f8fa;
+      --page-bg: #f0f3f5;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px 14px;
+      display: grid;
+      place-items: center;
+      background: var(--page-bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .modal {
+      width: min(100%, 445px);
+      padding: 28px 25px 24px;
+      background: #fff;
+      border: 1px solid rgba(205, 214, 224, .75);
+      border-radius: 15px;
+      box-shadow: 0 12px 32px rgba(25, 40, 60, .07);
+    }
+
+    .modal-title {
+      margin: 0 0 24px;
+      text-align: center;
+      color: var(--text);
+      font-size: 21px;
+      line-height: 1.35;
+      font-weight: 750;
+      letter-spacing: -.025em;
+    }
+
+    .field { margin-bottom: 17px; }
+
+    .field-label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--label);
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .control {
+      display: block;
+      width: 100%;
+      min-height: 47px;
+      padding: 12px 15px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--field-bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+
+    .control::placeholder { color: #8b95a3; opacity: 1; }
+
+    .control:focus {
+      border-color: var(--green);
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(7, 94, 79, .09);
+    }
+
+    textarea.control {
+      min-height: 76px;
+      resize: vertical;
+    }
+
+    .submit {
+      width: 100%;
+      min-height: 49px;
+      margin-top: 6px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--green);
+      color: #fff;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 750;
+      cursor: pointer;
+      box-shadow: 0 2px 3px rgba(0, 0, 0, .12);
+      transition: background .16s ease, transform .16s ease;
+    }
+
+    .submit:hover { background: var(--green-hover); }
+    .submit:active { transform: translateY(1px); }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translate(-50%, 12px);
+      padding: 11px 16px;
+      border-radius: 10px;
+      background: #172b27;
+      color: #fff;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: .2s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    @media (max-width: 480px) {
+      .modal { padding: 25px 19px 20px; }
+      .modal-title { font-size: 20px; margin-bottom: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="modal" aria-labelledby="modal-title">
+    <h1 class="modal-title" id="modal-title">Here Is Demo Text</h1>
+
+    <form id="demo-form">
+      <div class="field">
+        <label class="field-label" for="demo-one">Demo Field One *</label>
+        <input class="control" id="demo-one" type="text"
+               placeholder="Enter demo text here" required autofocus>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="demo-two">Demo Field Two</label>
+        <input class="control" id="demo-two" type="text"
+               placeholder="Type something here">
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="demo-three">Demo Field Three (Optional)</label>
+        <input class="control" id="demo-three" type="text"
+               placeholder="Enter another demo value">
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="demo-four">Additional Details (Optional)</label>
+        <textarea class="control" id="demo-four"
+                  placeholder="Write any demo notes here"></textarea>
+      </div>
+
+      <button class="submit" type="submit">Submit Demo</button>
+    </form>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    Demo submitted — no data was saved.
+  </div>
+
+  <script>
+    const form = document.getElementById("demo-form");
+    const toast = document.getElementById("toast");
+    let toastTimer;
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2500);
+    });
+  </script>
+</body>
+</html>

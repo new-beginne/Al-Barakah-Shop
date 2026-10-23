@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { 
-  X, Store, Phone, Lock, Cloud, CloudOff, RefreshCw, 
+  Store, Phone, Lock, Cloud, CloudOff, RefreshCw, 
   LogOut, CheckCircle2, AlertCircle, ShieldCheck, UserCheck, Smartphone, ExternalLink, KeyRound
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { Modal } from './common/Modal';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -86,40 +87,13 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[92vh]">
-        
-        {/* Header */}
-        <div className="bg-[#084b3e] text-white p-5 flex items-center justify-between relative overflow-hidden">
-          <div className="flex items-center gap-3 z-10">
-            <div className="bg-white p-1 rounded-2xl shrink-0 shadow-sm border border-emerald-300/30 flex items-center justify-center">
-              <img 
-                src="/logo.png?v=2" 
-                alt="Al-Barakah Logo" 
-                className="w-10 h-10 object-contain rounded-full"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-lg tracking-wide">
-                {user ? 'Store Profile & Cloud Sync' : 'User Profile & Login'}
-              </h3>
-              <p className="text-xs text-emerald-100/80">
-                {user ? (profile?.storeName || 'Al-Barakah Digital') : 'Cloud Backup & Multi-Device Access'}
-              </p>
-            </div>
-          </div>
-          <button 
-            type="button"
-            onClick={onClose} 
-            className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors z-10"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Content Body */}
-        <div className="p-6 overflow-y-auto space-y-5">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={user ? 'Store Profile & Cloud Sync' : (tab === 'login' ? 'Store Account Login' : 'Create Store Account')}
+      maxWidth="md"
+    >
+      <div className="space-y-4">
           
           {/* Messages */}
           {errorMessage && (
@@ -239,17 +213,17 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
             /* Logged Out: Login or Register Tabs */
             <div className="space-y-4">
               {/* Tab selector */}
-              <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-xl">
+              <div className="grid grid-cols-2 p-1 bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px]">
                 <button
                   type="button"
                   onClick={() => {
                     setTab('login');
                     setErrorMessage('');
                   }}
-                  className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                  className={`py-2 text-xs font-[750] rounded-[9px] transition-all cursor-pointer ${
                     tab === 'login' 
-                      ? 'bg-white text-[#084b3e] shadow-sm' 
-                      : 'text-gray-500 hover:text-gray-900'
+                      ? 'bg-[#075e4f] text-white shadow-xs' 
+                      : 'text-[#4b5870] hover:text-[#202b3d]'
                   }`}
                 >
                   Login
@@ -260,10 +234,10 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                     setTab('register');
                     setErrorMessage('');
                   }}
-                  className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                  className={`py-2 text-xs font-[750] rounded-[9px] transition-all cursor-pointer ${
                     tab === 'register' 
-                      ? 'bg-white text-[#084b3e] shadow-sm' 
-                      : 'text-gray-500 hover:text-gray-900'
+                      ? 'bg-[#075e4f] text-white shadow-xs' 
+                      : 'text-[#4b5870] hover:text-[#202b3d]'
                   }`}
                 >
                   Create Account (Register)
@@ -271,10 +245,10 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
               </div>
 
               {/* Offline-first Assurance */}
-              <div className="bg-emerald-50/80 border border-emerald-200/80 p-3 rounded-xl flex items-start gap-2 text-xs text-emerald-900">
-                <ShieldCheck size={16} className="text-emerald-700 shrink-0 mt-0.5" />
+              <div className="bg-emerald-50/80 border border-emerald-200/80 p-3 rounded-[12px] flex items-start gap-2 text-xs text-emerald-900 font-medium">
+                <ShieldCheck size={16} className="text-[#075e4f] shrink-0 mt-0.5" />
                 <span>
-                  Data is first saved offline in your device&apos;s <strong>IndexedDB</strong>. As soon as you are connected to the internet, it automatically syncs with the secure Cloud Firestore.
+                  Data is first saved offline in your device's <strong>IndexedDB</strong>. When connected to the internet, it automatically syncs with secure Cloud Firestore.
                 </span>
               </div>
 
@@ -282,35 +256,35 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 /* Login Form */
                 <form onSubmit={handleLogin} className="space-y-3.5">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
                       Phone Number
                     </label>
                     <div className="relative">
-                      <Phone size={16} className="absolute left-3.5 top-3 text-gray-400" />
+                      <Phone size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input
                         type="tel"
                         required
                         placeholder="017xxxxxxxx"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        className="w-full pl-10 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none font-medium"
+                        className="w-full min-h-[47px] h-[47px] pl-10 pr-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] placeholder:text-[#8b95a3] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
                       Password
                     </label>
                     <div className="relative">
-                      <Lock size={16} className="absolute left-3.5 top-3 text-gray-400" />
+                      <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input
                         type="password"
                         required
                         placeholder="Enter password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pl-10 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                        className="w-full min-h-[47px] h-[47px] pl-10 pr-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] placeholder:text-[#8b95a3] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
                       />
                     </div>
                   </div>
@@ -318,7 +292,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full py-3 bg-[#084b3e] text-white rounded-xl text-sm font-bold shadow-md hover:bg-[#0c5e4e] transition-all disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
+                    className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white font-[750] text-[14px] rounded-[12px] shadow-[0_2px_3px_rgba(0,0,0,0.12)] transition-all cursor-pointer flex items-center justify-center gap-2 mt-3 disabled:opacity-50"
                   >
                     {loading ? (
                       <>
@@ -334,69 +308,69 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 /* Register Form */
                 <form onSubmit={handleRegister} className="space-y-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
                       Store Name
                     </label>
                     <div className="relative">
-                      <Store size={16} className="absolute left-3.5 top-3 text-gray-400" />
+                      <Store size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input
                         type="text"
                         required
                         placeholder="e.g. Al-Barakah Digital Studio"
                         value={storeName}
                         onChange={(e) => setStoreName(e.target.value)}
-                        className="w-full pl-10 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none font-medium"
+                        className="w-full min-h-[47px] h-[47px] pl-10 pr-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] placeholder:text-[#8b95a3] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
                       Phone Number
                     </label>
                     <div className="relative">
-                      <Phone size={16} className="absolute left-3.5 top-3 text-gray-400" />
+                      <Phone size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input
                         type="tel"
                         required
                         placeholder="017xxxxxxxx"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        className="w-full pl-10 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none font-medium"
+                        className="w-full min-h-[47px] h-[47px] pl-10 pr-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] placeholder:text-[#8b95a3] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
                       Password (min 6 chars)
                     </label>
                     <div className="relative">
-                      <Lock size={16} className="absolute left-3.5 top-3 text-gray-400" />
+                      <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input
                         type="password"
                         required
                         placeholder="Enter password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pl-10 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                        className="w-full min-h-[47px] h-[47px] pl-10 pr-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] placeholder:text-[#8b95a3] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
                       Confirm Password
                     </label>
                     <div className="relative">
-                      <Lock size={16} className="absolute left-3.5 top-3 text-gray-400" />
+                      <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input
                         type="password"
                         required
                         placeholder="Re-enter password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full pl-10 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#084b3e]/20 focus:border-[#084b3e] outline-none"
+                        className="w-full min-h-[47px] h-[47px] pl-10 pr-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] placeholder:text-[#8b95a3] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
                       />
                     </div>
                   </div>
@@ -404,7 +378,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full py-3 bg-[#084b3e] text-white rounded-xl text-sm font-bold shadow-md hover:bg-[#0c5e4e] transition-all disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
+                    className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white font-[750] text-[14px] rounded-[12px] shadow-[0_2px_3px_rgba(0,0,0,0.12)] transition-all cursor-pointer flex items-center justify-center gap-2 mt-3 disabled:opacity-50"
                   >
                     {loading ? (
                       <>
@@ -419,21 +393,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
               )}
             </div>
           )}
-
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            Close
-          </button>
-        </div>
-
       </div>
-    </div>
+    </Modal>
   );
 }

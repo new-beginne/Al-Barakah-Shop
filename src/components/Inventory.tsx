@@ -14,6 +14,7 @@ import {
   Trash2, DollarSign, Check, Loader2, ArrowUpDown, Zap,
   PlusCircle, MinusCircle, Banknote, Smartphone, HandCoins, FileText
 } from 'lucide-react';
+import { Modal } from './common/Modal';
 
 const CATEGORIES: InventoryCategory[] = [
   'Photo Paper',
@@ -702,18 +703,12 @@ export function Inventory() {
       </div>
 
       {/* ADD / EDIT MATERIAL MODAL */}
-      {isAddModalOpen && (
-        <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
-          onClick={closeFormModal}
-        >
-          <div 
-            className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">
-              {editingItem ? 'Edit Item' : 'Add New Item'}
-            </h3>
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={closeFormModal}
+        title={editingItem ? 'Edit Item' : 'Add New Item'}
+        maxWidth="lg"
+      >
 
             <form onSubmit={handleSaveItem} className="space-y-4">
               <div>
@@ -994,28 +989,26 @@ export function Inventory() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
+                  className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white font-[750] text-[14px] rounded-[12px] shadow-[0_2px_3px_rgba(0,0,0,0.12)] transition-all cursor-pointer flex items-center justify-center"
                 >
                   {editingItem ? 'Save Changes' : 'Add Item'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* RESTOCK MODAL */}
-      {restockItem && (
-        <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
-          onClick={() => setRestockItem(null)}
-        >
-          <div 
-            className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="font-bold text-xl text-[#182236] mb-1 text-center">Restock Item</h3>
-            <p className="text-center text-xs text-gray-500 font-semibold mb-5">{restockItem.name}</p>
+      <Modal
+        isOpen={!!restockItem}
+        onClose={() => setRestockItem(null)}
+        title="Restock Item"
+        maxWidth="lg"
+      >
+        {restockItem && (
+          <div className="space-y-4">
+            <div className="text-center -mt-3 mb-2">
+              <span className="text-xs font-semibold text-gray-500">{restockItem.name}</span>
+            </div>
 
             <form onSubmit={handleSaveRestock} className="space-y-4">
               {/* Allow switching item being restocked if user desires */}
@@ -1253,117 +1246,110 @@ export function Inventory() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
+                  className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white font-[750] text-[14px] rounded-[12px] shadow-[0_2px_3px_rgba(0,0,0,0.12)] transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
                 >
                   Confirm Restock
                 </button>
               </div>
             </form>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* CONSUME / USE MODAL */}
-      {consumeItem && (
-        <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
-          onClick={() => setConsumeItem(null)}
-        >
-          <div 
-            className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="font-bold text-xl text-[#182236] mb-1 text-center">Use / Deduct Stock</h3>
-            <p className="text-center text-xs text-gray-500 font-semibold mb-5">{consumeItem.name}</p>
+      <Modal
+        isOpen={!!consumeItem}
+        onClose={() => setConsumeItem(null)}
+        title="Use / Deduct Stock"
+        maxWidth="md"
+      >
+        {consumeItem && (
+          <form onSubmit={handleSaveConsume} className="space-y-4">
+            <div className="text-center -mt-3 mb-2">
+              <span className="text-xs font-semibold text-gray-500">{consumeItem.name}</span>
+            </div>
 
-            <form onSubmit={handleSaveConsume} className="space-y-4">
-              <div className="p-3 bg-[#f8f9fa] rounded-xl border border-[#dce1e7] text-xs text-gray-800 flex justify-between items-center">
-                <span className="font-medium text-gray-600">In Stock:</span>
-                <strong className="text-[#075b4d] font-black text-sm">{consumeItem.currentStock} {consumeItem.unit}</strong>
-              </div>
+            <div className="p-3.5 bg-[#f7f8fa] rounded-[12px] border border-[#d8e0e8] text-xs flex justify-between items-center">
+              <span className="font-semibold text-[#4b5870]">In Stock:</span>
+              <strong className="text-[#075e4f] font-black text-sm">{consumeItem.currentStock} {consumeItem.unit}</strong>
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Quantity Used ({consumeItem.unit}) *
-                </label>
-                <input
-                  type="number"
-                  value={consumeQty}
-                  onChange={(e) => setConsumeQty(e.target.value)}
-                  placeholder="e.g. 10"
-                  min="1"
-                  max={consumeItem.currentStock}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all font-mono"
-                  required
-                  autoFocus
-                />
-              </div>
+            <div>
+              <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                Quantity Used ({consumeItem.unit}) *
+              </label>
+              <input
+                type="number"
+                value={consumeQty}
+                onChange={(e) => setConsumeQty(e.target.value)}
+                placeholder="e.g. 10"
+                min="1"
+                max={consumeItem.currentStock}
+                className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[15px] font-bold text-[#202b3d] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
+                required
+                autoFocus
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Reason
-                </label>
-                <select
-                  value={consumeReason}
-                  onChange={(e) => setConsumeReason(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none cursor-pointer transition-all"
-                >
-                  <option value="Customer Print">Customer Print</option>
-                  <option value="Photocopy">Photocopy</option>
-                  <option value="Damaged / Jam">Damaged / Jam</option>
-                  <option value="Internal Studio Use">Internal Studio Use</option>
-                </select>
-              </div>
+            <div>
+              <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                Reason
+              </label>
+              <select
+                value={consumeReason}
+                onChange={(e) => setConsumeReason(e.target.value)}
+                className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] text-[#202b3d] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none cursor-pointer transition-all"
+              >
+                <option value="Customer Print">Customer Print</option>
+                <option value="Photocopy">Photocopy</option>
+                <option value="Damaged / Jam">Damaged / Jam</option>
+                <option value="Internal Studio Use">Internal Studio Use</option>
+              </select>
+            </div>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full h-[49px] bg-amber-700 hover:bg-amber-800 text-white font-bold text-sm rounded-xl shadow-sm transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
-                >
-                  Confirm Deduction
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <div className="pt-2">
+              <button
+                type="submit"
+                className="w-full min-h-[49px] h-[49px] bg-amber-700 hover:bg-amber-800 text-white font-[750] text-[14px] rounded-[12px] shadow-[0_2px_3px_rgba(180,83,9,0.2)] transition-all cursor-pointer active:translate-y-px flex items-center justify-center"
+              >
+                Confirm Deduction
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* DELETE CONFIRMATION MODAL */}
-      {deleteTarget && (
-        <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
-          onClick={() => setDeleteTarget(null)}
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-2 border border-red-100">
-              <Trash2 size={28} strokeWidth={2.5} />
-            </div>
-            <h3 className="font-bold text-xl text-[#182236]">Delete Item?</h3>
-            <p className="text-sm text-gray-500 font-medium">
-              Are you sure you want to remove <span className="font-bold text-gray-900">"{deleteTarget.name}"</span> from inventory?
+      <Modal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Item"
+        maxWidth="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-[#4b5870] leading-relaxed">
+              Are you sure you want to remove <span className="font-bold text-[#202b3d]">"{deleteTarget.name}"</span> from inventory?
             </p>
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-rose-600 hover:bg-rose-700 text-white font-[750] text-[13px] rounded-[12px] shadow-[0_2px_3px_rgba(225,29,72,0.2)] transition-colors cursor-pointer"
               >
                 Delete
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

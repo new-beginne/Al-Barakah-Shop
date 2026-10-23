@@ -51,6 +51,7 @@ import {
 } from '../services/accountService';
 import { recordActivityLog } from '../services/activityLogService';
 import { DataManagementSettings } from './DataManagementSettings';
+import { Modal } from './common/Modal';
 
 export function Settings() {
   const navigate = useNavigate();
@@ -1198,309 +1199,309 @@ export function Settings() {
       {/* ========================================================================= */}
       {/* MODAL 1: ADD / EDIT PRESET SERVICE */}
       {/* ========================================================================= */}
-      {isServiceModalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setIsServiceModalOpen(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">
-              {editingServiceId ? 'Edit Preset Service' : 'Add Preset Service'}
-            </h3>
-
-            <form onSubmit={handleSaveService} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Service Name <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder={serviceModalType === 'sell' ? 'e.g. Passport Photo, NID Print' : 'e.g. Electricity Bill, Paper Roll'}
-                  value={serviceFormName}
-                  onChange={(e) => setServiceFormName(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
-                  autoFocus
-                />
-              </div>
-
-              {serviceModalType === 'sell' && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                        Category
-                      </label>
-                      <select
-                        value={serviceFormCategory}
-                        onChange={(e) => setServiceFormCategory(e.target.value)}
-                        className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none cursor-pointer transition-all"
-                      >
-                        <option value="Printing">Printing</option>
-                        <option value="Digital Studio">Digital Studio</option>
-                        <option value="Govt/NID Service">Govt/NID Service</option>
-                        <option value="Online Service">Online Service</option>
-                        <option value="General">General</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                        Default Price (Tk)
-                      </label>
-                      <input
-                        type="number"
-                        step="any"
-                        placeholder="0.00"
-                        value={serviceFormPrice}
-                        onChange={(e) => setServiceFormPrice(e.target.value)}
-                        className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all font-mono"
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer active:translate-y-px flex items-center justify-center"
-                >
-                  {editingServiceId ? 'Update Service' : 'Save Service'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={isServiceModalOpen}
+        onClose={() => setIsServiceModalOpen(false)}
+        title={editingServiceId ? 'Edit Preset Service' : 'Add Preset Service'}
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveService} className="space-y-4">
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Service Name <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              placeholder={serviceModalType === 'sell' ? 'e.g. Passport Photo, NID Print' : 'e.g. Electricity Bill, Paper Roll'}
+              value={serviceFormName}
+              onChange={(e) => setServiceFormName(e.target.value)}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
+              autoFocus
+            />
           </div>
-        </div>
-      )}
+
+          {serviceModalType === 'sell' && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                    Category
+                  </label>
+                  <select
+                    value={serviceFormCategory}
+                    onChange={(e) => setServiceFormCategory(e.target.value)}
+                    className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-medium text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none cursor-pointer transition-all"
+                  >
+                    <option value="Printing">Printing</option>
+                    <option value="Digital Studio">Digital Studio</option>
+                    <option value="Govt/NID Service">Govt/NID Service</option>
+                    <option value="Online Service">Online Service</option>
+                    <option value="General">General</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                    Default Price (Tk)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="0.00"
+                    value={serviceFormPrice}
+                    onChange={(e) => setServiceFormPrice(e.target.value)}
+                    className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all font-mono"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white rounded-[12px] text-[14px] font-[750] transition-all shadow-[0_2px_3px_rgba(0,0,0,0.12)] cursor-pointer active:translate-y-px flex items-center justify-center"
+            >
+              {editingServiceId ? 'Update Service' : 'Save Service'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* ========================================================================= */}
       {/* MODAL 2: ADD BALANCE */}
       {/* ========================================================================= */}
-      {isAddBalanceModalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setIsAddBalanceModalOpen(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">Add Account Balance</h3>
-
-            <form onSubmit={handleAddBalanceSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Select Account
-                </label>
-                <select
-                  value={selectedAccountOption}
-                  onChange={(e) => setSelectedAccountOption(e.target.value as any)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none cursor-pointer transition-all"
-                >
-                  <option value="cash">Cash in Hand</option>
-                  <option value="bkash">bKash</option>
-                  <option value="nagad">Nagad</option>
-                  <option value="rocket">Rocket</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Amount (Tk) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  step="any"
-                  placeholder="e.g. 5000"
-                  value={balanceAmount}
-                  onChange={(e) => setBalanceAmount(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none font-mono transition-all"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Note / Reference (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Bank cash withdrawal, owner deposit"
-                  value={balanceNote}
-                  onChange={(e) => setBalanceNote(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isSubmittingBalance}
-                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center"
-                >
-                  {isSubmittingBalance ? 'Adding...' : 'Deposit Balance'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={isAddBalanceModalOpen}
+        onClose={() => setIsAddBalanceModalOpen(false)}
+        title="Add Account Balance"
+        maxWidth="md"
+      >
+        <form onSubmit={handleAddBalanceSubmit} className="space-y-4">
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Select Account
+            </label>
+            <select
+              value={selectedAccountOption}
+              onChange={(e) => setSelectedAccountOption(e.target.value as any)}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none cursor-pointer transition-all"
+            >
+              <option value="cash">Cash in Hand</option>
+              <option value="bkash">bKash</option>
+              <option value="nagad">Nagad</option>
+              <option value="rocket">Rocket</option>
+            </select>
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Amount (Tk) <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="number"
+              required
+              min="1"
+              step="any"
+              placeholder="e.g. 5000"
+              value={balanceAmount}
+              onChange={(e) => setBalanceAmount(e.target.value)}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[15px] font-bold text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none font-mono transition-all"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Note / Reference (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Bank cash withdrawal, owner deposit"
+              value={balanceNote}
+              onChange={(e) => setBalanceNote(e.target.value)}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] text-[#202b3d] placeholder:text-[#8b95a3] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
+            />
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={isSubmittingBalance}
+              className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white rounded-[12px] text-[14px] font-[750] transition-all shadow-[0_2px_3px_rgba(0,0,0,0.12)] cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center"
+            >
+              {isSubmittingBalance ? 'Adding...' : 'Deposit Balance'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* ========================================================================= */}
       {/* MODAL 3: CALIBRATE / SET EXACT BALANCE */}
       {/* ========================================================================= */}
-      {isCalibrateModalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setIsCalibrateModalOpen(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-xl text-[#182236] mb-6 text-center">Calibrate Exact Balance</h3>
-
-            <form onSubmit={handleDirectCalibrateSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Select Account
-                </label>
-                <select
-                  value={calibrateAccountId}
-                  onChange={(e) => {
-                    const accId = e.target.value as any;
-                    setCalibrateAccountId(accId);
-                    const acc = accounts.find(a => a.id === accId);
-                    setCalibrateNewBalance(acc ? String(acc.balance) : '0');
-                  }}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-bold text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none cursor-pointer transition-all"
-                >
-                  <option value="cash">Cash in Hand</option>
-                  <option value="bkash">bKash</option>
-                  <option value="nagad">Nagad</option>
-                  <option value="rocket">Rocket</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Exact New Balance (Tk) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  step="any"
-                  value={calibrateNewBalance}
-                  onChange={(e) => setCalibrateNewBalance(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none font-mono transition-all"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Reason / Adjustment Note
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Daily cash physical count check"
-                  value={calibrateNote}
-                  onChange={(e) => setCalibrateNote(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isSubmittingCalibrate}
-                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center"
-                >
-                  {isSubmittingCalibrate ? 'Saving...' : 'Set Balance'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={isCalibrateModalOpen}
+        onClose={() => setIsCalibrateModalOpen(false)}
+        title="Calibrate Exact Balance"
+        maxWidth="md"
+      >
+        <form onSubmit={handleDirectCalibrateSubmit} className="space-y-4">
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Select Account
+            </label>
+            <select
+              value={calibrateAccountId}
+              onChange={(e) => {
+                const accId = e.target.value as any;
+                setCalibrateAccountId(accId);
+                const acc = accounts.find(a => a.id === accId);
+                setCalibrateNewBalance(acc ? String(acc.balance) : '0');
+              }}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] font-bold text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none cursor-pointer transition-all"
+            >
+              <option value="cash">Cash in Hand</option>
+              <option value="bkash">bKash</option>
+              <option value="nagad">Nagad</option>
+              <option value="rocket">Rocket</option>
+            </select>
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Exact New Balance (Tk) <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="number"
+              required
+              min="0"
+              step="any"
+              value={calibrateNewBalance}
+              onChange={(e) => setCalibrateNewBalance(e.target.value)}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[15px] font-bold text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none font-mono transition-all"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+              Reason / Adjustment Note
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Daily cash physical count check"
+              value={calibrateNote}
+              onChange={(e) => setCalibrateNote(e.target.value)}
+              className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] text-[#202b3d] placeholder:text-[#8b95a3] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
+            />
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={isSubmittingCalibrate}
+              className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white rounded-[12px] text-[14px] font-[750] transition-all shadow-[0_2px_3px_rgba(0,0,0,0.12)] cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center"
+            >
+              {isSubmittingCalibrate ? 'Saving...' : 'Set Balance'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* ========================================================================= */}
       {/* MODAL 4: EDIT BALANCE HISTORY LOG */}
       {/* ========================================================================= */}
-      {editingLog && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setEditingLog(null)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-xl text-[#182236] mb-1 text-center">Edit Balance Log</h3>
-            <p className="text-center text-xs text-gray-500 font-semibold mb-6">Account: {editingLog.accountName}</p>
+      <Modal
+        isOpen={!!editingLog}
+        onClose={() => setEditingLog(null)}
+        title="Edit Balance Log"
+        maxWidth="md"
+      >
+        {editingLog && (
+          <form onSubmit={handleUpdateLogSubmit} className="space-y-4">
+            <div className="text-center -mt-3 mb-2">
+              <span className="text-xs font-semibold text-gray-500">Account: {editingLog.accountName}</span>
+            </div>
 
-            <form onSubmit={handleUpdateLogSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Amount (Tk) *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  step="any"
-                  value={editLogAmount}
-                  onChange={(e) => setEditLogAmount(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-base font-black text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none font-mono transition-all"
-                />
-              </div>
+            <div>
+              <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                Amount (Tk) *
+              </label>
+              <input
+                type="number"
+                required
+                min="0"
+                step="any"
+                value={editLogAmount}
+                onChange={(e) => setEditLogAmount(e.target.value)}
+                className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[15px] font-bold text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none font-mono transition-all"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Date *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={editLogDate}
-                  onChange={(e) => setEditLogDate(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
-                />
-              </div>
+            <div>
+              <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                Date *
+              </label>
+              <input
+                type="date"
+                required
+                value={editLogDate}
+                onChange={(e) => setEditLogDate(e.target.value)}
+                className="w-full min-h-[47px] h-[47px] px-3 bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[13px] text-[#202b3d] focus:bg-white focus:border-[#075e4f] focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#465269] uppercase tracking-wider mb-1.5">
-                  Note
-                </label>
-                <input
-                  type="text"
-                  value={editLogNote}
-                  onChange={(e) => setEditLogNote(e.target.value)}
-                  className="w-full h-[47px] px-4 bg-[#f8f9fa] border border-[#dce1e7] rounded-xl text-sm font-medium text-[#1d2939] focus:bg-white focus:border-[#075b4d] focus:ring-2 focus:ring-[#075b4d]/10 outline-none transition-all"
-                />
-              </div>
+            <div>
+              <label className="block mb-1.5 text-[12px] font-[750] text-[#4b5870] tracking-[0.04em] uppercase">
+                Note
+              </label>
+              <input
+                type="text"
+                value={editLogNote}
+                onChange={(e) => setEditLogNote(e.target.value)}
+                className="w-full min-h-[47px] h-[47px] px-[15px] bg-[#f7f8fa] border border-[#d8e0e8] rounded-[12px] text-[14px] text-[#202b3d] placeholder:text-[#8b95a3] focus:border-[#075e4f] focus:bg-white focus:ring-[3px] focus:ring-[#075e4f]/10 outline-none transition-all"
+              />
+            </div>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isSubmittingEditLog}
-                  className="w-full h-[49px] bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center"
-                >
-                  {isSubmittingEditLog ? 'Saving...' : 'Update Log'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={isSubmittingEditLog}
+                className="w-full min-h-[49px] h-[49px] bg-[#075e4f] hover:bg-[#064c40] text-white rounded-[12px] text-[14px] font-[750] transition-all shadow-[0_2px_3px_rgba(0,0,0,0.12)] cursor-pointer active:translate-y-px disabled:opacity-50 flex items-center justify-center"
+              >
+                {isSubmittingEditLog ? 'Saving...' : 'Update Log'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* ========================================================================= */}
       {/* MODAL 5: DELETE HISTORY LOG CONFIRMATION */}
       {/* ========================================================================= */}
-      {deletingLog && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setDeletingLog(null)}>
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-2 border border-red-100">
-              <AlertTriangle size={28} strokeWidth={2.5} />
-            </div>
-            <h3 className="font-bold text-xl text-[#182236]">Delete Balance Log?</h3>
-            <p className="text-xs text-gray-500 font-medium">Log ID #{deletingLog.id} • {deletingLog.accountName}</p>
+      <Modal
+        isOpen={!!deletingLog}
+        onClose={() => setDeletingLog(null)}
+        title="Delete Balance Log"
+        maxWidth="sm"
+      >
+        {deletingLog && (
+          <div className="space-y-4 text-center">
+            <p className="text-xs text-[#4b5870] font-medium">Log ID #{deletingLog.id} • {deletingLog.accountName}</p>
 
-            <div className="p-3 bg-[#f8f9fa] rounded-xl text-xs space-y-1 text-left border border-[#dce1e7]">
-              <div>Amount: <span className="font-bold text-gray-900">Tk {deletingLog.amount.toLocaleString()}</span></div>
-              <div>Date: <span className="font-bold text-gray-900">{deletingLog.date}</span></div>
-              {deletingLog.note && <div>Note: <span className="text-gray-600">{deletingLog.note}</span></div>}
+            <div className="p-3 bg-[#f7f8fa] rounded-[12px] text-xs space-y-1 text-left border border-[#d8e0e8]">
+              <div>Amount: <span className="font-bold text-[#202b3d]">Tk {deletingLog.amount.toLocaleString()}</span></div>
+              <div>Date: <span className="font-bold text-[#202b3d]">{deletingLog.date}</span></div>
+              {deletingLog.note && <div>Note: <span className="text-[#4b5870]">{deletingLog.note}</span></div>}
             </div>
 
-            <label className="flex items-start gap-2.5 cursor-pointer p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-left">
+            <label className="flex items-start gap-2.5 cursor-pointer p-2.5 bg-amber-50/70 rounded-[12px] border border-amber-200 text-left">
               <input
                 type="checkbox"
                 checked={revertBalanceOnDelete}
                 onChange={(e) => setRevertBalanceOnDelete(e.target.checked)}
-                className="mt-0.5 rounded text-[#075b4d] focus:ring-[#075b4d]"
+                className="mt-0.5 rounded text-[#075e4f] focus:ring-[#075e4f]"
               />
               <div className="text-xs text-amber-950">
                 <span className="font-bold">Revert Account Balance:</span>
@@ -1508,11 +1509,11 @@ export function Settings() {
               </div>
             </label>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setDeletingLog(null)}
-                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -1520,84 +1521,86 @@ export function Settings() {
                 type="button"
                 disabled={isDeletingLog}
                 onClick={handleDeleteLogConfirm}
-                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                className="flex-1 min-h-[47px] h-[47px] bg-rose-600 hover:bg-rose-700 text-white rounded-[12px] text-[13px] font-[750] transition-all shadow-[0_2px_3px_rgba(225,29,72,0.2)] cursor-pointer disabled:opacity-50"
               >
                 {isDeletingLog ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* ========================================================================= */}
       {/* MODAL 6: DELETE PRESET SERVICE CONFIRMATION */}
       {/* ========================================================================= */}
-      {deleteTarget && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setDeleteTarget(null)}>
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-2 border border-red-100">
-              <AlertTriangle size={28} strokeWidth={2.5} />
-            </div>
-            <h3 className="font-bold text-xl text-[#182236]">Delete Preset Service?</h3>
-            <p className="text-sm text-gray-500 font-medium">
-              Are you sure you want to delete <span className="font-bold text-gray-900">"{deleteTarget.name}"</span>?
+      <Modal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Preset Service"
+        maxWidth="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-[#4b5870] leading-relaxed">
+              Are you sure you want to delete <span className="font-bold text-[#202b3d]">"{deleteTarget.name}"</span>?
             </p>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={confirmDelete}
-                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-rose-600 hover:bg-rose-700 text-white rounded-[12px] text-[13px] font-[750] transition-all shadow-[0_2px_3px_rgba(225,29,72,0.2)] cursor-pointer"
               >
                 Delete
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* ========================================================================= */}
       {/* MODAL 7: CONFIRM RESTORE BACKUP */}
       {/* ========================================================================= */}
-      {pendingRestoreFile && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm" onClick={() => setPendingRestoreFile(null)}>
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-2 border border-blue-100">
-              <Upload size={28} strokeWidth={2.5} />
-            </div>
-            <h3 className="font-bold text-xl text-[#182236]">Restore from File?</h3>
-            <p className="text-xs text-gray-500 font-medium">{pendingRestoreFile.name}</p>
+      <Modal
+        isOpen={!!pendingRestoreFile}
+        onClose={() => setPendingRestoreFile(null)}
+        title="Restore from File"
+        maxWidth="sm"
+      >
+        {pendingRestoreFile && (
+          <div className="space-y-4 text-center">
+            <p className="text-xs text-gray-500 font-semibold">{pendingRestoreFile.name}</p>
 
-            <p className="text-xs text-gray-600 leading-relaxed font-medium">
+            <p className="text-xs text-[#4b5870] leading-relaxed">
               This will merge and restore transactions, customers, dues, and service records from the selected backup file into your IndexedDB database.
             </p>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setPendingRestoreFile(null)}
-                className="flex-1 py-3 font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-[#f7f8fa] hover:bg-[#eef2f5] border border-[#d8e0e8] text-[#4b5870] hover:text-[#202b3d] font-[750] text-[13px] rounded-[12px] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={confirmRestore}
-                className="flex-1 py-3 bg-[#075b4d] hover:bg-[#064c41] text-white rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer"
+                className="flex-1 min-h-[47px] h-[47px] bg-[#075e4f] hover:bg-[#064c40] text-white rounded-[12px] text-[13px] font-[750] transition-all shadow-[0_2px_3px_rgba(0,0,0,0.12)] cursor-pointer"
               >
                 Restore Now
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Cloud Store Account Auth Modal */}
       {isAuthModalOpen && (
