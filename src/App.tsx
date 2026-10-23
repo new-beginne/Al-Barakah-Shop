@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Sidebar, BottomNav } from './components/Navigation';
 import { Dashboard } from './components/Dashboard';
 import { SalesEntry } from './components/SalesEntry';
@@ -86,8 +86,8 @@ function TopHeader({ onOpenShortcuts }: TopHeaderProps) {
             </div>
           )}
 
-          {/* Cloud Sync Status Pill (when logged in) */}
-          {user && (
+          {/* Cloud Sync Status Pill */}
+          {user && user.uid !== 'offline_owner' ? (
             <button
               type="button"
               onClick={() => triggerSync()}
@@ -110,6 +110,16 @@ function TopHeader({ onOpenShortcuts }: TopHeaderProps) {
                   <span className="hidden sm:inline">Cloud Synced</span>
                 </>
               )}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsAuthOpen(true)}
+              title="Click to log in and sync across all your devices"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100 cursor-pointer"
+            >
+              <Cloud size={14} className="text-amber-700" />
+              <span className="hidden sm:inline">Sign In to Sync</span>
             </button>
           )}
 

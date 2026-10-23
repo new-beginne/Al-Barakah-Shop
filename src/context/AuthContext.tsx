@@ -10,9 +10,9 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { auth, firestore } from '../lib/firebase';
-import { pullCloudToLocal, fullSync, pushLocalToCloud, clearAllCloudData, SyncResult, isQuotaExceededBlocked, markQuotaExceeded } from '../services/syncService';
+import { pullCloudToLocal, fullSync, pushLocalToCloud, clearAllCloudData, SyncResult, isQuotaExceededBlocked, markQuotaExceeded, getDeviceId } from '../services/syncService';
 import { db, hasPendingLocalChanges, clearLocalDatabaseForAccountSwitch } from '../db/db';
 
 import { sanitizeText, BruteForceGuard, calculateSha256 } from '../lib/security';
@@ -166,17 +166,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let syncTimeout: any;
 
     const runAutoSync = () => {
-      if (user && navigator.onLine && !isQuotaExceededBlocked()) {
-        // STRICT GUARD: Only proceed if database has actual pending changes!
+      if (user && user.uid !== 'offline_owner' && navigator.onLine && !isQuotaExceededBlocked()) {
         if (!hasPendingLocalChanges()) return;
 
-        // Debounce sync so multiple rapid DB writes batch together into a single write
+        // Fast 1.2s debounce so changes push quickly to cloud without waiting 7 seconds
         clearTimeout(syncTimeout);
         syncTimeout = setTimeout(async () => {
-          if (!isQuotaExceededBlocked() && hasPendingLocalChanges()) {
+          if (!isQuotaExceededBlocked() && hasPendingLocalChanges() && user && user.uid !== 'offline_owner') {
             try {
               setSyncStatus('syncing');
-              // STRICT QUOTA GUARD: Only push modified local data! Never pull 11 collections on local edits!
               const pushed = await pushLocalToCloud(user.uid, false);
               setSyncStatus('synced');
               if (pushed > 0) {
@@ -191,36 +189,113 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
             }
           }
-        }, 7000); // 7 second debounce to batch rapid transactions together into 1 push
+        }, 1200);
+      }
+    };
+
+    const flushImmediate = () => {
+      if (user && user.uid !== 'offline_owner' && navigator.onLine && !isQuotaExceededBlocked() && hasPendingLocalChanges()) {
+        pushLocalToCloud(user.uid, false).catch(() => {});
       }
     };
 
     const handleOnline = () => {
       setIsOnline(true);
-      // ONLY trigger sync if there are actual offline changes pending to be pushed!
-      if (!isQuotaExceededBlocked() && hasPendingLocalChanges()) {
-        runAutoSync();
+      if (!isQuotaExceededBlocked() && user && user.uid !== 'offline_owner') {
+        if (hasPendingLocalChanges()) {
+          runAutoSync();
+        } else {
+          pullCloudToLocal(user.uid).then(() => {
+            setSyncStatus('synced');
+            setLastSynced(new Date().toISOString());
+          }).catch(() => {});
+        }
       }
     };
     const handleOffline = () => setIsOnline(false);
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    // Listen for custom db-changed events dispatched from Dexie hooks
     window.addEventListener('albarakah-db-changed', runAutoSync);
+    window.addEventListener('beforeunload', flushImmediate);
+
+    const handleVisHide = () => {
+      if (document.visibilityState === 'hidden') {
+        flushImmediate();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisHide);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('albarakah-db-changed', runAutoSync);
+      window.removeEventListener('beforeunload', flushImmediate);
+      document.removeEventListener('visibilitychange', handleVisHide);
       clearTimeout(syncTimeout);
     };
   }, [user]);
 
-  // Listen to Firebase Auth state
+  // Tab Focus / App Resume / Periodic Polling Sync
   useEffect(() => {
+    let lastPullTime = 0;
+
+    const pullLatestIfDue = async () => {
+      if (user && user.uid !== 'offline_owner' && navigator.onLine && !isQuotaExceededBlocked()) {
+        const now = Date.now();
+        // Cooldown: don't pull more frequently than once every 6 seconds on rapid tab switching
+        if (now - lastPullTime > 6000) {
+          lastPullTime = now;
+          try {
+            await pullCloudToLocal(user.uid);
+            setSyncStatus('synced');
+            setLastSynced(new Date().toISOString());
+          } catch (e) {
+            // Keep current status
+          }
+        }
+      }
+    };
+
+    const handleFocus = () => {
+      pullLatestIfDue();
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        pullLatestIfDue();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Periodic heartbeat sync every 40 seconds to catch any updates made on another device
+    const intervalTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        pullLatestIfDue();
+      }
+    }, 40000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(intervalTimer);
+    };
+  }, [user]);
+
+  // Listen to Firebase Auth state & Real-Time Cloud Broadcasts
+  useEffect(() => {
+    let unsubSnapshot: (() => void) | null = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       const previousActiveUid = safeStorage.getItem('albarakah_active_uid');
+
+      // Clean up previous snapshot listener if user changes
+      if (unsubSnapshot) {
+        unsubSnapshot();
+        unsubSnapshot = null;
+      }
 
       if (currentUser) {
         setUser(currentUser);
@@ -228,7 +303,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (isAccountSwitch) {
           console.info(`[Auth] Account switch detected: ${previousActiveUid} -> ${currentUser.uid}. Resetting local DB for new user.`);
-          // CRITICAL: A different user has signed in. Wipe previous user's local tables so no data leaks!
           await clearLocalDatabaseForAccountSwitch(true);
         }
 
@@ -237,7 +311,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           if (!isQuotaExceededBlocked()) {
             const cachedProfile = safeStorage.getItem('albarakah_user_profile');
-            // If account switched or no cached profile, fetch from firestore
             if (isAccountSwitch || !cachedProfile) {
               const docRef = doc(firestore, 'users', currentUser.uid);
               const docSnap = await getDoc(docRef);
@@ -255,37 +328,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn('Could not fetch online profile, using cached profile:', err);
         }
 
-        // Account synchronization:
+        // Real-Time Cross-Device Sync Listener (onSnapshot on users/{uid} document)
+        try {
+          const userDocRef = doc(firestore, 'users', currentUser.uid);
+          unsubSnapshot = onSnapshot(userDocRef, async (snap) => {
+            if (!snap.exists()) return;
+            const data = snap.data();
+            const currentDevId = getDeviceId();
+            // If another device updated the cloud database:
+            if (data?.lastCloudUpdate && data?.lastUpdateDeviceId && data.lastUpdateDeviceId !== currentDevId) {
+              const lastHandled = safeStorage.getItem('albarakah_last_handled_cloud_update');
+              if (lastHandled !== data.lastCloudUpdate) {
+                safeStorage.setItem('albarakah_last_handled_cloud_update', data.lastCloudUpdate);
+                try {
+                  setSyncStatus('syncing');
+                  await pullCloudToLocal(currentUser.uid);
+                  setSyncStatus('synced');
+                  setLastSynced(new Date().toISOString());
+                } catch (livePullErr) {
+                  console.warn('Real-time sync pull error:', livePullErr);
+                  setSyncStatus('idle');
+                }
+              }
+            }
+          }, (err) => {
+            console.warn('Real-time sync snapshot listener error:', err);
+          });
+        } catch (snapshotErr) {
+          console.warn('Could not attach real-time sync snapshot listener:', snapshotErr);
+        }
+
+        // Account synchronization on launch/login:
+        // Push pending local changes, and ALWAYS pull latest cloud data so other devices' changes reflect immediately!
         if (navigator.onLine && !isQuotaExceededBlocked()) {
           setTimeout(async () => {
             try {
-              const salesCount = await db.sales.count();
-              const expensesCount = await db.expenses.count();
-              const duesCount = await db.dues.count();
-              const isFreshOrSwitched = isAccountSwitch || (salesCount === 0 && expensesCount === 0 && duesCount === 0);
-
-              if (isFreshOrSwitched) {
-                // Pull cloud data for THIS user from Firestore
-                setSyncStatus('syncing');
-                await pullCloudToLocal(currentUser.uid);
-                setSyncStatus('synced');
-                setLastSynced(new Date().toISOString());
-              } else if (hasPendingLocalChanges()) {
-                // Has pending local changes: push them now
-                setSyncStatus('syncing');
-                const pushed = await pushLocalToCloud(currentUser.uid, false);
-                setSyncStatus('synced');
-                if (pushed > 0) {
-                  setLastSynced(new Date().toISOString());
-                }
-              } else {
-                setSyncStatus('synced');
+              setSyncStatus('syncing');
+              if (hasPendingLocalChanges()) {
+                await pushLocalToCloud(currentUser.uid, false);
               }
+              // Always pull down all updates from Cloud into local Dexie
+              await pullCloudToLocal(currentUser.uid);
+              setSyncStatus('synced');
+              setLastSynced(new Date().toISOString());
             } catch (err) {
-              console.warn('Initial sync check error:', err);
+              console.warn('Initial sync error:', err);
               setSyncStatus('synced');
             }
-          }, 600);
+          }, 400);
         } else {
           setSyncStatus('synced');
         }
@@ -330,6 +420,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       clearTimeout(safetyTimer);
+      if (unsubSnapshot) {
+        unsubSnapshot();
+      }
       unsubscribe();
     };
   }, []);

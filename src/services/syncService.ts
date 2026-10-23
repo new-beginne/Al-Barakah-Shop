@@ -50,6 +50,19 @@ export function markQuotaExceeded(): void {
 }
 
 /**
+ * Returns a persistent device ID unique to this browser / installation
+ */
+export function getDeviceId(): string {
+  if (typeof localStorage === 'undefined') return 'unknown_device';
+  let deviceId = safeStorage.getItem('albarakah_device_id');
+  if (!deviceId) {
+    deviceId = 'dev_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+    safeStorage.setItem('albarakah_device_id', deviceId);
+  }
+  return deviceId;
+}
+
+/**
  * Delete a specific document from Firestore directly
  */
 export async function deleteCloudDocument(uid: string | undefined, table: string, id: string | number): Promise<void> {
@@ -423,9 +436,20 @@ export async function pushLocalToCloud(uid: string, forceAll: boolean = false): 
       clearPendingModifiedTable('mfsClosings');
     }
 
-    // If changes were saved, update the last synced timestamp and clear dirty flag
+    // If changes were saved, update the last synced timestamp and broadcast cloud update heartbeat
     if (count > 0 || pendingDeletions.length > 0) {
-      safeStorage.setItem('albarakah_last_synced', new Date().toISOString());
+      const nowIso = new Date().toISOString();
+      safeStorage.setItem('albarakah_last_synced', nowIso);
+      const devId = getDeviceId();
+      safeStorage.setItem('albarakah_last_handled_cloud_update', nowIso);
+      try {
+        await setDoc(doc(firestore, 'users', uid), {
+          lastCloudUpdate: nowIso,
+          lastUpdateDeviceId: devId
+        }, { merge: true });
+      } catch (hbErr) {
+        console.warn('Could not update user sync heartbeat:', hbErr);
+      }
     }
     clearAllPendingChanges();
   } catch (err: any) {
@@ -639,6 +663,7 @@ export async function pullCloudToLocal(uid: string): Promise<number> {
     setSyncSilent(false);
   }
 
+  safeStorage.setItem('albarakah_last_synced', new Date().toISOString());
   return count;
 }
 
